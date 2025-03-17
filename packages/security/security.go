@@ -26,16 +26,19 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/syleron/pulseha/packages/utils"
 	"math/big"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/syleron/pulseha/packages/utils"
 )
 
-const (
-	CertDir  = "/etc/pulseha/certs/"
+var (
+	// Use the same directory as config
+	CertDir  = filepath.Join(os.Getenv("HOME"), ".pulseha/certs")
 	CertName = "pulseha"
 )
 

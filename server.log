@@ -1,0 +1,77 @@
+
+   ___       _                  _
+  / _ \_   _| |___  ___  /\  /\/_\
+ / /_)/ | | | / __|/ _ \/ /_/ //_\\
+/ ___/| |_| | \__ \  __/ __  /  _  \  Version 
+\/     \__,_|_|___/\___\/ /_/\_/ \_/  Build   unknown
+
+time="2025-02-27T13:31:21Z" level=debug msg="Verifying server configuration..."
+time="2025-02-27T13:31:21Z" level=debug msg="Loading initial members from configuration..."
+time="2025-02-27T13:31:21Z" level=info msg="Beginning initial member loading process..."
+time="2025-02-27T13:31:21Z" level=debug msg="Config validation passed"
+time="2025-02-27T13:31:21Z" level=debug msg="Nodes section found in config"
+time="2025-02-27T13:31:21Z" level=info msg="Found 1 node(s) in configuration"
+time="2025-02-27T13:31:21Z" level=info msg="Nodes in configuration:"
+time="2025-02-27T13:31:21Z" level=info msg="  - cd8f8567-9475-40e3-a889-14c910d089dc (IP: 127.0.0.1, Port: 8080)"
+time="2025-02-27T13:31:21Z" level=info msg="Processing node: cd8f8567-9475-40e3-a889-14c910d089dc"
+time="2025-02-27T13:31:21Z" level=debug msg="Creating new member instance..."
+time="2025-02-27T13:31:21Z" level=debug msg="Starting AddMember process for ID: cd8f8567-9475-40e3-a889-14c910d089dc"
+time="2025-02-27T13:31:21Z" level=debug msg="Creating new member instance for DESKTOP-TFCJ76H (ID: cd8f8567-9475-40e3-a889-14c910d089dc)"
+time="2025-02-27T13:31:21Z" level=debug msg="Creating new member instance for DESKTOP-TFCJ76H (ID: cd8f8567-9475-40e3-a889-14c910d089dc)"
+time="2025-02-27T13:31:21Z" level=debug msg="Member instance created successfully for DESKTOP-TFCJ76H (ID: cd8f8567-9475-40e3-a889-14c910d089dc)"
+time="2025-02-27T13:31:21Z" level=info msg="Successfully added member DESKTOP-TFCJ76H (ID: cd8f8567-9475-40e3-a889-14c910d089dc) to member list"
+time="2025-02-27T13:31:21Z" level=info msg="Successfully added member: cd8f8567-9475-40e3-a889-14c910d089dc"
+time="2025-02-27T13:31:21Z" level=debug msg="Verified member cd8f8567-9475-40e3-a889-14c910d089dc exists in member list"
+time="2025-02-27T13:31:21Z" level=debug msg="Set initial details for member cd8f8567-9475-40e3-a889-14c910d089dc: IP=127.0.0.1, Port=8080, Hostname=DESKTOP-TFCJ76H"
+time="2025-02-27T13:31:21Z" level=info msg="All members loaded successfully from configuration"
+time="2025-02-27T13:31:21Z" level=debug msg="Final member list contains 1 members"
+time="2025-02-27T13:31:21Z" level=debug msg="Retrieving local node configuration..."
+time="2025-02-27T13:31:21Z" level=debug msg="Checking/Generating TLS certificates..."
+time="2025-02-27T13:31:21Z" level=debug msg="Creating gRPC server..."
+time="2025-02-27T13:31:21Z" level=debug msg="Registering gRPC services..."
+time="2025-02-27T13:31:21Z" level=debug msg="Starting server listener on 127.0.0.1:8080"
+time="2025-02-27T13:31:21Z" level=debug msg="Starting health checker..."
+time="2025-02-27T13:31:21Z" level=info msg="Using configured health check interval: 1s"
+time="2025-02-27T13:31:21Z" level=info msg="Initializing health checker with interval: 1s"
+time="2025-02-27T13:31:21Z" level=debug msg="Adding initial delay before starting health checks..."
+time="2025-02-27T13:31:21Z" level=debug msg="Starting gRPC server..."
+time="2025-02-27T13:31:23Z" level=debug msg="Health checker is now running"
+time="2025-02-27T13:31:23Z" level=info msg="Health checker started successfully"
+time="2025-02-27T13:31:23Z" level=debug msg="Health check loop started"
+time="2025-02-27T13:32:32Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:32:32Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:35:09Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:35:09Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:35:15Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:35:15Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:35:17Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:35:17Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:35:19Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:35:19Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:35:21Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:35:21Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:35:22Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:35:22Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:51:53Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:51:53Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:52:11Z" level=info msg="Received AddIPToGroup request for group: default-enp0s13f0u3u4, IP: 10.0.10.187/23"
+time="2025-02-27T13:52:11Z" level=info msg="Bringing up IP 10.0.10.187/23 on interface enp0s13f0u3u4"
+time="2025-02-27T13:52:11Z" level=info msg="Successfully brought up IP 10.0.10.187/23 on interface enp0s13f0u3u4"
+time="2025-02-27T13:52:11Z" level=info msg="Successfully added IP 10.0.10.187/23 to group default-enp0s13f0u3u4"
+time="2025-02-27T13:52:21Z" level=info msg="Received CLI Status request"
+time="2025-02-27T13:52:21Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T13:52:36Z" level=info msg="Received RemoveIPFromGroup request for group: default-enp0s13f0u3u4, IP: 10.0.10.187/23"
+time="2025-02-27T13:52:36Z" level=info msg="Bringing down IP 10.0.10.187/23 on interface enp0s13f0u3u4"
+time="2025-02-27T13:52:36Z" level=info msg="Successfully brought down IP 10.0.10.187/23 on interface enp0s13f0u3u4"
+time="2025-02-27T13:52:36Z" level=info msg="Successfully removed IP 10.0.10.187/23 from group default-enp0s13f0u3u4"
+time="2025-02-27T14:07:03Z" level=info msg="Received RemoveIPFromGroup request for group: default-enp0s13f0u3u4, IP: 10.0.10.187/23"
+time="2025-02-27T14:07:05Z" level=info msg="Received CLI Status request"
+time="2025-02-27T14:07:05Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T14:07:14Z" level=info msg="Received CLI Status request"
+time="2025-02-27T14:07:14Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T14:13:19Z" level=info msg="Received CLI Status request"
+time="2025-02-27T14:13:19Z" level=info msg="CLI Status request completed" member_count=1
+time="2025-02-27T14:20:31Z" level=info msg="Initiating graceful shutdown..."
+time="2025-02-27T14:20:31Z" level=info msg="Stopping PulseHA server..."
+time="2025-02-27T14:20:31Z" level=info msg="PulseHA server stopped"
+time="2025-02-27T14:20:31Z" level=info msg="Graceful shutdown completed"

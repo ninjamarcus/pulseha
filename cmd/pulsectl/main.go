@@ -18,129 +18,30 @@ package main
 
 import (
 	"fmt"
-	"github.com/mitchellh/cli"
-	"github.com/syleron/pulseha/src/pulsectl"
-	"io/ioutil"
-	"log"
 	"os"
+
+	"github.com/spf13/cobra"
+	"github.com/syleron/pulseha/internal/cli"
 )
 
-var (
-	Commands map[string]cli.CommandFactory
-
-	Version string
-	Build   string
-)
-
-/**
- *
- */
 func main() {
-	os.Exit(realMain())
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
-/**
- *
- */
-func realMain() int {
-	log.SetOutput(ioutil.Discard)
-
-	args := os.Args[1:]
-	for _, arg := range args {
-		if arg == "-v" || arg == "--version" {
-			newArgs := make([]string, len(args)+1)
-			newArgs[0] = "version"
-			copy(newArgs[1:], args)
-			args = newArgs
-			break
-		}
-	}
-
-	cli := &cli.CLI{
-		Name:         "pulsectl",
-		Args:         args,
-		Commands:     Commands,
-		Autocomplete: true,
-		HelpFunc:     cli.BasicHelpFunc("pulsectl"),
-	}
-
-	exitCode, err := cli.Run()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error executing CLI: %s\n", err.Error())
-		return 1
-	}
-
-	return exitCode
+var rootCmd = &cobra.Command{
+	Use:   "pulsectl",
+	Short: "PulseHA cluster management tool",
+	Long:  `PulseHA cluster management tool - Manage your high availability cluster`,
 }
 
-/**
- *
- */
 func init() {
-	ui := &cli.BasicUi{Writer: os.Stdout}
-
-	Commands = map[string]cli.CommandFactory{
-		"join": func() (cli.Command, error) {
-			return &pulsectl.JoinCommand{
-				Ui: ui,
-			}, nil
-		},
-		"create": func() (cli.Command, error) {
-			return &pulsectl.CreateCommand{
-				Ui: ui,
-			}, nil
-		},
-		"groups": func() (cli.Command, error) {
-			return &pulsectl.GroupsCommand{
-				Ui: ui,
-			}, nil
-		},
-		"leave": func() (cli.Command, error) {
-			return &pulsectl.LeaveCommand{
-				Ui: ui,
-			}, nil
-		},
-		"remove": func() (cli.Command, error) {
-			return &pulsectl.RemoveCommand{
-				Ui: ui,
-			}, nil
-		},
-		"status": func() (cli.Command, error) {
-			return &pulsectl.StatusCommand{
-				Ui: ui,
-			}, nil
-		},
-		"promote": func() (cli.Command, error) {
-			return &pulsectl.PromoteCommand{
-				Ui: ui,
-			}, nil
-		},
-		"cert": func() (cli.Command, error) {
-			return &pulsectl.CertCommand{
-				Ui: ui,
-			}, nil
-		},
-		"token": func() (cli.Command, error) {
-			return &pulsectl.TokenCommand{
-				Ui: ui,
-			}, nil
-		},
-		"config": func() (cli.Command, error) {
-			return &pulsectl.ConfigCommand{
-				Ui: ui,
-			}, nil
-		},
-		"network": func() (cli.Command, error) {
-			return &pulsectl.NetworkCommand{
-				Ui: ui,
-			}, nil
-		},
-		"version": func() (cli.Command, error) {
-			return &pulsectl.VersionCommand{
-				Version: Version,
-				Build:   Build,
-				Ui:      ui,
-			}, nil
-		},
-	}
+	rootCmd.AddCommand(
+		cli.NewClusterCmd(),
+		cli.NewNodeCmd(),
+		cli.NewGroupCmd(),
+		cli.NewStatusCmd(),
+	)
 }

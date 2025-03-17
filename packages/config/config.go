@@ -19,18 +19,51 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
+
+	"github.com/google/uuid"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/packages/jsonHelper"
 	"github.com/syleron/pulseha/packages/utils"
-	"io/ioutil"
-	"os"
-	"runtime"
-	"sync"
 )
 
 var (
-	CONFIG_LOCATION = "/etc/pulseha/config.json"
+	CONFIG_DIR      = ""
+	CONFIG_LOCATION = ""
 )
+
+func init() {
+	// Try production directory first
+	if os.Getenv("PULSEHA_DEV") != "true" {
+		if err := os.MkdirAll("/etc/pulseha", 0755); err == nil {
+			CONFIG_DIR = "/etc/pulseha"
+			CONFIG_LOCATION = filepath.Join(CONFIG_DIR, "config.json")
+			return
+		}
+	}
+
+	// Fall back to user's home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Failed to get user home directory: %v", err)
+	}
+
+	CONFIG_DIR = filepath.Join(homeDir, ".pulseha")
+	CONFIG_LOCATION = filepath.Join(CONFIG_DIR, "config.json")
+
+	// Create user directory
+	if err := os.MkdirAll(CONFIG_DIR, 0755); err != nil {
+		log.Fatalf("Failed to create config directory in home directory: %v", err)
+	}
+
+	log.Warnf("Using user-local config directory: %s", CONFIG_DIR)
+}
 
 type Config struct {
 	Pulse   Local                  `json:"pulseha"`
@@ -50,6 +83,11 @@ type Local struct {
 	AutoFailback        bool   `json:"auto_failback"`
 	LogToFile           bool   `json:"log_to_file"`
 	LogFileLocation     string `json:"log_file_location"`
+	Mode                string `json:"mode"` // active-passive or active-active
+	// Quorum configuration
+	QuorumEnabled      bool `json:"quorum_enabled"`   // Whether to use quorum voting
+	QuorumMinNodes     int  `json:"quorum_min_nodes"` // Minimum nodes required for quorum
+	QuorumMajorityMode bool `json:"quorum_majority"`  // If true, quorum is majority of nodes; if false, use fixed number
 }
 
 type Node struct {
@@ -61,11 +99,51 @@ type Node struct {
 
 // New instantiates and setups up our config object
 func New() *Config {
-	cfg := Config{}
-	if err := cfg.Load(); err != nil {
-		log.Fatal(err)
+	// Create new config
+	c := &Config{
+		Pulse: Local{
+			HealthCheckInterval: 1000,
+			FailOverInterval:    5000,
+			FailOverLimit:       10000,
+			LoggingLevel:        "info",
+			AutoFailback:        true,
+			LogToFile:           true,
+			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
+			Mode:                "active-passive",
+		},
+		Groups:  make(map[string][]string),
+		Nodes:   make(map[string]*Node),
+		Plugins: make(map[string]interface{}),
 	}
-	return &cfg
+
+	// Load the config
+	if err := c.Load(); err != nil {
+		log.Warnf("Failed to load config: %v", err)
+		// Create default config
+		if err := c.SaveDefaultLocalConfig(); err != nil {
+			log.Fatalf("Failed to save default config: %v", err)
+		}
+	}
+
+	// Ensure maps are initialized
+	if c.Groups == nil {
+		c.Groups = make(map[string][]string)
+	}
+	if c.Nodes == nil {
+		c.Nodes = make(map[string]*Node)
+	}
+	if c.Plugins == nil {
+		c.Plugins = make(map[string]interface{})
+	}
+
+	// Ensure no null values in groups
+	for groupName, ips := range c.Groups {
+		if ips == nil {
+			c.Groups[groupName] = make([]string, 0)
+		}
+	}
+
+	return c
 }
 
 // GetConfig - Returns a copy of the config
@@ -78,18 +156,41 @@ func (c *Config) NodeCount() int {
 	return len(c.Nodes)
 }
 
-// GetLocalNode - Return the local node UID
-func (c *Config) GetLocalNodeUUID() string {
-	return c.Pulse.LocalNode
+// GetLocalNodeUUID returns the UUID of the local node
+func (c *Config) GetLocalNodeUUID() (string, error) {
+	if !c.ClusterCheck() {
+		return "", errors.New("cluster check failed")
+	}
+	return c.Pulse.LocalNode, nil
 }
 
-// GetLocalNode attempt to get local node defintion in our config.
+// GetLocalNode attempt to get local node definition in our config.
 func (c *Config) GetLocalNode() (Node, error) {
 	if !c.ClusterCheck() {
 		return Node{}, errors.New("cluster check failed")
 	}
-	if node, ok := c.Nodes[c.Pulse.LocalNode]; ok {
-		return *node, nil
+	uuid, err := c.GetLocalNodeUUID()
+	if err != nil {
+		return Node{}, err
+	}
+	if node, ok := c.Nodes[uuid]; ok {
+		// Create a deep copy of the node
+		nodeCopy := Node{
+			Hostname: node.Hostname,
+			IP:       node.IP,
+			Port:     node.Port,
+		}
+		// Deep copy the IPGroups map
+		if node.IPGroups != nil {
+			nodeCopy.IPGroups = make(map[string][]string)
+			for k, v := range node.IPGroups {
+				// Create a new slice for each group
+				groupCopy := make([]string, len(v))
+				copy(groupCopy, v)
+				nodeCopy.IPGroups[k] = groupCopy
+			}
+		}
+		return nodeCopy, nil
 	}
 	return Node{}, errors.New("local node not found in config")
 }
@@ -115,108 +216,187 @@ func MyCaller() string {
 func (c *Config) Load() error {
 	c.Lock()
 	defer c.Unlock()
-	// Check to see if we have a config already
+
+	// Initialize maps if nil
+	if c.Groups == nil {
+		c.Groups = make(map[string][]string)
+	}
+	if c.Nodes == nil {
+		c.Nodes = make(map[string]*Node)
+	}
+	if c.Plugins == nil {
+		c.Plugins = make(map[string]interface{})
+	}
+
+	// Skip loading from disk in test mode
+	if os.Getenv("PULSEHA_TEST") == "true" {
+		log.Debug("Test mode: skipping loading config from disk")
+		return nil
+	}
+
+	// Check if config exists
 	if utils.CheckFileExists(CONFIG_LOCATION) {
 		b, err := ioutil.ReadFile(CONFIG_LOCATION)
 		if err != nil {
-			log.Fatalf("Error reading config file: %s", err)
-			return err
+			return fmt.Errorf("error reading config file: %v", err)
 		}
-		if err = json.Unmarshal([]byte(b), &c); err != nil {
-			log.Fatalf("Unable to unmarshal config: %s", err)
-			return err
+		if err = json.Unmarshal(b, &c); err != nil {
+			return fmt.Errorf("unable to unmarshal config: %v", err)
 		}
 		if err := c.Validate(); err != nil {
-			log.Fatalf(err.Error())
-			os.Exit(1)
+			return fmt.Errorf("config validation failed: %v", err)
 		}
 	} else {
 		// Create a default config
 		if err := c.SaveDefaultLocalConfig(); err != nil {
-			log.Fatalf("unable to load PulseHA config")
-			os.Exit(1)
+			return fmt.Errorf("unable to create default config: %v", err)
 		}
 	}
 	return nil
 }
 
-/**
- * Function used to save the config
- */
-func (c *Config) Save() error {
-	log.Debug("Config:Save() Saving config..")
-	c.Lock()
-	defer c.Unlock()
-	// Validate before we save
-	if err := c.Validate(); err != nil {
-		return errors.New(err.Error())
+// Reload the config file into memory.
+func (c *Config) Reload() error {
+	log.Info("Reloading PulseHA config")
+	return c.Load()
+}
+
+// SaveDefaultLocalConfig - Generate a default config to write
+func (c *Config) SaveDefaultLocalConfig() error {
+	hostname, _ := os.Hostname()
+	defaultConfig := &Config{
+		Pulse: Local{
+			HealthCheckInterval: 1000,
+			FailOverInterval:    5000,
+			FailOverLimit:       10000,
+			AutoFailback:        true,
+			LocalNode:           hostname,
+			ClusterToken:        "",
+			LoggingLevel:        "info",
+			LogToFile:           true,
+			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
+			Mode:                "active-passive",
+		},
+		Groups:  make(map[string][]string),
+		Nodes:   make(map[string]*Node),
+		Plugins: make(map[string]interface{}),
 	}
+
+	// Set our config in memory
+	c.Pulse = defaultConfig.Pulse
+	c.Groups = defaultConfig.Groups
+	c.Nodes = defaultConfig.Nodes
+	c.Plugins = defaultConfig.Plugins
+
+	// Skip writing to disk in test mode
+	if os.Getenv("PULSEHA_TEST") == "true" {
+		log.Debug("Test mode: skipping writing default config to disk")
+		return nil
+	}
+
 	// Convert struct back to JSON format
 	configJSON, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal config: %v", err)
 	}
+
+	// Create config directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(CONFIG_LOCATION), 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %v", err)
+	}
+
 	// Save back to file
-	err = ioutil.WriteFile(CONFIG_LOCATION, configJSON, 0644)
-	// Check for errors
-	if err != nil {
-		log.Error("Unable to save config.json. Either it doesn't exist or there may be a permissions issue")
-		return err
+	if err := ioutil.WriteFile(CONFIG_LOCATION, configJSON, 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %v", err)
 	}
+
 	return nil
 }
 
-/**
- * Reload the config file into memory.
- * Note: Need to clear memory value before calling Load()
- */
-func (c *Config) Reload() {
-	log.Info("Reloading PulseHA config")
-	if err := c.Load(); err != nil {
-		panic(err)
-	}
-}
-
-/**
- *
- */
+// Validate validates the config
 func (c *Config) Validate() error {
-	hostname, err := utils.GetHostname()
-	if err != nil {
-		return errors.New("unable to get local hostname")
+	// Validate mode
+	if c.Pulse.Mode != "" && c.Pulse.Mode != "active-passive" && c.Pulse.Mode != "active-active" {
+		return fmt.Errorf("invalid mode %q: must be either 'active-passive' or 'active-active'", c.Pulse.Mode)
 	}
 
-	// Make sure our groups section is valid
+	// Skip hostname validation if we're in test mode
+	if os.Getenv("PULSEHA_TEST") == "true" {
+		return nil
+	}
+
 	if c.Groups == nil {
-		return errors.New("unable to load groups section of the config")
+		c.Groups = make(map[string][]string)
 	}
 
-	// Make sure our nodes section is valid
 	if c.Nodes == nil {
-		return errors.New("unable to load nodes section of the config")
+		c.Nodes = make(map[string]*Node)
 	}
 
-	// if we are in a cluster.. does our hostname exist?
+	if c.Plugins == nil {
+		c.Plugins = make(map[string]interface{})
+	}
+
+	// Only validate cluster configuration if we're in a cluster
 	if c.ClusterCheck() {
-		var exists = func() bool {
-			for _, node := range c.Nodes {
-				if node.Hostname == hostname {
-					return true
-				}
-			}
-			return false
+		// Check if we have a local node UUID set
+		if c.Pulse.LocalNode == "" {
+			return errors.New("local node UUID is not set")
 		}
-		if !exists() {
-			return errors.New("hostname mismatch. Local hostname does not exist in nodes section")
+
+		// Verify that node exists in our config
+		if _, ok := c.Nodes[c.Pulse.LocalNode]; !ok {
+			return errors.New("local node UUID does not exist in nodes section")
 		}
 	}
 
-	if c.Pulse.FailOverInterval < 1000 || c.Pulse.FailOverLimit < 1000 || c.Pulse.HealthCheckInterval < 1000 {
-		return errors.New("please make sure the interval and limit values in your config are valid millisecond values of at least one second")
+	// Log interval values for debugging
+	log.Debugf("Validating intervals - HealthCheck: %d, FailOver: %d, FailOverLimit: %d",
+		c.Pulse.HealthCheckInterval,
+		c.Pulse.FailOverInterval,
+		c.Pulse.FailOverLimit)
+
+	if c.Pulse.HealthCheckInterval < 1000 {
+		return fmt.Errorf("health check interval must be at least 1000ms (got %d)", c.Pulse.HealthCheckInterval)
+	}
+	if c.Pulse.FailOverInterval < 1000 {
+		return fmt.Errorf("failover interval must be at least 1000ms (got %d)", c.Pulse.FailOverInterval)
+	}
+	if c.Pulse.FailOverLimit < 1000 {
+		return fmt.Errorf("failover limit must be at least 1000ms (got %d)", c.Pulse.FailOverLimit)
 	}
 
 	if c.Pulse.FailOverLimit < c.Pulse.FailOverInterval {
-		return errors.New("the fos_interval value must be a smaller value then your fo_limit")
+		return errors.New("failover interval must be smaller than failover limit")
+	}
+
+	// Validate quorum settings based on node count
+	nodeCount := len(c.Nodes)
+	if c.Pulse.QuorumEnabled && nodeCount < 3 {
+		return fmt.Errorf("quorum voting requires at least 3 nodes, but only %d nodes are configured", nodeCount)
+	}
+
+	// Validate quorum minimum
+	if c.Pulse.QuorumEnabled {
+		if c.Pulse.QuorumMajorityMode {
+			// In majority mode, minimum should be (n/2)+1
+			expectedMin := (nodeCount / 2) + 1
+			if c.Pulse.QuorumMinNodes != expectedMin {
+				// Auto-correct the minimum
+				c.Pulse.QuorumMinNodes = expectedMin
+			}
+		} else {
+			// In fixed mode, minimum should not exceed node count
+			if c.Pulse.QuorumMinNodes > nodeCount {
+				return fmt.Errorf("quorum minimum (%d) exceeds node count (%d)", c.Pulse.QuorumMinNodes, nodeCount)
+			}
+			// And should be at least majority
+			minRecommended := (nodeCount / 2) + 1
+			if c.Pulse.QuorumMinNodes < minRecommended {
+				return fmt.Errorf("quorum minimum (%d) is less than recommended minimum (%d) for %d nodes",
+					c.Pulse.QuorumMinNodes, minRecommended, nodeCount)
+			}
+		}
 	}
 
 	return nil
@@ -232,36 +412,22 @@ func (c *Config) LocalNode() Node {
 	if err != nil {
 		return Node{}
 	}
-	return node
+	// Create a copy of the node to return
+	return Node{
+		Hostname: node.Hostname,
+		IP:       node.IP,
+		Port:     node.Port,
+		IPGroups: node.IPGroups,
+	}
 }
 
 // ClusterCheck - Check to see if wea re in a configured cluster or not.
 func (c *Config) ClusterCheck() bool {
-	total := len(c.Nodes)
-	if total > 0 {
-		// if there is only one node we can assume it's ours
-		//if total == 1 {
-		//	// make sure we have a bind IP/Port or we are not in a cluster
-		//	hostname, err := utils.GetHostname()
-		//	if err != nil {
-		//		return false
-		//	}
-		//	_, node, err := c.GetNodeByHostname(hostname)
-		//	if err != nil {
-		//		return false
-		//	}
-		//	fmt.Println(node)
-		//	if node.IP == "" && node.Port == "" {
-		//		return false
-		//	}
-		//	//return false
-		//}
-		return true
-	}
-	return false
+	return len(c.Nodes) > 0
 }
 
-/**
+/*
+*
 Returns the interface the group is assigned to
 */
 func (c *Config) GetGroupIface(hostname string, groupName string) (ifaceName string, err error) {
@@ -279,7 +445,8 @@ func (c *Config) GetGroupIface(hostname string, groupName string) (ifaceName str
 	return "", errors.New("cannot find interface assignment for group")
 }
 
-/**
+/*
+*
 Returns the hostname for a node based of it's IP address
 */
 func (c *Config) GetNodeHostnameByAddress(address string) (string, error) {
@@ -291,14 +458,19 @@ func (c *Config) GetNodeHostnameByAddress(address string) (string, error) {
 	return "", errors.New("unable to find node with IP address " + address)
 }
 
-// GetNodeByHostname - Get node by hostname
-func (c *Config) GetNodeByHostname(hostname string) (uid string, node Node, err error) {
-	for uid, node := range c.Nodes {
+// GetNodeByHostname returns the UUID and Node for a given hostname
+func (c *Config) GetNodeByHostname(hostname string) (string, *Node, error) {
+	for uuid, node := range c.Nodes {
 		if node.Hostname == hostname {
-			return uid, *node, nil
+			return uuid, node, nil
 		}
 	}
-	return "", Node{}, errors.New("unable to find node with hostname " + hostname)
+	return "", nil, fmt.Errorf("unable to find node with hostname %s", hostname)
+}
+
+// GenerateNodeID generates a new UUID for a node
+func (c *Config) GenerateNodeID() string {
+	return uuid.New().String()
 }
 
 // UpdateValue - Update a key's value
@@ -317,48 +489,16 @@ func (c *Config) UpdateValue(key string, value string) error {
 }
 
 // UpdateHostname - Changes our local node hostname and the hostname in our node section
-func (c *Config) UpdateHostname(newHostname string) {
-	log.Debug("Config:UpdateHostname() Change local hostname to " + newHostname)
-	node := c.Nodes[c.GetLocalNodeUUID()]
-	node.Hostname = newHostname
-}
-
-// DefaultLocalConfig - Generate a default config to write
-func (c *Config) SaveDefaultLocalConfig() error {
-	defaultConfig := &Config{
-		Pulse: Local{
-			HealthCheckInterval: 1000,
-			FailOverInterval:    5000,
-			FailOverLimit:       10000,
-			AutoFailback:        true,
-			LocalNode:           "",
-			ClusterToken:        "",
-			LoggingLevel:        "info",
-			LogToFile:           true,
-			LogFileLocation:     "/etc/pulseha/pulseha.log",
-		},
-		Groups:  map[string][]string{},
-		Nodes:   map[string]*Node{},
-		Plugins: map[string]interface{}{},
-	}
-	// Convert struct back to JSON format
-	configJSON, err := json.MarshalIndent(defaultConfig, "", "    ")
+func (c *Config) UpdateHostname(newHostname string) error {
+	uuid, err := c.GetLocalNodeUUID()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get local node UUID: %v", err)
 	}
-	// Set our config in memory
-	c.Pulse = defaultConfig.Pulse
-	c.Groups = defaultConfig.Groups
-	c.Nodes = defaultConfig.Nodes
-	c.Plugins = make(map[string]interface{})
-	// Save back to file
-	err = ioutil.WriteFile(CONFIG_LOCATION, configJSON, 0644)
-	// Check for errors
-	if err != nil {
-		log.Error("Unable to save config.json. There may be a permissions issue")
-		return err
+	if node, ok := c.Nodes[uuid]; ok {
+		node.Hostname = newHostname
+		return nil
 	}
-	return nil
+	return errors.New("local node not found in config")
 }
 
 func (c *Config) GetPluginConfig(pName string) (interface{}, error) {
@@ -379,5 +519,39 @@ func (c *Config) SetPluginConfig(pName string, data interface{}) error {
 		c.Unlock()
 	}
 	c.Save()
+	return nil
+}
+
+// Save writes the config to disk
+func (c *Config) Save() error {
+	c.Lock()
+	defer c.Unlock()
+
+	// Ensure no null values in groups
+	for groupName, ips := range c.Groups {
+		if ips == nil {
+			c.Groups[groupName] = make([]string, 0)
+		}
+	}
+
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %v", err)
+	}
+
+	// Skip writing to disk in test mode
+	if os.Getenv("PULSEHA_TEST") == "true" {
+		log.Debug("Test mode: skipping writing config to disk")
+		return nil
+	}
+
+	data, err := json.MarshalIndent(c, "", "    ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %v", err)
+	}
+
+	if err := ioutil.WriteFile(CONFIG_LOCATION, data, 0644); err != nil {
+		return fmt.Errorf("failed to write config: %v", err)
+	}
+
 	return nil
 }
