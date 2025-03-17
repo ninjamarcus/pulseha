@@ -18,89 +18,47 @@ package main
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/syleron/pulseha/packages/config"
-	"github.com/syleron/pulseha/packages/logging"
-	"github.com/syleron/pulseha/src/pulseha"
 	"io"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
-)
 
-const (
-	PRE_SIGNAL = iota
-	POST_SIGNAL
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/syleron/pulseha/internal/membership"
+	"github.com/syleron/pulseha/internal/server"
+	"github.com/syleron/pulseha/packages/config"
+	"github.com/syleron/pulseha/packages/logging"
 )
 
 var (
-	Version         string
-	Build           string
-	hookableSignals []os.Signal
+	Version string
+	Build   string
 )
 
-var pulse *Pulse
-
-/**
- * Main Pulse struct type
- */
-type Pulse struct {
-	DB          pulseha.Database
-	Server      *pulseha.Server
-	CLI         *pulseha.CLIServer
-	Sigs        chan os.Signal
-	SignalHooks map[int]map[os.Signal][]func()
-}
-
-type PulseLogFormat struct{}
-
-func (f *PulseLogFormat) Format(entry *log.Entry) ([]byte, error) {
-	time := "[" + entry.Time.Format(time.Stamp) + "]"
-	lvlOut := entry.Level.String()
-	switch entry.Level {
-	case log.ErrorLevel:
-	case log.FatalLevel:
-	case log.WarnLevel:
-		lvlOut = strings.ToUpper(lvlOut)
-	}
-	level := "[" + lvlOut + "] "
-	message := time + level + entry.Message
-	return append([]byte(message), '\n'), nil
-}
-
-/**
- * Create a new instance of PulseHA
- */
-func createPulse() *Pulse {
-	// Create the Pulse object
-	pulse := &Pulse{
-		Server: &pulseha.Server{},
-		CLI:    &pulseha.CLIServer{},
-	}
-	// Set our server variable
-	pulse.CLI.Server = pulse.Server
-	return pulse
-}
-
-func init() {
-	hookableSignals = []os.Signal{
-		syscall.SIGHUP,
-		syscall.SIGUSR1,
-		syscall.SIGUSR2,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGTSTP,
-	}
-}
-
-/**
- * Essential Construct
- */
 func main() {
+	// Check if running in CLI mode
+	if len(os.Args) > 1 {
+		// Initialize and execute CLI commands
+		rootCmd := setupCLI()
+
+		// Initialize flags for quorum commands
+		initQuorumFlags(rootCmd)
+
+		if err := rootCmd.Execute(); err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Draw logo
+	buildStr := "unknown"
+	if len(Build) >= 7 {
+		buildStr = Build[0:7]
+	}
 	fmt.Printf(`
    ___       _                  _
   / _ \_   _| |___  ___  /\  /\/_\
@@ -108,101 +66,166 @@ func main() {
 / ___/| |_| | \__ \  __/ __  /  _  \  Version %s
 \/     \__,_|_|___/\___\/ /_/\_/ \_/  Build   %s
 
-`, Version, Build[0:7])
-	log.SetFormatter(new(PulseLogFormat))
-	pulse = createPulse()
-	// listen for signals
-	pulse.Sigs = make(chan os.Signal)
-	signal.Notify(pulse.Sigs)
-	// Handle the signals
-	go handleSignals()
-	// load the config
-	pulse.DB = pulseha.Database{
-		Plugins:    &pulseha.Plugins{},
-		MemberList: &pulseha.MemberList{},
+`, Version, buildStr)
+
+	// Initialize logger
+	logger := log.New()
+	logger.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+
+	// Set default logging level to debug during development
+	logger.SetLevel(log.DebugLevel)
+
+	// Load config
+	cfg := config.New()
+	if cfg == nil {
+		logger.Fatal("Failed to load config")
 	}
-	// Setup a new pulse Logger
-	pulseLogger, err := logging.NewLogger(pulse.DB.MemberList.Broadcast)
-	if err != nil {
-		panic("unable to create pulseha distributed logger")
-	}
-	// Set our pulse logger
-	pulse.DB.Logging = pulseLogger
-	// Load the config
-	pulse.DB.Config = config.New()
-	// Set the logging level
-	setLogLevel(pulse.DB.Config.Pulse.LoggingLevel)
-	// Set log to file
-	if pulse.DB.Config.Pulse.LogToFile {
-		f, err := os.OpenFile(pulse.DB.Config.Pulse.LogFileLocation, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
-		if err != nil {
-			log.Fatal("failed to open log file. PulseHA failed to start")
+
+	// Override logging level from config if specified
+	if cfg.Pulse.LoggingLevel != "" {
+		if level, err := log.ParseLevel(cfg.Pulse.LoggingLevel); err == nil {
+			logger.SetLevel(level)
+		} else {
+			logger.Warnf("Invalid logging level in config: %s, using debug", cfg.Pulse.LoggingLevel)
 		}
-		mw := io.MultiWriter(os.Stdout, f)
-		log.SetOutput(mw)
 	}
-	// Setup wait group
+
+	// Setup distributed logging if enabled
+	if cfg.Pulse.LogToFile {
+		if err := setupLogging(cfg, logger); err != nil {
+			logger.Fatal(err)
+		}
+	}
+
+	// Initialize member list
+	memberList := membership.NewMemberList(cfg, logger)
+
+	// Initialize health checker
+	healthChecker := membership.NewHealthChecker(memberList, logger)
+
+	// Create and start server
+	srv := server.NewServer(cfg, logger, memberList, healthChecker)
+	if err := srv.Start(); err != nil {
+		logger.Fatalf("Failed to start server: %v", err)
+	}
+
+	// Handle graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)
+
+	// Create a WaitGroup to ensure graceful shutdown
 	var wg sync.WaitGroup
-	wg.Add(1)
-	// Setup cli
-	go pulse.CLI.Setup()
-	// Setup server
-	go pulse.Server.Init(&pulse.DB)
-	wg.Wait()
-}
 
-/**
+	// Add error channel to catch shutdown errors
+	errChan := make(chan error, 1)
 
- */
-func setLogLevel(level string) {
-	logLevel, err := log.ParseLevel(level)
-	if err != nil {
-		panic(err.Error())
-	}
-	log.SetLevel(logLevel)
-	if level == "debug" {
-		log.Info("**** DEBUG LOGGING ENABLED ****")
-	}
-}
-
-/**
-Handle OS signals
-*/
-func handleSignals() {
-	var sig os.Signal
-	signal.Notify(pulse.Sigs, hookableSignals...)
 	for {
-		sig = <-pulse.Sigs
-		signalHooks(PRE_SIGNAL, sig)
+		sig := <-sigChan
 		switch sig {
 		case syscall.SIGUSR2:
-			// Shutdown our server
-			pulse.Server.Shutdown()
-			// Reload our config
-			pulse.DB.Config.Reload()
-			// Start a new server
-			go pulse.Server.Setup()
-			break
-		case syscall.SIGINT:
-			fallthrough
-		case syscall.SIGTERM:
-			// Shutdown our service
-			pulse.Server.Shutdown()
-			os.Exit(0)
+			// Reload configuration
+			logger.Info("Reloading configuration...")
+			if err := cfg.Reload(); err != nil {
+				logger.Errorf("Failed to reload config: %v", err)
+				continue
+			}
+			// Restart server with new config
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				srv.Stop()
+				srv = server.NewServer(cfg, logger, memberList, healthChecker)
+				if err := srv.Start(); err != nil {
+					errChan <- fmt.Errorf("failed to restart server: %v", err)
+				}
+			}()
+
+		case syscall.SIGINT, syscall.SIGTERM:
+			logger.Info("Initiating graceful shutdown...")
+
+			// Stop health checker first
+			logger.Debug("Stopping health checker...")
+			healthChecker.Stop()
+
+			// Stop server
+			logger.Debug("Stopping server...")
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				srv.Stop()
+			}()
+
+			// Wait for all components to shut down
+			logger.Debug("Waiting for all components to shut down...")
+			done := make(chan struct{})
+			go func() {
+				wg.Wait()
+				close(done)
+			}()
+
+			// Wait for shutdown with timeout
+			select {
+			case <-done:
+				logger.Info("Graceful shutdown completed")
+				os.Exit(0)
+			case err := <-errChan:
+				logger.Errorf("Error during shutdown: %v", err)
+				os.Exit(1)
+			case <-time.After(10 * time.Second):
+				logger.Error("Shutdown timed out, forcing exit")
+				os.Exit(1)
+			}
 		}
-		signalHooks(POST_SIGNAL, sig)
 	}
 }
 
-/**
+// initQuorumFlags initializes flags for quorum commands
+func initQuorumFlags(rootCmd *cobra.Command) {
+	// Find quorum command
+	var quorumCmd *cobra.Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == "quorum" {
+			quorumCmd = cmd
+			break
+		}
+	}
 
- */
-func signalHooks(ppFlag int, sig os.Signal) {
-	if _, notSet := pulse.SignalHooks[ppFlag][sig]; !notSet {
+	if quorumCmd == nil {
 		return
 	}
-	for _, f := range pulse.SignalHooks[ppFlag][sig] {
-		f()
+
+	// Find and initialize list-sessions command flags
+	for _, cmd := range quorumCmd.Commands() {
+		if cmd.Name() == "list-sessions" {
+			cmd.Flags().Bool("include-completed", false, "Include completed voting sessions")
+		} else if cmd.Name() == "config" {
+			cmd.Flags().Int("min-nodes", 2, "Minimum number of nodes required for quorum")
+			cmd.Flags().Bool("majority-mode", false, "Use majority of nodes for quorum instead of fixed minimum")
+		}
 	}
-	return
+}
+
+func setupLogging(cfg *config.Config, logger *log.Logger) error {
+	// Setup file logging
+	logFile, err := os.OpenFile(cfg.Pulse.LogFileLocation, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %v", err)
+	}
+
+	// Create distributed logger
+	pulseLogger, err := logging.NewLogger(nil) // We'll need to implement broadcast later
+	if err != nil {
+		return fmt.Errorf("failed to create distributed logger: %v", err)
+	}
+
+	// Add hooks
+	logger.AddHook(pulseLogger)
+
+	// Create a multi-writer for both file and stdout
+	mw := io.MultiWriter(os.Stdout, logFile)
+	logger.SetOutput(mw)
+
+	return nil
 }

@@ -17,77 +17,104 @@
 package logging
 
 import (
-	log "github.com/sirupsen/logrus"
-	"github.com/ssgreg/journalhook"
-	"github.com/syleron/pulseha/packages/client"
+	"sync"
+
+	"github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/rpc"
-	"os"
 )
 
 type Logging struct {
-	Logger *log.Logger
-	Level    rpc.LogsRequest_Level
-	Hostname string
-	Broadcast
+	sync.Mutex
+	Broadcast func(*rpc.LogsRequest) error
 }
-
-type Broadcast func(funcName client.ProtoFunction, data interface{}) []error
 
 // NewLogger returns a new distributes logging object
-func NewLogger(broadcast Broadcast) (Logging, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return Logging{}, err
+func NewLogger(broadcast func(*rpc.LogsRequest) error) (*Logging, error) {
+	return &Logging{
+		Broadcast: broadcast,
+	}, nil
+}
+
+// Fire implements the logrus.Hook interface
+func (l *Logging) Fire(entry *logrus.Entry) error {
+	l.Lock()
+	defer l.Unlock()
+
+	if l.Broadcast == nil {
+		return nil
 	}
-	// Set our memberlist
-	logging := Logging{
-		log.New(),
-		rpc.LogsRequest_INFO,
-		hostname,
-		broadcast,
+
+	// Convert logrus level to rpc LogLevel
+	var level rpc.LogLevel
+	switch entry.Level {
+	case logrus.DebugLevel:
+		level = rpc.LogLevel_DEBUG
+	case logrus.InfoLevel:
+		level = rpc.LogLevel_INFO
+	case logrus.WarnLevel:
+		level = rpc.LogLevel_WARNING
+	case logrus.ErrorLevel:
+		level = rpc.LogLevel_ERROR
+	default:
+		level = rpc.LogLevel_INFO
 	}
-	// Setup journal
-	hook, err := journalhook.NewJournalHook()
-	if err != nil {
-		return Logging{}, err
-	}
-	// Attach our journal hook
-	logging.Logger.Hooks.Add(hook)
-	// Return with our logger
-	return logging, nil
-}
 
-// Debug Send a debug message to the cluster
-func (l *Logging) Debug(message string) {
-	if l.Level == rpc.LogsRequest_DEBUG {
-		l.Logger.Debugf("[%s] %s", l.Hostname, message)
-		l.send(message, rpc.LogsRequest_DEBUG)
-	}
-}
-
-// Warn sends a warning message to the cluster
-func (l *Logging) Warn(message string) {
-	l.Logger.Warnf("[%s] %s", l.Hostname, message)
-	l.send(message, rpc.LogsRequest_WARNING)
-}
-
-// Info sends a info message to the cluster
-func (l *Logging) Info(message string) {
-	l.Logger.Infof("[%s] %s", l.Hostname, message)
-	l.send(message, rpc.LogsRequest_INFO)
-}
-
-// Info sends a error message to the cluster
-func (l *Logging) Error(message string) {
-	l.Logger.Errorf("[%s] %s", l.Hostname, message)
-	l.send(message, rpc.LogsRequest_ERROR)
-}
-
-// send broadcast a log message to the cluster
-func (l *Logging) send(message string, level rpc.LogsRequest_Level) {
-	l.Broadcast(client.SendLogs, &rpc.LogsRequest{
-		Message: message,
-		Node:    l.Hostname,
+	// Create log request
+	req := &rpc.LogsRequest{
 		Level:   level,
-	})
+		Message: entry.Message,
+		Node:    entry.Data["node"].(string),
+	}
+
+	return l.Broadcast(req)
+}
+
+// Levels implements the logrus.Hook interface
+func (l *Logging) Levels() []logrus.Level {
+	return []logrus.Level{
+		logrus.DebugLevel,
+		logrus.InfoLevel,
+		logrus.WarnLevel,
+		logrus.ErrorLevel,
+	}
+}
+
+// Debug logs a debug message
+func (l *Logging) Debug(msg string) {
+	if l.Broadcast != nil {
+		l.Broadcast(&rpc.LogsRequest{
+			Level:   rpc.LogLevel_DEBUG,
+			Message: msg,
+		})
+	}
+}
+
+// Info logs an info message
+func (l *Logging) Info(msg string) {
+	if l.Broadcast != nil {
+		l.Broadcast(&rpc.LogsRequest{
+			Level:   rpc.LogLevel_INFO,
+			Message: msg,
+		})
+	}
+}
+
+// Warning logs a warning message
+func (l *Logging) Warning(msg string) {
+	if l.Broadcast != nil {
+		l.Broadcast(&rpc.LogsRequest{
+			Level:   rpc.LogLevel_WARNING,
+			Message: msg,
+		})
+	}
+}
+
+// Error logs an error message
+func (l *Logging) Error(msg string) {
+	if l.Broadcast != nil {
+		l.Broadcast(&rpc.LogsRequest{
+			Level:   rpc.LogLevel_ERROR,
+			Message: msg,
+		})
+	}
 }

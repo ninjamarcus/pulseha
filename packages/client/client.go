@@ -18,24 +18,20 @@ package client
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"errors"
-	log "github.com/sirupsen/logrus"
-	"github.com/syleron/pulseha/packages/security"
+	"fmt"
+
+	"github.com/syleron/pulseha/internal/client"
+	"github.com/syleron/pulseha/packages/config"
+	"github.com/syleron/pulseha/packages/network"
+	"github.com/syleron/pulseha/packages/utils"
 	"github.com/syleron/pulseha/rpc"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"io/ioutil"
-	"time"
 )
 
 type Client struct {
-	Connection *grpc.ClientConn
-	Requester  rpc.ServerClient
+	*client.Client
 }
 
-// TODO: This should probably go into an enums folder
+// ProtoFunction represents available RPC functions
 type ProtoFunction int
 
 const (
@@ -68,104 +64,178 @@ func (p ProtoFunction) String() string {
 	return protoFunctions[p-1]
 }
 
+// Node represents a cluster node
+type Node struct {
+	Hostname string
+	IP       string
+	Port     string
+}
+
 // New creates a new instance of our Client
-func (c *Client) New() {}
+func New() (*Client, error) {
+	internalClient, err := client.New()
+	if err != nil {
+		return nil, err
+	}
+	return &Client{Client: internalClient}, nil
+}
 
 // GetProtoFuncList defines the available RPC commands to send.
 func (c *Client) GetProtoFuncList() map[string]interface{} {
-	funcList := map[string]interface{}{
+	return map[string]interface{}{
 		"ConfigSync": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.ConfigSync(ctx, data.(*rpc.ConfigSyncRequest))
+			return c.Server().ConfigSync(ctx, data.(*rpc.ConfigSyncRequest))
 		},
 		"Join": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.Join(ctx, data.(*rpc.JoinRequest))
+			return c.CLI().Join(ctx, data.(*rpc.JoinRequest))
 		},
 		"Leave": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.Leave(ctx, data.(*rpc.LeaveRequest))
+			return c.CLI().Leave(ctx, data.(*rpc.LeaveRequest))
 		},
 		"MakePassive": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.MakePassive(ctx, data.(*rpc.MakePassiveRequest))
+			return c.Server().MakePassive(ctx, data.(*rpc.MakePassiveRequest))
 		},
 		"BringUpIP": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.BringUpIP(ctx, data.(*rpc.UpIpRequest))
+			return c.Server().BringUpIP(ctx, data.(*rpc.UpIpRequest))
 		},
 		"BringDownIP": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.BringDownIP(ctx, data.(*rpc.DownIpRequest))
+			return c.Server().BringDownIP(ctx, data.(*rpc.DownIpRequest))
 		},
 		"HealthCheck": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.HealthCheck(ctx, data.(*rpc.HealthCheckRequest))
+			return c.Server().HealthCheck(ctx, data.(*rpc.HealthCheckRequest))
 		},
 		"Promote": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.Promote(ctx, data.(*rpc.PromoteRequest))
+			return c.CLI().Promote(ctx, data.(*rpc.PromoteRequest))
 		},
 		"Logs": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.Logs(ctx, data.(*rpc.LogsRequest))
+			return c.Server().Logs(ctx, data.(*rpc.LogsRequest))
 		},
 		"Remove": func(ctx context.Context, data interface{}) (interface{}, error) {
-			return c.Requester.Remove(ctx, data.(*rpc.RemoveRequest))
+			return c.Server().Remove(ctx, data.(*rpc.RemoveRequest))
 		},
 	}
-	return funcList
 }
 
 // Connect creates a new client connection and request hostname for TLS verification.
 func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
-	var err error
-	if tlsEnabled {
-		// Load member cert/key
-		peerCert, err := tls.LoadX509KeyPair(
-			security.CertDir+"pulseha.crt",
-			security.CertDir+"pulseha.key",
-		)
-		if err != nil {
-			return errors.New("Could not connect to host: " + err.Error())
-		}
-		// Load CA
-		caCert, err := ioutil.ReadFile(security.CertDir + "ca.crt")
-		if err != nil {
-			return errors.New("Could not connect to host: " + err.Error())
-		}
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
-			return errors.New("failed to append ca certs")
-		}
-		creds := credentials.NewTLS(&tls.Config{
-			InsecureSkipVerify: true,
-			Certificates:       []tls.Certificate{peerCert},
-			RootCAs:            caCertPool,
-		})
-		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(creds))
-	} else {
-		config := &tls.Config{
-			InsecureSkipVerify: true,
-		}
-		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(credentials.NewTLS(config)))
+	return c.Client.Connect(ip, port, tlsEnabled)
+}
+
+// GetLocalNode returns the local node configuration
+func (c *Client) GetLocalNode() (*Node, error) {
+	cfg := c.Client.GetConfig()
+	if !cfg.ClusterCheck() {
+		return nil, fmt.Errorf("no cluster configured")
 	}
+
+	localNode, err := cfg.GetLocalNode()
 	if err != nil {
-		log.Errorf("GRPC client connection error: %s", err.Error())
-		return errors.New("Could not connect to host: " + err.Error())
+		return nil, err
 	}
-	c.Requester = rpc.NewServerClient(c.Connection)
-	log.Debug("Client:Connect() Connection made to " + ip + ":" + port)
-	return nil
+
+	return &Node{
+		Hostname: localNode.Hostname,
+		IP:       localNode.IP,
+		Port:     localNode.Port,
+	}, nil
 }
 
 // Close terminates the client connection.
 func (c *Client) Close() {
-	log.Debug("Client:Close() Connection closed")
-	// Make sure we have a connection before trying to close it
-	if c.Connection != nil {
-		c.Connection.Close()
-	}
+	c.Client.Close()
 }
 
-// Send sends an RPC command over the client connection.
+// Send sends an RPC command over the client connection
 func (c *Client) Send(funcName ProtoFunction, data interface{}) (interface{}, error) {
-	log.Debug("Client:Send() Sending " + funcName.String())
-	funcList := c.GetProtoFuncList()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return funcList[funcName.String()].(func(context.Context, interface{}) (interface{}, error))(
-		ctx, data,
-	)
+	return c.Client.Send(client.ProtoFunction(funcName), data)
+}
+
+// Add method to expose CLI client
+func (c *Client) CLI() rpc.CLIClient {
+	return c.Client.CLI()
+}
+
+// CreateCluster creates a new cluster with the given bind IP and port
+func (c *Client) CreateCluster(bindIP, bindPort, mode string) error {
+	// Get hostname
+	hostname, err := utils.GetHostname()
+	if err != nil {
+		return fmt.Errorf("failed to get hostname: %v", err)
+	}
+
+	// Generate node ID
+	nodeID := c.Client.GetConfig().GenerateNodeID()
+
+	// Create initial config
+	cfg := c.Client.GetConfig()
+	cfg.Pulse.LocalNode = nodeID
+	cfg.Pulse.Mode = mode
+
+	// Add local node to config
+	cfg.Nodes[nodeID] = &config.Node{
+		Hostname: hostname,
+		IP:       bindIP,
+		Port:     bindPort,
+		IPGroups: make(map[string][]string),
+	}
+
+	// Create IP groups for each network interface
+	interfaces := network.GetInterfaceNames()
+	for _, iface := range interfaces {
+		// Skip loopback interface
+		if iface == "lo" {
+			continue
+		}
+
+		// Create group name from interface
+		groupName := fmt.Sprintf("group-%s", iface)
+
+		// Create empty group
+		cfg.Groups[groupName] = []string{}
+
+		// Assign group to interface
+		cfg.Nodes[nodeID].IPGroups[iface] = []string{groupName}
+	}
+
+	// Save config
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("failed to save config: %v", err)
+	}
+
+	return nil
+}
+
+// GetVotingSessions retrieves a list of voting sessions
+func (c *Client) GetVotingSessions(includeCompleted bool) (*rpc.GetVotingSessionsResponse, error) {
+	resp, err := c.CLI().GetVotingSessions(context.Background(), &rpc.GetVotingSessionsRequest{
+		IncludeCompleted: includeCompleted,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// GetVotingSessionDetails retrieves details of a specific voting session
+func (c *Client) GetVotingSessionDetails(sessionID string) (*rpc.GetVotingSessionDetailsResponse, error) {
+	resp, err := c.CLI().GetVotingSessionDetails(context.Background(), &rpc.GetVotingSessionDetailsRequest{
+		SessionId: sessionID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// CastVote casts a vote in a voting session
+func (c *Client) CastVote(sessionID string, voterID string, decision rpc.VoteDecision) (*rpc.CastVoteResponse, error) {
+	resp, err := c.Server().CastVote(context.Background(), &rpc.CastVoteRequest{
+		SessionId: sessionID,
+		VoterId:   voterID,
+		Decision:  decision,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }

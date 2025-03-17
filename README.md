@@ -6,287 +6,318 @@
 
 ```
 
-<a href="https://travis-ci.org/Syleron/PulseHA"><img src="https://travis-ci.org/Syleron/PulseHA.svg?branch=master"><a/>
-<a href="https://godoc.org/github.com/Syleron/PulseHA"><img src="https://godoc.org/github.com/Syleron/PulseHA?status.svg"><a/>
-<a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg"><a/>
-  
-## Overview
-PulseHA is an active-passive cluster communications manager (CCM) daemon written in GO that provides a means of communication and membership monitoring within a network cluster. By utilising Remote Procedure Calls (RPC) using Google's GRPC, PulseHA provides a reliable method of communication to ensure network high availability.
+PulseHA is a powerful high availability cluster management system designed to provide automated failover and IP address management across multiple nodes in a cluster.
 
 ## Why
 PulseHA attempts to solve high availability with a more simple approach but without restricting functionality with the use of additional custom plugins.
 
 ## Features
-- Remote procedural calls via GRPC
-- Active/Passive cluster membership monitoring
-- Failure detection and recovery
-- Floating IP fencing (requires network plugin)
-- IPv4 & IPv6 support
-- Plugin support (for additional health checks and networking logic)
-- Command line interface (CLI)
 
-## Prerequisites
+- **Multiple Operating Modes**
+  - Active-Passive: Traditional HA setup with one active node and multiple passive backups
+  - Active-Active: Distributed load across multiple active nodes with intelligent IP distribution
 
-* Go v1.9 or later
-* Protoc v3.4 or later
+- **Automatic Failover**
+  - Health monitoring of cluster nodes
+  - Automatic IP redistribution on node failure
+  - Configurable failover thresholds and intervals
+  - Auto-failback capability when failed nodes recover
 
-## System Requirements
+- **IP Management**
+  - Floating IP group management
+  - Dynamic IP distribution based on node capacity
+  - Graceful IP failover and failback
+  - GARP (Gratuitous ARP) support for network updates
 
-* Centos 7+
+- **Security**
+  - TLS encryption for inter-node communication
+  - Certificate-based authentication
+  - Secure cluster join tokens
 
-## Build & Install
+- **Monitoring & Status**
+  - Real-time cluster health monitoring
+  - Node status tracking
+  - Latency measurements
+  - Detailed logging with configurable levels
 
-First you will need to clone this repository into `$GOPATH/src/github.com/Syleron/PulseHA` and execute the following command(s):
+## Installation
 
+```bash
+# Clone the repository
+git clone https://github.com/syleron/pulseha.git
 
-```
-$ sudo make
-...
-```
-
-Lastly, you can install PulseHA by executing the following:
-
-```
-$ sudo make install
-...
-```
-
-## Commands
-
-### Cluster
-
-Cluster status
-
-```
-$ pulsectl status
+# Build the project
+cd pulseha
+go build -o pulseha cmd/pulseha/main.go
 ```
 
-Create a cluster
+## Configuration
 
-```
-$ pulsectl create <bind ip> <bind port>
-```
+The configuration file is stored in `~/.pulseha/config.json` by default. Key configuration options include:
 
-Join a cluster
-
-```
-$ pulsectl join -bind-ip=<bind ip> -bind-port=<bind port> -token=<cluster token> <dest ip> <dest port>
-```
-
-Leave a cluster
-
-```
-$ pulsectl leave
-```
-
-Remove from a cluster
-
-```
-$ pulsectl remove <member hostname>
-```
-
-Promote cluster member to become active
-
-```
-$ pulsectl promote <member hostname>
+```json
+{
+  "pulseha": {
+    "hcs_interval": 1000,
+    "fos_interval": 5000,
+    "fo_limit": 10000,
+    "local_node": "",
+    "cluster_token": "",
+    "logging_level": "info",
+    "auto_failback": true,
+    "log_to_file": true,
+    "log_file_location": "~/.pulseha/pulseha.log",
+    "mode": "active-passive"
+  },
+  "floating_ip_groups": {},
+  "nodes": {},
+  "plugins": {}
+}
 ```
 
-Generate new cluster token
+## Usage
 
-```
-$ pulsectl token
-```
+### Creating a Cluster
 
-### Groups
+```bash
+# Create a new cluster in active-passive mode (default)
+pulseha cluster create --bind-ip <IP>
 
-Create Floating IP Group
-
-```
-$ pulsectl -name=<group name> new
+# Create a new cluster in active-active mode
+pulseha cluster create --bind-ip <IP> --active-active
 ```
 
-Delete Floating IP Group
+### Joining a Cluster
 
-```
-$ pulsectl -name=<group name> delete
-```
-
-Assign Floating IP Group
-
-```
-$ pulsectl -name=<group name> -node=<member hostname> -iface=<net iface> assign
+```bash
+# Join an existing cluster
+pulseha cluster join --hostname <EXISTING_NODE> --token <TOKEN>
 ```
 
-Un-assign Floating IP Group
+### Managing Cluster Mode
 
-```
-$ pulsectl -name=<group name> -node=<member hostname> -iface=<net iface> unassign
-```
-
-Add Floating IP to a Floating IP Group
-
-```
-$ pulsectl groups -name=<group name> -node=<member hostname> -ips=<ip CIDR> -iface=<net iface> add
+```bash
+# Set cluster mode
+pulseha cluster mode set --mode active-passive
+pulseha cluster mode set --mode active-active
 ```
 
-Remove Floating IP to a Floating IP Group
+### Managing IP Groups
 
-```
-$ pulsectl groups -name=<group name> -node=<member hostname> -ips=<ip CIDR> -iface=<net iface> remove
-```
+```bash
+# Create a new IP group
+pulseha group create --name <GROUP_NAME>
 
-### Certificates
+# List all IP groups and their assignments
+pulseha group list
 
-Re-generate TLS certificates
+# List groups in JSON format
+pulseha group list --json
 
-```
-$ pulsectl cert <bind ip>
-```
+# Add IPs to a group
+pulseha group add-ip --group <GROUP_NAME> --ip <IP_ADDRESS>
 
-### Config
-
-Update/Change config value
-
-```
-$ pulsectl config <config key> <config value>
+# Assign group to interface
+pulseha group assign --group <GROUP_NAME> --hostname <NODE> --interface <IFACE>
 ```
 
-### Network
+### Monitoring
 
-Re-sync network interfaces
+```bash
+# View cluster status
+pulseha status
 
-```
-$ pulsectl network resync
-```
-
-### Help
-
-Pulsectl help
-
-```
-$ pulsectl help
+# View status in JSON format
+pulseha status --json
 ```
 
-Pulsectl version
+### Node Management
 
-```
-$ pulsectl version
-```
+```bash
+# Promote a node to active state
+pulseha node promote --hostname <NODE>
 
-## Plugins
-
-PulseHA offers a plugin system to extend the built in functionality available.
-
-Each plugin with configurable options will be stored as part of the main PulseHA config.
-
-The following types of plugins are currently available:
-
-* Health Checks
-* Networking
-
-### PulseHA-Netcore
-
-PulseHA requires a networking plugin for any floating address fencing.
-
-The default networking plugin can be built using the following command:
-
-```
-$ sudo make netcore
-...
+# Remove a node from the cluster
+pulseha node remove --hostname <NODE>
 ```
 
-Use the following command to install the plugin:
+## Architecture
+
+PulseHA uses a distributed architecture where each node maintains its own state and communicates with other nodes via gRPC. Key components include:
+
+- **Member Management**: Handles node status, health checks, and cluster membership
+- **IP Distribution**: Manages floating IP assignment based on cluster mode
+- **Health Checker**: Monitors node health and triggers failover when needed
+- **Configuration Sync**: Ensures cluster-wide configuration consistency
+
+## Failover Logic
+
+PulseHA implements a sophisticated failover mechanism to ensure high availability of services. The failover logic differs based on the cluster mode (active-passive or active-active).
+
+### Health Checking Process
+
+1. **Regular Health Checks**: Each node performs health checks on all other nodes in the cluster at configurable intervals (default: 1 second).
+   
+2. **Connection Verification**: Health checks include basic TCP connectivity tests to verify that nodes are reachable.
+   
+3. **Latency Measurement**: Response times are measured and recorded to help identify performance degradation.
+   
+4. **IP Verification**: For nodes hosting floating IPs, additional checks verify that the assigned IPs are properly functioning.
+
+### Failure Detection
+
+1. **Failure Thresholds**: A node is considered failed after multiple consecutive failed health checks (configurable via `fo_limit`).
+   
+2. **Partial Failures**: PulseHA can detect partial failures where only specific IPs on a node have failed while the node itself remains operational.
+   
+3. **Status Transitions**: Nodes transition through different states (Active, Passive, Unknown, PartialActive) based on health check results.
+
+### Failover Process in Active-Passive Mode
+
+1. **Active Node Failure**: When the active node fails:
+   - The node's status changes to `Unknown`
+   - All floating IPs are redistributed to a passive node
+   - One passive node is promoted to active status
+   
+2. **IP Reassignment**: The newly promoted active node:
+   - Brings up all floating IPs on its configured interfaces
+   - Sends Gratuitous ARP packets to update network switches
+   - Takes over all services associated with those IPs
+
+3. **Recovery**: When the failed node recovers:
+   - It rejoins the cluster as a passive node
+   - If auto-failback is enabled, it may be promoted back to active after a stabilization period
+
+### Failover Process in Active-Active Mode
+
+1. **Node Failure**: When a node in active-active mode fails:
+   - The node's status changes to `Unknown`
+   - Only the IPs hosted by the failed node are redistributed
+   - Other nodes remain in their current state
+   
+2. **IP Distribution**: Failed IPs are distributed among remaining nodes based on:
+   - Current load factor of each node
+   - Configured capacity of each node
+   - Network topology considerations
+   
+3. **Partial Activation**: Nodes receiving redistributed IPs may become `PartialActive` if they weren't already active.
+
+4. **Recovery**: When a failed node recovers:
+   - It rejoins as a passive node
+   - If auto-failback is enabled, it gradually receives a portion of IPs back
+   - Load is rebalanced across all available nodes
+
+### Configuration Synchronization
+
+1. **Automatic Sync**: Configuration changes (like creating groups or adding IPs) are automatically synchronized to all nodes.
+
+2. **Consistency Checks**: Regular verification ensures all nodes have consistent configuration.
+
+3. **Conflict Resolution**: In case of conflicts, a deterministic resolution strategy is applied based on node priority.
+
+### Handling Network Partitions
+
+1. **Split-Brain Prevention**: PulseHA implements mechanisms to prevent split-brain scenarios where multiple nodes believe they are active.
+
+2. **Quorum-Based Decisions**: In clusters with more than two nodes, quorum is used to determine which partition should remain active.
+
+3. **Fencing**: In severe cases, automatic fencing can be configured to ensure failed nodes don't interfere with service operation.
+
+## Development
+
+### Project Structure
 
 ```
-$ sudo install plugin-netcore
-...
+pulseha/
+├── cmd/                    # Command-line interface
+├── internal/
+│   ├── client/            # Client implementation
+│   ├── membership/        # Cluster membership management
+│   ├── server/            # Server implementation
+│   └── cli/               # CLI commands
+├── packages/
+│   ├── config/            # Configuration management
+│   ├── security/          # TLS and authentication
+│   ├── network/           # Network operations
+│   └── utils/             # Utility functions
+├── rpc/                   # gRPC definitions
+└── tests/                 # Integration and unit tests
 ```
 
-There are no configurable options for this plugin.
+## Testing Framework
 
-### PulseHA-Email-Alerts
+PulseHA includes a comprehensive testing framework that allows for thorough testing of cluster functionality without requiring root privileges or actual network interfaces.
 
-The email alerts plugin offers email notifications upon failover.
+### Test Utilities
 
-Use the following command to build this plugin:
+The `tests/testutils` package provides a robust framework for simulating PulseHA clusters:
 
-```
-$ sudo make genemailalerts
-...
-```
+- **TestCluster**: Simulates a complete PulseHA cluster environment
+- **TestNode**: Represents individual nodes in the test cluster with full functionality
+- **Status Simulation**: Allows direct control of node statuses for testing failover scenarios
+- **Group Management**: Supports creating, modifying, and assigning IP groups
+- **Failover Testing**: Enables testing of IP failover between nodes
 
-Use the following command to install the plugin:
+### Integration Tests
 
-```
-$ sudo install plugin-genemailalerts
-...
-```
+Integration tests in the `tests/integration` directory verify the core functionality of PulseHA:
 
-The following are configurable options:
+- **Group Management**: Tests creating, modifying, and assigning IP groups
+- **Failover Scenarios**: Tests IP failover between nodes in various configurations
+- **Node Joining**: Tests nodes joining and leaving the cluster
+- **Configuration Sync**: Tests synchronization of configuration between nodes
 
-* SmtpHost (Default: 127.0.0.1) - The network address for your SMTP host.
-* SmtpPort (Default: 587) - The network port for your SMTP host.
-* Username (Default: ) - Email credentials for sending via SMTP host.
-* Password (Default: ) - Email credentials for sending via SMTP host.
-* Email (Default: ) - The from address that will be used when sending an email via the SMTP host.
+### Running Tests
 
-### PulseHA-Ping-Groups
+```bash
+# Run all tests
+go test ./...
 
-The Ping Groups plugin offers you to configure a single or group of network addresses as ICMP health checks.
+# Run specific integration tests
+go test ./tests/integration/groups_test.go
 
-Note: Currently ONLY has IPv4 support.
-
-Use the following command to build this plugin:
-
-```
-$ sudo make hcping
-...
+# Run a specific test function
+go test ./tests/integration/groups_test.go -run TestGroupManagement
 ```
 
-Use the following command to install the plugin:
+### Test Environment
 
-```
-$ sudo install plugin-hcping
-...
-```
+The test environment uses:
 
-The following are configurable options:
+- In-memory configuration instead of disk files
+- Localhost networking to avoid network interface requirements
+- Status simulation to avoid actual network interface manipulation
+- Environment variables to bypass hostname validation and other production checks
 
-* Groups (Default: []) - An array of group objects that contain a name string and network IP array.
-* Weight (Default: 10) - The PulseHA score weighting for this plugin if all checks pass.
-* Threshold (Default: 1) - The maximum number of address in a group that can fail before the health check fails.
-* FailureCount (Default: 1) - The maximum number of ICMP attempts per address before flagging the network IP as unavailable.
+### Non-Root Testing
 
-### PulseHA-Serial
+Most tests can run without root privileges by:
 
-The Serial plugin offers serial as an additional method of communication.
+- Setting the `PULSEHA_TEST` environment variable
+- Using the test utilities that simulate network operations
+- Bypassing actual IP assignment operations
 
-Use the following command to build this plugin:
+### Recent Improvements
 
-```
-$ sudo make hcserial
-...
-```
+The testing framework has been enhanced with several key improvements:
 
-Use the following command to install the plugin:
+- **Simplified Failover Testing**: Direct control of node statuses allows for reliable testing of failover scenarios without complex network operations
+- **Enhanced GetActiveIPs Method**: Improved IP tracking during failover to ensure proper IP redistribution
+- **Cluster Cleanup**: Automatic cleanup of test resources to prevent interference between tests
+- **Timeout Management**: Better handling of test timeouts to prevent long-running tests
+- **Status Synchronization**: Improved synchronization of node statuses across the cluster during tests
+- **Group Management Testing**: Enhanced testing of IP group creation, assignment, and failover
 
-```
-$ sudo install plugin-hcserial
-...
-```
+These improvements make the tests more reliable, faster, and able to run without root privileges in most cases.
 
-The following are configurable options:
+## Contributing
 
-* PortName (Default: /dev/ttyS0) - The name serial port on Linux.
-* BaudRate (Default: 9600) - The configured baud rate for the specified port.
-
-## Acknowledgments
-
-Thank you to all authors who have and continue to contribute to this project.
-
-- [Ben Cabot](https://github.com/bencabot) for your contributions.
+Contributions are welcome! Please feel free to submit pull requests.
 
 ## License
-PulseHA source code is available under the AGPL License which can be found in the LICENSE file.
 
-Copyright (c) 2017-2022 Andrew Zak <andrew@linux.com>
+This project is licensed under the GNU Affero General Public License v3.0 - see the LICENSE file for details.
+
+## Support
+
+For issues, questions, or contributions, please visit our [GitHub repository](https://github.com/syleron/pulseha).

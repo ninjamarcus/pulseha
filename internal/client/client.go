@@ -1,0 +1,509 @@
+package client
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/syleron/pulseha/packages/config"
+	"github.com/syleron/pulseha/packages/security"
+	"github.com/syleron/pulseha/rpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+type Client struct {
+	Connection *grpc.ClientConn
+	server     rpc.ServerClient
+	cliClient  rpc.CLIClient
+}
+
+// ProtoFunction represents available RPC functions
+type ProtoFunction int
+
+const (
+	SendConfigSync ProtoFunction = 1 + iota
+	SendJoin
+	SendLeave
+	SendMakePassive
+	SendBringUpIP
+	SendBringDownIP
+	SendHealthCheck
+	SendPromote
+	SendLogs
+	SendRemove
+	SendCreateGroup
+	SendAddIPToGroup
+	SendRemoveIPFromGroup
+	SendAssignGroupToNode
+	SendListGroups
+	SendCreateCluster
+)
+
+var protoFunctions = []string{
+	"ConfigSync",
+	"Join",
+	"Leave",
+	"MakePassive",
+	"BringUpIP",
+	"BringDownIP",
+	"HealthCheck",
+	"Promote",
+	"Logs",
+	"Remove",
+	"CreateGroup",
+	"AddIPToGroup",
+	"RemoveIPFromGroup",
+	"AssignGroupToNode",
+	"ListGroups",
+	"CreateCluster",
+}
+
+func (p ProtoFunction) String() string {
+	return protoFunctions[p-1]
+}
+
+// New creates a new client with default local connection
+func New() (*Client, error) {
+	cfg := config.New()
+	localNode, err := cfg.GetLocalNode()
+	if err != nil {
+		// If no local node is configured, use default connection
+		conn, err := grpc.Dial("localhost:8080", grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect: %v", err)
+		}
+		return &Client{
+			Connection: conn,
+			server:     rpc.NewServerClient(conn),
+			cliClient:  rpc.NewCLIClient(conn),
+		}, nil
+	}
+
+	// Use configured connection details
+	conn, err := grpc.Dial(
+		fmt.Sprintf("%s:%s", localNode.IP, localNode.Port),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect: %v", err)
+	}
+
+	return &Client{
+		Connection: conn,
+		server:     rpc.NewServerClient(conn),
+		cliClient:  rpc.NewCLIClient(conn),
+	}, nil
+}
+
+// GetProtoFuncList defines the available RPC commands
+func (c *Client) GetProtoFuncList() map[string]interface{} {
+	return map[string]interface{}{
+		"ConfigSync": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.ConfigSync(ctx, data.(*rpc.ConfigSyncRequest))
+		},
+		"Join": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.Join(ctx, data.(*rpc.JoinRequest))
+		},
+		"Leave": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.Leave(ctx, data.(*rpc.LeaveRequest))
+		},
+		"MakePassive": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.MakePassive(ctx, data.(*rpc.MakePassiveRequest))
+		},
+		"BringUpIP": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.BringUpIP(ctx, data.(*rpc.UpIpRequest))
+		},
+		"BringDownIP": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.BringDownIP(ctx, data.(*rpc.DownIpRequest))
+		},
+		"HealthCheck": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.HealthCheck(ctx, data.(*rpc.HealthCheckRequest))
+		},
+		"Promote": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.Promote(ctx, data.(*rpc.PromoteRequest))
+		},
+		"Logs": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.Logs(ctx, data.(*rpc.LogsRequest))
+		},
+		"Remove": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.server.Remove(ctx, data.(*rpc.RemoveRequest))
+		},
+		"CreateGroup": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.CreateGroup(ctx, data.(*rpc.CreateGroupRequest))
+		},
+		"AddIPToGroup": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.AddIPToGroup(ctx, data.(*rpc.AddIPToGroupRequest))
+		},
+		"RemoveIPFromGroup": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.RemoveIPFromGroup(ctx, data.(*rpc.RemoveIPFromGroupRequest))
+		},
+		"AssignGroupToNode": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.AssignGroupToNode(ctx, data.(*rpc.AssignGroupRequest))
+		},
+		"ListGroups": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.ListGroups(ctx, data.(*rpc.ListGroupsRequest))
+		},
+		"CreateCluster": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.CreateCluster(ctx, data.(*rpc.CreateClusterRequest))
+		},
+	}
+}
+
+// Connect creates a new client connection with TLS support
+func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
+	var err error
+	if tlsEnabled {
+		// Load member cert/key
+		peerCert, err := tls.LoadX509KeyPair(
+			security.CertDir+"pulseha.crt",
+			security.CertDir+"pulseha.key",
+		)
+		if err != nil {
+			return fmt.Errorf("could not connect to host: %v", err)
+		}
+		// Load CA
+		caCert, err := ioutil.ReadFile(security.CertDir + "ca.crt")
+		if err != nil {
+			return fmt.Errorf("could not connect to host: %v", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			return errors.New("failed to append ca certs")
+		}
+		creds := credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{peerCert},
+			RootCAs:            caCertPool,
+		})
+		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(creds))
+	} else {
+		// Use insecure connection for non-TLS
+		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+	if err != nil {
+		log.Errorf("GRPC client connection error: %s", err.Error())
+		return fmt.Errorf("could not connect to host: %v", err)
+	}
+	c.server = rpc.NewServerClient(c.Connection)
+	c.cliClient = rpc.NewCLIClient(c.Connection)
+	log.Debug("Client:Connect() Connection made to " + ip + ":" + port)
+	return nil
+}
+
+// Close terminates the client connection
+func (c *Client) Close() {
+	log.Debug("Client:Close() Connection closed")
+	if c.Connection != nil {
+		c.Connection.Close()
+	}
+}
+
+// Send sends an RPC command over the client connection
+func (c *Client) Send(funcName ProtoFunction, data interface{}) (interface{}, error) {
+	log.Debug("Client:Send() Sending " + funcName.String())
+	funcList := c.GetProtoFuncList()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return funcList[funcName.String()].(func(context.Context, interface{}) (interface{}, error))(
+		ctx, data,
+	)
+}
+
+// Add this method to expose the server client
+func (c *Client) Server() rpc.ServerClient {
+	return c.server
+}
+
+// Add this method to expose the CLI client
+func (c *Client) CLI() rpc.CLIClient {
+	return c.cliClient
+}
+
+// ClusterStatus represents the current state of the cluster
+type ClusterStatus struct {
+	Members []Member    `json:"members"`
+	Groups  []GroupInfo `json:"groups"`
+	Mode    string      `json:"mode"`
+}
+
+type Member struct {
+	Hostname      string   `json:"hostname"`
+	IP            string   `json:"ip"`
+	Port          string   `json:"port"`
+	Status        string   `json:"status"`
+	IPs           []string `json:"ips"`
+	ActiveIPs     []string `json:"active_ips"`
+	LastResponse  string   `json:"last_response"`
+	Latency       string   `json:"latency"`
+	PartialActive bool     `json:"partial_active"`
+}
+
+// GroupInfo represents a floating IP group
+type GroupInfo struct {
+	Name        string            `json:"name"`
+	IPs         []string          `json:"ips"`
+	Assignments []GroupAssignment `json:"assignments"`
+}
+
+// GroupAssignment represents a group assignment to a node interface
+type GroupAssignment struct {
+	Hostname  string `json:"hostname"`
+	Interface string `json:"interface"`
+}
+
+// CreateCluster initializes a new cluster
+func (c *Client) CreateCluster(bindIP, bindPort, mode string) error {
+	r, err := c.Send(
+		SendCreateCluster,
+		&rpc.CreateClusterRequest{
+			BindIp:   bindIP,
+			BindPort: bindPort,
+			Mode:     mode,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	response := r.(*rpc.CreateClusterResponse)
+	if !response.Success {
+		return errors.New(response.Message)
+	}
+	fmt.Println(response.Message)
+	return nil
+}
+
+// JoinCluster joins an existing cluster
+func (c *Client) JoinCluster(hostname, token string) error {
+	_, err := c.CLI().Join(context.Background(), &rpc.JoinRequest{
+		Hostname: hostname,
+		Token:    token,
+	})
+	return err
+}
+
+// LeaveCluster removes this node from the cluster
+func (c *Client) LeaveCluster() error {
+	_, err := c.CLI().Leave(context.Background(), &rpc.LeaveRequest{})
+	return err
+}
+
+// GetClusterStatus returns the current cluster status
+func (c *Client) GetClusterStatus() (*ClusterStatus, error) {
+	resp, err := c.CLI().Status(context.Background(), &rpc.StatusRequest{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Get current config to read the mode
+	cfg := c.GetConfig()
+
+	status := &ClusterStatus{
+		Members: make([]Member, len(resp.Members)),
+		Groups:  make([]GroupInfo, 0), // Initialize empty groups slice
+		Mode:    cfg.Pulse.Mode,       // Read mode from config instead of hardcoding
+	}
+
+	for i, m := range resp.Members {
+		status.Members[i] = Member{
+			Hostname:      m.Hostname,
+			Status:        m.Status,
+			IPs:           m.ActiveIps,
+			ActiveIPs:     m.ActiveIps,
+			LastResponse:  m.LastResponse,
+			Latency:       m.Latency,
+			PartialActive: m.PartialActive,
+			IP:            m.Ip,
+			Port:          m.Port,
+		}
+
+		// Log the latency for debugging
+		log.Debugf("Member %s latency from RPC: %s", m.Hostname, m.Latency)
+	}
+
+	// Get group information from the config since we can't rely on the proto update yet
+	for groupName, ips := range cfg.Groups {
+		group := GroupInfo{
+			Name:        groupName,
+			IPs:         ips,
+			Assignments: make([]GroupAssignment, 0),
+		}
+
+		// Find assignments for this group
+		for _, node := range cfg.Nodes {
+			for iface, assignedGroups := range node.IPGroups {
+				for _, g := range assignedGroups {
+					if g == groupName {
+						group.Assignments = append(group.Assignments, GroupAssignment{
+							Hostname:  node.Hostname,
+							Interface: iface,
+						})
+					}
+				}
+			}
+		}
+
+		status.Groups = append(status.Groups, group)
+	}
+
+	return status, nil
+}
+
+// CreateGroup creates a new IP group
+func (c *Client) CreateGroup(name string) error {
+	r, err := c.Send(
+		SendCreateGroup,
+		&rpc.CreateGroupRequest{
+			Name: name,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	response := r.(*rpc.CreateGroupResponse)
+	if !response.Success {
+		return errors.New(response.Message)
+	}
+	fmt.Println(response.Message)
+	return nil
+}
+
+// PromoteNode promotes a node to active state
+func (c *Client) PromoteNode(hostname string, ips []string) error {
+	_, err := c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
+		Hostname: hostname,
+		Ips:      ips,
+	})
+	return err
+}
+
+// GetConfig returns the current configuration
+func (c *Client) GetConfig() *config.Config {
+	return config.New()
+}
+
+// SetClusterMode changes the cluster operation mode
+func (c *Client) SetClusterMode(mode string) error {
+	// Get current config
+	cfg := c.GetConfig()
+	if !cfg.ClusterCheck() {
+		return fmt.Errorf("no cluster configured")
+	}
+
+	// Validate mode
+	if mode != "active-passive" && mode != "active-active" {
+		return fmt.Errorf("invalid mode %q: must be either 'active-passive' or 'active-active'", mode)
+	}
+
+	// Send RPC request to update mode
+	resp, err := c.CLI().SetMode(context.Background(), &rpc.SetModeRequest{
+		Mode: mode,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set cluster mode: %v", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("failed to set cluster mode: %s", resp.Message)
+	}
+
+	// The server will handle updating the configuration and syncing with other nodes
+	return nil
+}
+
+// AddIPToGroup adds an IP to a group
+func (c *Client) AddIPToGroup(groupName, ip string) error {
+	r, err := c.Send(
+		SendAddIPToGroup,
+		&rpc.AddIPToGroupRequest{
+			GroupName: groupName,
+			Ip:        ip,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	response := r.(*rpc.AddIPToGroupResponse)
+
+	// Display any warnings
+	for _, warning := range response.Warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+
+	if !response.Success {
+		return errors.New(response.Message)
+	}
+	fmt.Println(response.Message)
+	return nil
+}
+
+// RemoveIPFromGroup removes an IP from a group
+func (c *Client) RemoveIPFromGroup(groupName, ip string) error {
+	r, err := c.Send(
+		SendRemoveIPFromGroup,
+		&rpc.RemoveIPFromGroupRequest{
+			GroupName: groupName,
+			Ip:        ip,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	response := r.(*rpc.RemoveIPFromGroupResponse)
+
+	// Display any warnings
+	for _, warning := range response.Warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+
+	if !response.Success {
+		return errors.New(response.Message)
+	}
+	fmt.Println(response.Message)
+	return nil
+}
+
+// AssignGroupToNode assigns a group to a node's interface
+func (c *Client) AssignGroupToNode(groupName, hostname, iface string) error {
+	r, err := c.Send(
+		SendAssignGroupToNode,
+		&rpc.AssignGroupRequest{
+			GroupName: groupName,
+			Hostname:  hostname,
+			Interface: iface,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	response := r.(*rpc.AssignGroupResponse)
+	if !response.Success {
+		return errors.New(response.Message)
+	}
+	fmt.Println(response.Message)
+	return nil
+}
+
+// ListGroups lists all IP groups
+func (c *Client) ListGroups(jsonOutput bool) (string, []*rpc.GroupInfo, error) {
+	r, err := c.Send(
+		SendListGroups,
+		&rpc.ListGroupsRequest{
+			JsonOutput: jsonOutput,
+		},
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	response := r.(*rpc.ListGroupsResponse)
+	if !response.Success {
+		return "", nil, errors.New(response.Message)
+	}
+	return response.JsonData, response.Groups, nil
+}

@@ -1,0 +1,360 @@
+syntax = "proto3";
+
+package rpc;
+
+option go_package = "./rpc";
+
+// Log Level Enum
+enum LogLevel {
+    DEBUG = 0;
+    INFO = 1;
+    WARNING = 2;
+    ERROR = 3;
+}
+
+// CLI Service
+service CLI {
+    rpc Join(JoinRequest) returns (JoinResponse) {}
+    rpc Leave(LeaveRequest) returns (LeaveResponse) {}
+    rpc Status(StatusRequest) returns (StatusResponse) {}
+    rpc Promote(PromoteRequest) returns (PromoteResponse) {}
+    rpc SetMode(SetModeRequest) returns (SetModeResponse) {}
+    // New configuration management methods
+    rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
+    rpc AddIPToGroup(AddIPToGroupRequest) returns (AddIPToGroupResponse) {}
+    rpc RemoveIPFromGroup(RemoveIPFromGroupRequest) returns (RemoveIPFromGroupResponse) {}
+    rpc AssignGroupToNode(AssignGroupRequest) returns (AssignGroupResponse) {}
+    rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
+    rpc CreateCluster(CreateClusterRequest) returns (CreateClusterResponse) {}
+    // Quorum voting methods
+    rpc GetVotingSessions(GetVotingSessionsRequest) returns (GetVotingSessionsResponse) {}
+    rpc GetVotingSessionDetails(GetVotingSessionDetailsRequest) returns (GetVotingSessionDetailsResponse) {}
+}
+
+// Server Service
+service Server {
+    rpc ConfigSync(ConfigSyncRequest) returns (ConfigSyncResponse) {}
+    rpc MakePassive(MakePassiveRequest) returns (MakePassiveResponse) {}
+    rpc BringUpIP(UpIpRequest) returns (UpIpResponse) {}
+    rpc BringDownIP(DownIpRequest) returns (DownIpResponse) {}
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
+    rpc Logs(LogsRequest) returns (LogsResponse) {}
+    rpc Remove(RemoveRequest) returns (RemoveResponse) {}
+    // Quorum voting methods
+    rpc StartVotingSession(StartVotingSessionRequest) returns (StartVotingSessionResponse) {}
+    rpc CastVote(CastVoteRequest) returns (CastVoteResponse) {}
+    rpc GetVotingResult(GetVotingResultRequest) returns (GetVotingResultResponse) {}
+}
+
+// Join Request/Response
+message JoinRequest {
+    string hostname = 1;
+    string token = 2;
+}
+
+message JoinResponse {
+    bool success = 1;
+    string message = 2;
+    string node_id = 3;  // UUID of the node
+}
+
+// Leave Request/Response
+message LeaveRequest {
+    string hostname = 1;
+}
+
+message LeaveResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Status Request/Response
+message StatusRequest {}
+
+message StatusResponse {
+    repeated Member members = 1;
+    repeated GroupInfo groups = 2;  // Add group information to the response
+}
+
+message Member {
+    string hostname = 1;
+    string status = 2;
+    repeated string active_ips = 3;
+    string last_response = 4;
+    string latency = 5;
+    bool partial_active = 6;
+    string ip = 7;
+    string port = 8;
+    string node_id = 9;  // UUID of the node
+    map<string, GroupAssignment> group_assignments = 10;  // Map of interface to group assignments
+}
+
+// Promote Request/Response
+message PromoteRequest {
+    string hostname = 1;
+    repeated string ips = 2;
+}
+
+message PromoteResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// ConfigSync Request/Response
+message ConfigSyncRequest {
+    bytes config = 1;
+}
+
+message ConfigSyncResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// MakePassive Request/Response
+message MakePassiveRequest {
+    string hostname = 1;
+}
+
+message MakePassiveResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// IP Management Request/Response
+message UpIpRequest {
+    string iface = 1;
+    repeated string ips = 2;
+}
+
+message UpIpResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message DownIpRequest {
+    string iface = 1;
+    repeated string ips = 2;
+}
+
+message DownIpResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Health Check Request/Response
+message HealthCheckRequest {
+    string hostname = 1;
+}
+
+message HealthCheckResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Logs Request/Response
+message LogsRequest {
+    string hostname = 1;
+    int32 lines = 2;
+    LogLevel level = 3;
+    string message = 4;
+    string node = 5;
+}
+
+message LogsResponse {
+    repeated string logs = 1;
+}
+
+// Remove Request/Response
+message RemoveRequest {
+    string hostname = 1;
+}
+
+message RemoveResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Mode Management Request/Response
+message SetModeRequest {
+    string mode = 1;  // active-passive or active-active
+}
+
+message SetModeResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// New message types for configuration management
+
+// Group Management
+message CreateGroupRequest {
+    string name = 1;
+}
+
+message CreateGroupResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message AddIPToGroupRequest {
+    string group_name = 1;
+    string ip = 2;
+}
+
+message AddIPToGroupResponse {
+    bool success = 1;
+    string message = 2;
+    repeated string warnings = 3;
+}
+
+message RemoveIPFromGroupRequest {
+    string group_name = 1;
+    string ip = 2;
+}
+
+message RemoveIPFromGroupResponse {
+    bool success = 1;
+    string message = 2;
+    repeated string warnings = 3;
+}
+
+message AssignGroupRequest {
+    string group_name = 1;
+    string hostname = 2;
+    string interface = 3;
+}
+
+message AssignGroupResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message ListGroupsRequest {
+    bool json_output = 1;
+}
+
+message GroupInfo {
+    string name = 1;
+    repeated string ips = 2;
+    repeated GroupAssignment assignments = 3;
+}
+
+message GroupAssignment {
+    string hostname = 1;
+    string interface = 2;
+}
+
+message ListGroupsResponse {
+    bool success = 1;
+    string message = 2;
+    repeated GroupInfo groups = 3;
+    string json_data = 4;  // For raw JSON output
+}
+
+// Cluster Management
+message CreateClusterRequest {
+    string bind_ip = 1;
+    string bind_port = 2;
+    string mode = 3;  // active-passive or active-active
+}
+
+message CreateClusterResponse {
+    bool success = 1;
+    string message = 2;
+    string token = 3;  // Add token field for cluster join token
+}
+
+// Quorum Voting Types
+enum VoteType {
+    NODE_STATUS = 0;
+    IP_REDISTRIBUTION = 1;
+    CONFIG_CHANGE = 2;
+}
+
+enum VoteDecision {
+    YES = 0;
+    NO = 1;
+    ABSTAIN = 2;
+}
+
+// Quorum Voting Messages
+message StartVotingSessionRequest {
+    VoteType type = 1;
+    string subject = 2;
+    string description = 3;
+    int64 timeout_seconds = 4;
+}
+
+message StartVotingSessionResponse {
+    bool success = 1;
+    string message = 2;
+    string session_id = 3;
+}
+
+message CastVoteRequest {
+    string session_id = 1;
+    string voter_id = 2;
+    VoteDecision decision = 3;
+}
+
+message CastVoteResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetVotingResultRequest {
+    string session_id = 1;
+}
+
+message VotingSessionResult {
+    bool passed = 1;
+    int32 yes_count = 2;
+    int32 no_count = 3;
+    int32 total_votes = 4;
+    bool quorum_met = 5;
+    int64 completed_at = 6; // Unix timestamp
+}
+
+message GetVotingResultResponse {
+    bool success = 1;
+    string message = 2;
+    VotingSessionResult result = 3;
+}
+
+message GetVotingSessionsRequest {
+    bool include_completed = 1;
+}
+
+message VotingSessionInfo {
+    string id = 1;
+    VoteType type = 2;
+    string subject = 3;
+    string description = 4;
+    int64 start_time = 5; // Unix timestamp
+    int64 end_time = 6; // Unix timestamp
+    bool completed = 7;
+    VotingSessionResult result = 8;
+}
+
+message GetVotingSessionsResponse {
+    bool success = 1;
+    string message = 2;
+    repeated VotingSessionInfo sessions = 3;
+}
+
+message GetVotingSessionDetailsRequest {
+    string session_id = 1;
+}
+
+message Vote {
+    string voter_id = 1;
+    VoteDecision decision = 2;
+    int64 timestamp = 3; // Unix timestamp
+}
+
+message GetVotingSessionDetailsResponse {
+    bool success = 1;
+    string message = 2;
+    VotingSessionInfo session = 3;
+    repeated Vote votes = 4;
+} 
