@@ -293,12 +293,16 @@ func (m *MemberList) GetMemberCount() int {
 }
 
 // RemoveMember removes a member from the list
+// The id parameter can be either a node ID or a hostname
 func (m *MemberList) RemoveMember(id string) error {
 	m.Lock()
 	defer m.Unlock()
 
+	// First try to find by node ID
 	for i, member := range m.Members {
 		if member.ID == id {
+			// Found by node ID
+			m.logger.Debugf("Removing member with ID: %s", id)
 			// Redistribute IPs if member was active
 			if len(member.ActiveIPs) > 0 {
 				if err := m.RedistributeIPs(member.ActiveIPs); err != nil {
@@ -312,5 +316,45 @@ func (m *MemberList) RemoveMember(id string) error {
 		}
 	}
 
-	return fmt.Errorf("member with ID %s not found", id)
+	// If not found by ID, try to find by hostname
+	for i, member := range m.Members {
+		if member.Hostname == id {
+			// Found by hostname
+			m.logger.Debugf("Removing member with hostname: %s (ID: %s)", id, member.ID)
+			// Redistribute IPs if member was active
+			if len(member.ActiveIPs) > 0 {
+				if err := m.RedistributeIPs(member.ActiveIPs); err != nil {
+					m.logger.Errorf("Failed to redistribute IPs for removed member %s: %v", member.Hostname, err)
+				}
+			}
+
+			// Remove member
+			m.Members = append(m.Members[:i], m.Members[i+1:]...)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("member with ID or hostname %s not found", id)
+}
+
+// GetMemberByIdentifier returns a member by either node ID or hostname
+func (m *MemberList) GetMemberByIdentifier(identifier string) *Member {
+	m.RLock()
+	defer m.RUnlock()
+
+	// First try by ID
+	for _, member := range m.Members {
+		if member.ID == identifier {
+			return member
+		}
+	}
+
+	// Then try by hostname
+	for _, member := range m.Members {
+		if member.Hostname == identifier {
+			return member
+		}
+	}
+
+	return nil
 }
