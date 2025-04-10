@@ -205,6 +205,25 @@ func (c *Client) Close() {
 	}
 }
 
+// GetNodeIDByHostname translates a hostname to a node_id
+func (c *Client) GetNodeIDByHostname(hostname string) (string, error) {
+	cfg := config.New()
+	uuid, _, err := cfg.GetNodeByHostname(hostname)
+	if err != nil {
+		return "", fmt.Errorf("failed to get node ID for hostname %s: %v", hostname, err)
+	}
+	return uuid, nil
+}
+
+// GetHostnameByNodeID translates a node_id to a hostname
+func (c *Client) GetHostnameByNodeID(nodeID string) (string, error) {
+	cfg := config.New()
+	if node, ok := cfg.Nodes[nodeID]; ok {
+		return node.Hostname, nil
+	}
+	return "", fmt.Errorf("failed to get hostname for node ID %s", nodeID)
+}
+
 // Send sends an RPC command over the client connection
 func (c *Client) Send(funcName ProtoFunction, data interface{}) (interface{}, error) {
 	log.Debug("Client:Send() Sending " + funcName.String())
@@ -376,9 +395,18 @@ func (c *Client) CreateGroup(name string) error {
 
 // PromoteNode promotes a node to active state
 func (c *Client) PromoteNode(hostname string, ips []string) error {
-	_, err := c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
-		Hostname: hostname,
+	// Look up node_id from hostname
+	cfg := c.GetConfig()
+	nodeID, _, err := cfg.GetNodeByHostname(hostname)
+	if err != nil {
+		return fmt.Errorf("failed to get node_id for hostname %s: %v", hostname, err)
+	}
+
+	// Send request with both hostname (for backward compatibility) and node_id
+	_, err = c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
+		Hostname: hostname, // Keep for backward compatibility
 		Ips:      ips,
+		NodeId:   nodeID, // Primary identifier
 	})
 	return err
 }

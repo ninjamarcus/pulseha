@@ -307,8 +307,17 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	if len(s.memberList.Members) == 0 && req.Token == "" {
 		s.logger.Info("Initializing new cluster with first node: ", req.Hostname)
 
-		// Generate UUID for the node
-		nodeID := s.config.GenerateNodeID()
+		// Generate or use provided UUID for the node
+		var nodeID string
+		if req.NodeId != "" {
+			// Use provided node_id if available
+			nodeID = req.NodeId
+			s.logger.Debugf("Using provided node_id: %s", nodeID)
+		} else {
+			// Generate UUID for the node
+			nodeID = s.config.GenerateNodeID()
+			s.logger.Debugf("Generated node_id: %s", nodeID)
+		}
 
 		// Get local IP and port from config or use defaults
 		localIP := "0.0.0.0"
@@ -421,8 +430,17 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 		}, nil
 	}
 
-	// Generate UUID for the new node
-	nodeID := s.config.GenerateNodeID()
+	// Generate or use provided UUID for the new node
+	var nodeID string
+	if req.NodeId != "" {
+		// Use provided node_id if available
+		nodeID = req.NodeId
+		s.logger.Debugf("Using provided node_id: %s", nodeID)
+	} else {
+		// Generate UUID for the new node
+		nodeID = s.config.GenerateNodeID()
+		s.logger.Debugf("Generated node_id: %s", nodeID)
+	}
 
 	// Get local IP and port from config or use defaults
 	localIP := "0.0.0.0"
@@ -492,7 +510,34 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 	s.Lock()
 	defer s.Unlock()
 
-	if err := s.memberList.RemoveMember(req.Hostname); err != nil {
+	// For transitional compatibility, handle either node_id or hostname
+	var nodeID string
+	var err error
+
+	if req.NodeId != "" {
+		// If node_id is provided, use it directly
+		nodeID = req.NodeId
+		s.logger.Debugf("Using provided node_id for leave: %s", nodeID)
+	} else if req.Hostname != "" {
+		// Otherwise, try to look up the node_id by hostname
+		nodeID, _, err = s.config.GetNodeByHostname(req.Hostname)
+		if err != nil {
+			s.logger.Errorf("Failed to find node_id for hostname %s: %v", req.Hostname, err)
+			return &rpc.LeaveResponse{
+				Success: false,
+				Message: fmt.Sprintf("node not found with hostname %s", req.Hostname),
+			}, nil
+		}
+		s.logger.Debugf("Found node_id %s for hostname %s", nodeID, req.Hostname)
+	} else {
+		// Neither node_id nor hostname provided
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: "either node_id or hostname must be provided",
+		}, nil
+	}
+
+	if err := s.memberList.RemoveMember(nodeID); err != nil {
 		return &rpc.LeaveResponse{
 			Success: false,
 			Message: err.Error(),
@@ -501,7 +546,7 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 
 	return &rpc.LeaveResponse{
 		Success: true,
-		Message: "Node removed successfully",
+		Message: "node removed successfully",
 	}, nil
 }
 
@@ -515,7 +560,7 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 		health := member.GetHealthStatus()
 		members = append(members, &rpc.Member{
 			Hostname:      health.Hostname,
-			Status:        string(health.Status),
+			Status:        membership.StatusToString(health.Status),
 			ActiveIps:     health.ActiveIPs,
 			LastResponse:  health.LastResponse.String(),
 			Latency:       health.Latency,
@@ -533,11 +578,32 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 	s.Lock()
 	defer s.Unlock()
 
-	member := s.memberList.GetMemberByHostname(req.Hostname)
-	if member == nil {
+	var member *membership.Member
+
+	// First try to get member by node_id if provided
+	if req.NodeId != "" {
+		member = s.memberList.GetMemberByID(req.NodeId)
+		if member == nil {
+			return &rpc.PromoteResponse{
+				Success: false,
+				Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
+			}, nil
+		}
+		s.logger.Debugf("Found node by ID: %s (%s)", req.NodeId, member.Hostname)
+	} else if req.Hostname != "" {
+		// Fall back to hostname lookup for backward compatibility
+		member = s.memberList.GetMemberByHostname(req.Hostname)
+		if member == nil {
+			return &rpc.PromoteResponse{
+				Success: false,
+				Message: fmt.Sprintf("Node not found with hostname: %s", req.Hostname),
+			}, nil
+		}
+		s.logger.Debugf("Found node by hostname: %s (ID: %s)", req.Hostname, member.ID)
+	} else {
 		return &rpc.PromoteResponse{
 			Success: false,
-			Message: "Node not found",
+			Message: "Either node_id or hostname must be provided",
 		}, nil
 	}
 

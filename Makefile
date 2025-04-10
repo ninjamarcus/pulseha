@@ -1,4 +1,4 @@
-.PHONEY: clean get
+.PHONEY: clean get protos test
 
 VERSION=`git describe --tags`
 BUILD=`git rev-parse HEAD`
@@ -6,7 +6,7 @@ LDFLAGS=-ldflags "-X main.Version=${VERSION} -X main.Build=${BUILD}"
 
 default: all
 
-all: build cli
+all: protos build cli
 
 build: get
 	 env GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -v -o ./cmd/pulseha/bin/pulseha ./cmd/pulseha
@@ -22,16 +22,22 @@ genemailalerts: get
 	 env GOOS=linux GOARCH=amd64 go build -buildmode=plugin -o ./plugins/genEmailAlerts/bin/genemail.so ./plugins/genEmailAlerts
 get:
 	 go mod download
-	 go get -u github.com/golang/protobuf/protoc-gen-go
+	 go get -u google.golang.org/protobuf/cmd/protoc-gen-go
+	 go get -u google.golang.org/grpc/cmd/protoc-gen-go-grpc
 cli: get
 	 env GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -v -o ./cmd/pulsectl/bin/pulsectl ./cmd/pulsectl
 protos:
-	 protoc ./rpc/pulse.proto --go_out=plugins=grpc:.
+	 protoc --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		./rpc/server.proto
 test:
-#	 go test -timeout 10s -v ./src/...
-#	 go test -timeout 10s -v ./cmd/...
+	 go test -timeout 30s -v ./internal/...
+	 go test -timeout 30s -v ./cmd/...
+	 go test -timeout 30s -v ./packages/...
 clean:
 	go clean -modcache
+	rm -f ./rpc/*.pb.go
+	rm -f ./rpc/*/*.pb.go
 install:
 ifneq ($(shell uname),Linux)
 	echo "Install only available on Linux"

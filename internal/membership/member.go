@@ -268,3 +268,19 @@ func (m *Member) GetHealthStatus() MemberHealth {
 		PartialActive: m.PartialActive,
 	}
 }
+
+// StatusToString converts a MemberStatus to its string representation
+func StatusToString(status MemberStatus) string {
+	switch status {
+	case StatusActive:
+		return "Active"
+	case StatusPassive:
+		return "Passive"
+	case StatusPartialActive:
+		return "PartialActive"
+	case StatusUnknown:
+		return "Unknown"
+	default:
+		return fmt.Sprintf("Unknown(%d)", status)
+	}
+}

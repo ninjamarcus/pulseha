@@ -719,16 +719,5 @@ func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
 
 // Helper function to convert MemberStatus to string
 func statusToString(status MemberStatus) string {
-	switch status {
-	case StatusActive:
-		return "Active"
-	case StatusPassive:
-		return "Passive"
-	case StatusPartialActive:
-		return "PartialActive"
-	case StatusUnknown:
-		return "Unknown"
-	default:
-		return fmt.Sprintf("Unknown(%d)", status)
-	}
+	return StatusToString(status)
 }

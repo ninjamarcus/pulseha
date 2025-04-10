@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/syleron/pulseha/internal/membership"
+	"github.com/syleron/pulseha/packages/config"
 )
 
 // Distributor handles IP distribution across cluster nodes
@@ -12,13 +13,15 @@ type Distributor struct {
 	sync.RWMutex
 	balancer *Balancer
 	members  *membership.MemberList
+	config   *config.Config
 }
 
 // NewDistributor creates a new IP distributor
-func NewDistributor(members *membership.MemberList, strategy IPDistributionStrategy) *Distributor {
+func NewDistributor(members *membership.MemberList, cfg *config.Config, strategy IPDistributionStrategy) *Distributor {
 	return &Distributor{
 		balancer: NewBalancer(strategy),
 		members:  members,
+		config:   cfg,
 	}
 }
 
@@ -28,7 +31,7 @@ func (d *Distributor) DistributeIPs(group string) error {
 	defer d.Unlock()
 
 	// Get IPs for this group
-	ips := DB.Config.Groups[group]
+	ips := d.config.Groups[group]
 	if len(ips) == 0 {
 		return nil
 	}
@@ -82,7 +85,7 @@ func (d *Distributor) RebalanceCluster() error {
 	d.Lock()
 	defer d.Unlock()
 
-	for groupName := range DB.Config.Groups {
+	for groupName := range d.config.Groups {
 		if err := d.DistributeIPs(groupName); err != nil {
 			return fmt.Errorf("failed to rebalance group %s: %v", groupName, err)
 		}

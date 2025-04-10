@@ -19,13 +19,14 @@ package network
 import (
 	"bytes"
 	"errors"
-	log "github.com/sirupsen/logrus"
-	"github.com/syleron/pulseha/packages/utils"
-	"github.com/vishvananda/netlink"
 	"net"
 	"os"
 	"os/exec"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/syleron/pulseha/packages/utils"
+	"github.com/vishvananda/netlink"
 )
 
 type ICMPv6MessageHeader struct {
@@ -43,7 +44,8 @@ type ICMPv6NeighborSolicitation struct {
 	SourceLinkAddress [6]byte
 }
 
-/**
+/*
+*
 Send Gratuitous ARP to automagically tell the router who has the new floating IP
 NOTE: This function assumes the OS is LINUX and has "arping" installed.
 */
@@ -54,7 +56,7 @@ func SendGARP(iface, ip string) bool {
 		os.Exit(1)
 	}
 	cidrIP, _, err := net.ParseCIDR(ip)
-	if err != nil{
+	if err != nil {
 		log.Error("failed to GARP. Cannot parse CIDR")
 		return false
 	}
@@ -67,7 +69,8 @@ func SendGARP(iface, ip string) bool {
 	return true
 }
 
-/**
+/*
+*
 Checks to see what status a network interface is currently.
 Possible responses are either up or down.
 */
@@ -80,7 +83,8 @@ func netInterfaceStatus(iface string) bool {
 	return true
 }
 
-/**
+/*
+*
 This function is to bring up a network interface
 */
 func BringIPup(iface, ip string) error {
@@ -113,7 +117,8 @@ func BringIPup(iface, ip string) error {
 	return nil
 }
 
-/**
+/*
+*
 This function is to bring down a network interface
 */
 func BringIPdown(iface, ip string) error {
@@ -135,7 +140,8 @@ func BringIPdown(iface, ip string) error {
 	return nil
 }
 
-/**
+/*
+*
 Perform a curl request to a web host.
 This only returns a boolean based off the http status code received by the request.
 */
@@ -153,31 +159,38 @@ func Curl(httpRequestURL string) bool {
 }
 
 /**
-
+ * Performs an ICMP ping to check if a host is reachable
+ * Handles both plain IPs and CIDR notation
  */
 func ICMPv4(Ipv4Addr string) error {
-	// Validate the IP address to ensure it's an IPv4 addr.
-	// if err := utils.ValidIPAddress(Ipv4Addr); err != nil {
-	// 	return errors.New("invalid UPv4 address for ICMP check")
-	// }
+	// If the IP is in CIDR notation, extract just the IP part
+	if strings.Contains(Ipv4Addr, "/") {
+		ipPart, _, err := net.ParseCIDR(Ipv4Addr)
+		if err != nil {
+			log.Error("Failed to parse CIDR address: ", Ipv4Addr)
+			return err
+		}
+		Ipv4Addr = ipPart.String()
+	}
+
 	cmds := "ping -c 1 -W 1 " + Ipv4Addr + " &> /dev/null ; echo $?"
 	cmd := exec.Command("bash", "-c", cmds)
-	// cmd.Stdin = strings.NewReader("some input")
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		log.Error("ICMP request failed.", Ipv4Addr)
+		log.Error("ICMP request failed: ", Ipv4Addr)
 		return err
 	}
 	if !strings.Contains(out.String(), "0") {
-		log.Error("ICMP request failed. ", Ipv4Addr, out.String())
+		log.Error("ICMP request failed: ", Ipv4Addr, " ", out.String())
 		return errors.New("failed to reach host")
 	}
 	return nil
 }
 
-/**
+/*
+*
 Function to perform an arp scan on the network. This will allow us to see which IP's are available.
 */
 func ArpScan(addrWSubnet string) string {
@@ -188,7 +201,8 @@ func ArpScan(addrWSubnet string) string {
 	return output
 }
 
-/**
+/*
+*
 Send the eq. of IPv4 arping with IPv6
 */
 func IPv6NDP(ipv6Iface string) string {
@@ -199,7 +213,8 @@ func IPv6NDP(ipv6Iface string) string {
 	return output
 }
 
-/**
+/*
+*
 Return network interface names
 */
 func GetInterfaceNames() []string {
@@ -219,7 +234,8 @@ func GetInterfaceNames() []string {
 	return interfaceNames
 }
 
-/**
+/*
+*
 Check if an interface exists on the local node
 */
 func InterfaceExist(name string) (bool, netlink.Link) {
@@ -232,7 +248,8 @@ func InterfaceExist(name string) (bool, netlink.Link) {
 	return true, link
 }
 
-/**
+/*
+*
 Checks to see if an IP exists on an interface already
 */
 func CheckIfIPExists(ipAddr string) (bool, string, error) {
