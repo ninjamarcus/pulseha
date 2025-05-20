@@ -209,7 +209,10 @@ func initQuorumFlags(rootCmd *cobra.Command) {
 
 func setupLogging(cfg *config.Config, logger *log.Logger) error {
 	// Setup file logging
-	logFile, err := os.OpenFile(cfg.Pulse.LogFileLocation, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
+	// Restrict permissions so that only the owner can modify the log and
+	// the group can read it. This avoids exposing potentially sensitive
+	// log output to the world.
+	logFile, err := os.OpenFile(cfg.Pulse.LogFileLocation, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0640)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %v", err)
 	}
