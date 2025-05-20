@@ -198,8 +198,8 @@ func (m *Member) bringUpIPsLocally(iface string, ips []string) error {
 		}
 
 		// Send gratuitous ARP to update network
-		if !network.SendGARP(iface, ip) {
-			m.logger.Warnf("Failed to send GARP for IP %s on interface %s", ip, iface)
+		if err := network.SendGARP(iface, ip); err != nil {
+			m.logger.Warnf("Failed to send GARP for IP %s on interface %s: %v", ip, iface, err)
 			// Don't return error as the IP is still up
 		}
 
