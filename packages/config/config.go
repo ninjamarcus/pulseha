@@ -306,7 +306,7 @@ func (c *Config) SaveDefaultLocalConfig() error {
 	}
 
 	// Save back to file
-	if err := ioutil.WriteFile(CONFIG_LOCATION, configJSON, 0644); err != nil {
+	if err := ioutil.WriteFile(CONFIG_LOCATION, configJSON, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %v", err)
 	}
 
@@ -549,7 +549,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("failed to marshal config: %v", err)
 	}
 
-	if err := ioutil.WriteFile(CONFIG_LOCATION, data, 0644); err != nil {
+	if err := ioutil.WriteFile(CONFIG_LOCATION, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config: %v", err)
 	}
 
