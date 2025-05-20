@@ -72,8 +72,10 @@ The configuration file is stored in `~/.pulseha/config.json` by default. Key con
   "floating_ip_groups": {},
   "nodes": {},
   "plugins": {}
-}
-```
+ }
+ ```
+
+> **Security Note:** Configuration files are now written with permissions `0600` instead of `0644`. Existing installations should update the permissions of `~/.pulseha/config.json` accordingly to restrict access to the owner.
 
 ## Usage
 
