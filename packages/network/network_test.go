@@ -44,3 +44,15 @@ func TestICMPv4(t *testing.T) {
 		t.Skip("Skipping ICMP test due to environment constraints")
 	}
 }
+
+func TestSendGARPNoExit(t *testing.T) {
+	// Skip in CI environments as it relies on host network information
+	if os.Getenv("CI") != "" {
+		t.Skip("Skipping GARP test in CI environment")
+	}
+
+	err := SendGARP("fakeiface0", "192.0.2.1/24")
+	if err == nil {
+		t.Fatalf("expected error for non-existent interface")
+	}
+}

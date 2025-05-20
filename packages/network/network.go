@@ -49,24 +49,24 @@ type ICMPv6NeighborSolicitation struct {
 Send Gratuitous ARP to automagically tell the router who has the new floating IP
 NOTE: This function assumes the OS is LINUX and has "arping" installed.
 */
-func SendGARP(iface, ip string) bool {
+func SendGARP(iface, ip string) error {
 	exists, _ := InterfaceExist(iface)
 	if !exists {
-		log.Error("Unable to GARP as the network interface does not exist! Closing..")
-		os.Exit(1)
+		log.Error("Unable to GARP as the network interface does not exist")
+		return errors.New("network interface does not exist")
 	}
 	cidrIP, _, err := net.ParseCIDR(ip)
 	if err != nil {
 		log.Error("failed to GARP. Cannot parse CIDR")
-		return false
+		return err
 	}
 	log.Debug("Sending gratuitous arp for " + cidrIP.String() + " on interface " + iface)
 	_, err = utils.Execute("arping", "-U", "-c", "5", "-I", iface, cidrIP.String())
 	if err != nil {
 		log.Error("failed to GARP. " + err.Error())
-		return false
+		return err
 	}
-	return true
+	return nil
 }
 
 /*
