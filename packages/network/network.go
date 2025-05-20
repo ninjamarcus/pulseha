@@ -162,29 +162,29 @@ func Curl(httpRequestURL string) bool {
  * Performs an ICMP ping to check if a host is reachable
  * Handles both plain IPs and CIDR notation
  */
-func ICMPv4(Ipv4Addr string) error {
+func ICMPv4(ipAddr string) error {
 	// If the IP is in CIDR notation, extract just the IP part
-	if strings.Contains(Ipv4Addr, "/") {
-		ipPart, _, err := net.ParseCIDR(Ipv4Addr)
+	if strings.Contains(ipAddr, "/") {
+		ipPart, _, err := net.ParseCIDR(ipAddr)
 		if err != nil {
-			log.Error("Failed to parse CIDR address: ", Ipv4Addr)
+			log.Error("Failed to parse CIDR address: ", ipAddr)
 			return err
 		}
-		Ipv4Addr = ipPart.String()
+		ipAddr = ipPart.String()
 	}
 
-	cmds := "ping -c 1 -W 1 " + Ipv4Addr + " &> /dev/null ; echo $?"
-	cmd := exec.Command("bash", "-c", cmds)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		log.Error("ICMP request failed: ", Ipv4Addr)
-		return err
+	// Validate that the resulting IP is a valid IPv4 address
+	if net.ParseIP(ipAddr) == nil {
+		log.Error("Invalid IPv4 address: ", ipAddr)
+		return errors.New("invalid IPv4 address")
 	}
-	if !strings.Contains(out.String(), "0") {
-		log.Error("ICMP request failed: ", Ipv4Addr, " ", out.String())
-		return errors.New("failed to reach host")
+
+	cmd := exec.Command("ping", "-c", "1", "-W", "1", ipAddr)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		log.Error("ICMP request failed: ", ipAddr, " ", stderr.String())
+		return err
 	}
 	return nil
 }

@@ -44,3 +44,24 @@ func TestICMPv4(t *testing.T) {
 		t.Skip("Skipping ICMP test due to environment constraints")
 	}
 }
+
+func TestICMPv4CIDR(t *testing.T) {
+	if os.Getenv("CI") != "" {
+		t.Skip("Skipping ICMP test in CI environment")
+	}
+
+	if err := ICMPv4("127.0.0.1/32"); err != nil {
+		t.Log("ICMP ping with CIDR failed:", err)
+		t.Skip("Skipping ICMP CIDR test due to environment constraints")
+	}
+}
+
+func TestICMPv4WithSpecialChars(t *testing.T) {
+	if os.Getenv("CI") != "" {
+		t.Skip("Skipping ICMP test in CI environment")
+	}
+
+	if err := ICMPv4("127.0.0.1; echo malicious"); err == nil {
+		t.Error("expected error for malformed IP with special characters")
+	}
+}
