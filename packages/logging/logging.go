@@ -59,11 +59,16 @@ func (l *Logging) Fire(entry *logrus.Entry) error {
 		level = rpc.LogLevel_INFO
 	}
 
+	node, ok := entry.Data["node"].(string)
+	if !ok {
+		node = ""
+	}
+
 	// Create log request
 	req := &rpc.LogsRequest{
 		Level:   level,
 		Message: entry.Message,
-		Node:    entry.Data["node"].(string),
+		Node:    node,
 	}
 
 	return l.Broadcast(req)
