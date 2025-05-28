@@ -1380,14 +1380,6 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 		}, nil
 	}
 
-	// Node ID must be provided
-	if req.NodeId == "" {
-		return &rpc.CreateClusterResponse{
-			Success: false,
-			Message: "node_id is required",
-		}, nil
-	}
-
 	// Set up initial node
 	bindPort := req.BindPort
 	if bindPort == "" {
@@ -1410,21 +1402,25 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 		// Continue without TLS for now
 	}
 
+	// Generate a unique node ID
+	nodeID := s.config.GenerateNodeID()
+	s.logger.Infof("Generated node ID: %s", nodeID)
+
 	// Generate a cluster token for other nodes to join
 	clusterToken := uuid.New().String()
 	s.config.Pulse.ClusterToken = clusterToken
 	s.logger.Infof("Generated cluster token: %s", clusterToken)
 
-	// Add the node to config using provided ID
-	s.config.Nodes[req.NodeId] = &config.Node{
+	// Add the node to config using generated ID
+	s.config.Nodes[nodeID] = &config.Node{
 		Hostname: hostname,
 		IP:       req.BindIp,
 		Port:     bindPort,
 		IPGroups: make(map[string][]string),
 	}
 
-	// Set local node to the provided ID
-	s.config.Pulse.LocalNode = req.NodeId
+	// Set local node to the generated ID
+	s.config.Pulse.LocalNode = nodeID
 
 	// Set the cluster mode
 	s.config.Pulse.Mode = req.Mode
@@ -1459,10 +1455,10 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 				s.logger.Infof("Created default IP group for interface %s", iface.Name)
 
 				// Assign this group to the node's interface
-				if s.config.Nodes[req.NodeId].IPGroups == nil {
-					s.config.Nodes[req.NodeId].IPGroups = make(map[string][]string)
+				if s.config.Nodes[nodeID].IPGroups == nil {
+					s.config.Nodes[nodeID].IPGroups = make(map[string][]string)
 				}
-				s.config.Nodes[req.NodeId].IPGroups[iface.Name] = append(s.config.Nodes[req.NodeId].IPGroups[iface.Name], groupName)
+				s.config.Nodes[nodeID].IPGroups[iface.Name] = append(s.config.Nodes[nodeID].IPGroups[iface.Name], groupName)
 				s.logger.Infof("Assigned default IP group %s to interface %s on node %s", groupName, iface.Name, hostname)
 			}
 		}
@@ -1478,7 +1474,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	}
 
 	// Add the first member to the member list
-	if err := s.memberList.AddMember(req.NodeId, hostname, req.BindIp, bindPort); err != nil {
+	if err := s.memberList.AddMember(nodeID, hostname, req.BindIp, bindPort); err != nil {
 		s.logger.Errorf("Failed to add first node to member list: %v", err)
 		return &rpc.CreateClusterResponse{
 			Success: false,
@@ -1487,7 +1483,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	}
 
 	// Make it active
-	member := s.memberList.GetMemberByID(req.NodeId)
+	member := s.memberList.GetMemberByID(nodeID)
 	if member != nil {
 		member.Status = membership.StatusActive
 		s.logger.Info("First node activated successfully")
@@ -1510,6 +1506,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 		Success: true,
 		Message: "cluster created successfully",
 		Token:   clusterToken,
+		NodeId:  nodeID,
 	}, nil
 }
 

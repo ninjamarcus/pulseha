@@ -50,7 +50,7 @@ service Server {
 message JoinRequest {
     string address = 1;  // Address of the node (FQDN or IP)
     string token = 2;    // Cluster join token
-    string node_id = 3;  // Optional node ID
+    string node_id = 3;  // Required node ID
     string bind_ip = 4;  // Optional local bind IP
     string bind_port = 5; // Optional local bind port
 }
@@ -259,13 +259,13 @@ message CreateClusterRequest {
     string bind_ip = 1;
     string bind_port = 2;
     string mode = 3;  // active-passive or active-active
-    string node_id = 4;  // Required node ID for the first node
 }
 
 message CreateClusterResponse {
     bool success = 1;
     string message = 2;
     string token = 3;  // Add token field for cluster join token
+    string node_id = 4;  // Generated node ID for the first node
 }
 
 // Quorum Voting Types
