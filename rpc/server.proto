@@ -259,6 +259,7 @@ message CreateClusterRequest {
     string bind_ip = 1;
     string bind_port = 2;
     string mode = 3;  // active-passive or active-active
+    string node_id = 4;  // Required node ID for the first node
 }
 
 message CreateClusterResponse {
