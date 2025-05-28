@@ -1,4 +1,3 @@
-```
    ___       __        __ _____ 
   / _ \__ __/ /__ ___ / // / _ |
  / ___/ // / (_-</ -_) _  / __ |
@@ -309,6 +308,25 @@ The testing framework has been enhanced with several key improvements:
 - **Group Management Testing**: Enhanced testing of IP group creation, assignment, and failover
 
 These improvements make the tests more reliable, faster, and able to run without root privileges in most cases.
+
+### Docker Test Environment
+
+A Docker-based test environment is now available for real-world testing of PulseHA:
+
+- **Realistic Environment**: Tests run in Docker containers with real network interfaces and IP assignments
+- **Automated Test Scripts**: Pre-configured scripts for testing failover and network partition scenarios
+- **No Physical Hardware Required**: Test complex HA scenarios on a single machine
+- **Root-Equivalent Testing**: Docker provides the necessary privileges without requiring root on the host
+- **Network Simulation**: Test network partitions and other failure scenarios
+
+To use the Docker test environment:
+
+```bash
+cd docker/test
+./run-tests.sh
+```
+
+For more details, see the [Docker Test Environment README](docker/test/README.md).
 
 ## Contributing
 
