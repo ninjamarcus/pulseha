@@ -49,7 +49,12 @@ func newClusterCreateCmd() *cobra.Command {
 }
 
 func newClusterJoinCmd() *cobra.Command {
-	var address, token string
+	var (
+		address  string
+		token    string
+		bindIP   string
+		bindPort string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "join",
@@ -60,12 +65,14 @@ func newClusterJoinCmd() *cobra.Command {
 				return err
 			}
 
-			return client.JoinCluster(address, token)
+			return client.JoinCluster(address, token, bindIP, bindPort)
 		},
 	}
 
 	cmd.Flags().StringVar(&address, "address", "", "Address of an existing cluster member (FQDN or IP:port)")
 	cmd.Flags().StringVar(&token, "token", "", "Cluster join token")
+	cmd.Flags().StringVar(&bindIP, "bind-ip", "", "Local IP address to bind to (optional)")
+	cmd.Flags().StringVar(&bindPort, "bind-port", "", "Local port to bind to (optional)")
 	cmd.MarkFlagRequired("address")
 	cmd.MarkFlagRequired("token")
 

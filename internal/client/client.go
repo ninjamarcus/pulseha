@@ -301,7 +301,7 @@ func (c *Client) CreateCluster(bindIP, bindPort, mode string) error {
 }
 
 // JoinCluster joins an existing cluster
-func (c *Client) JoinCluster(address, token string) error {
+func (c *Client) JoinCluster(address, token, bindIP, bindPort string) error {
 	// Split address into host and port if port is specified
 	host, port := address, "8080"
 	if strings.Contains(address, ":") {
@@ -323,10 +323,15 @@ func (c *Client) JoinCluster(address, token string) error {
 		return fmt.Errorf("failed to get hostname: %v", err)
 	}
 
-	_, err = c.CLI().Join(context.Background(), &rpc.JoinRequest{
-		Hostname: hostname,
+	// Create join request
+	joinReq := &rpc.JoinRequest{
+		Address:  hostname,
 		Token:    token,
-	})
+		BindIp:   bindIP,
+		BindPort: bindPort,
+	}
+
+	_, err = c.CLI().Join(context.Background(), joinReq)
 	return err
 }
 

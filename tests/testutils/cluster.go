@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/internal/client"
 	"github.com/syleron/pulseha/internal/membership"
@@ -42,6 +43,17 @@ type TestNode struct {
 type TestCluster struct {
 	sync.Mutex
 	nodes map[string]*TestNode
+	token string
+}
+
+// GetToken returns the cluster token
+func (tc *TestCluster) GetToken() string {
+	tc.Lock()
+	defer tc.Unlock()
+	if tc.token == "" {
+		tc.token = uuid.New().String()
+	}
+	return tc.token
 }
 
 // NewTestCluster creates a new test cluster
@@ -314,186 +326,48 @@ func (n *TestNode) Join(targetNode *TestNode) error {
 		return fmt.Errorf("failed to connect to target node: %v", err)
 	}
 
-	// Create a context with timeout for the join request
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Get cluster token from target node's cluster
+	token := targetNode.Cluster.GetToken()
+	if token == "" {
+		return fmt.Errorf("failed to get cluster token from target node")
+	}
+
+	// Create join request
+	joinReq := &rpc.JoinRequest{
+		Address:  n.Hostname,
+		Token:    token,
+		NodeId:   n.ID,
+		BindIp:   n.IP,
+		BindPort: n.Port,
+	}
+
+	// Send join request with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Send join request with the cluster token
-	n.Logger.Infof("Sending join request to %s", targetNode.Hostname)
-	resp, err := client.CLI().Join(ctx, &rpc.JoinRequest{
-		Hostname: n.Hostname,
-		Token:    targetNode.Config.Pulse.ClusterToken,
-	})
+	resp, err := client.CLI().Join(ctx, joinReq)
 	if err != nil {
 		return fmt.Errorf("join request failed: %v", err)
 	}
 
 	if !resp.Success {
-		return fmt.Errorf("join request was not successful: %s", resp.Message)
+		return fmt.Errorf("join request failed: %s", resp.Message)
 	}
 
-	// Update local node ID if provided in response
-	if resp.NodeId != "" {
-		n.ID = resp.NodeId
-		n.Logger.Infof("Updated node ID to %s", n.ID)
+	// Store the node ID from the response
+	n.ID = resp.NodeId
+
+	// Update local config with cluster info
+	n.Config.Pulse.LocalNode = resp.NodeId
+	n.Config.Pulse.ClusterToken = token
+
+	// Save config
+	if err := n.Config.Save(); err != nil {
+		return fmt.Errorf("failed to save config: %v", err)
 	}
 
-	// Stop both servers to update configuration
-	n.Logger.Info("Stopping servers to update configuration")
-	if n.Server != nil {
-		n.Server.Stop()
-	}
-	if targetNode.Server != nil {
-		targetNode.Server.Stop()
-	}
-
-	// Create new configuration for this node
-	nodeCfg := config.New()
-	nodeCfg.Pulse.LocalNode = n.ID
-	nodeCfg.Pulse.ClusterToken = targetNode.Config.Pulse.ClusterToken // Use target node's token
-
-	// Set health check interval to 100 milliseconds for testing (was 1ms)
-	// This is more reasonable and reduces CPU usage
-	nodeCfg.Pulse.HealthCheckInterval = 100
-
-	// Preserve the cluster mode from the target node
-	nodeCfg.Pulse.Mode = targetNode.Config.Pulse.Mode
-	n.Logger.Infof("Setting cluster mode to %s", nodeCfg.Pulse.Mode)
-
-	// Add both nodes to config
-	nodeCfg.Nodes = make(map[string]*config.Node)
-	nodeCfg.Nodes[n.ID] = &config.Node{
-		Hostname: n.Hostname,
-		IP:       n.IP,
-		Port:     n.Port,
-		IPGroups: make(map[string][]string),
-	}
-	nodeCfg.Nodes[targetNode.ID] = &config.Node{
-		Hostname: targetNode.Hostname,
-		IP:       targetNode.IP,
-		Port:     targetNode.Port,
-		IPGroups: make(map[string][]string),
-	}
-
-	// Store the configuration in memory (no need to save to disk)
-	n.Config = nodeCfg
-
-	// Create new configuration for target node
-	targetCfg := config.New()
-	targetCfg.Pulse.LocalNode = targetNode.ID
-	targetCfg.Pulse.ClusterToken = targetNode.Config.Pulse.ClusterToken
-
-	// Set health check interval to 100 milliseconds for testing (was 1ms)
-	targetCfg.Pulse.HealthCheckInterval = 100
-
-	// Preserve the cluster mode
-	targetCfg.Pulse.Mode = targetNode.Config.Pulse.Mode
-	n.Logger.Infof("Setting target node cluster mode to %s", targetCfg.Pulse.Mode)
-
-	// Add both nodes to target config
-	targetCfg.Nodes = make(map[string]*config.Node)
-	targetCfg.Nodes[n.ID] = &config.Node{
-		Hostname: n.Hostname,
-		IP:       n.IP,
-		Port:     n.Port,
-		IPGroups: make(map[string][]string),
-	}
-	targetCfg.Nodes[targetNode.ID] = &config.Node{
-		Hostname: targetNode.Hostname,
-		IP:       targetNode.IP,
-		Port:     targetNode.Port,
-		IPGroups: make(map[string][]string),
-	}
-
-	// Store the target configuration in memory (no need to save to disk)
-	targetNode.Config = targetCfg
-
-	// Set statuses explicitly
-	n.Status = membership.StatusPassive
-	targetNode.Status = membership.StatusActive
-	n.Logger.Infof("Setting node statuses: %s=passive, %s=active", n.Hostname, targetNode.Hostname)
-
-	// Restart target node first (this will be the active node)
-	n.Logger.Infof("Restarting target node %s", targetNode.Hostname)
-	if err := targetNode.Start(); err != nil {
-		return fmt.Errorf("failed to restart target node: %v", err)
-	}
-
-	// Wait for target node to be ready
-	n.Logger.Info("Waiting for target node to be ready")
-	time.Sleep(500 * time.Millisecond)
-
-	// Then restart joining node
-	n.Logger.Infof("Restarting joining node %s", n.Hostname)
-	if err := n.Start(); err != nil {
-		return fmt.Errorf("failed to restart joining node: %v", err)
-	}
-
-	// Wait for servers to stabilize
-	n.Logger.Info("Waiting for servers to stabilize")
-	time.Sleep(500 * time.Millisecond)
-
-	// Ensure connectivity between nodes with timeout
-	n.Logger.Info("Checking connectivity and node statuses")
-
-	// Create a timeout context for the status check loop
-	checkCtx, checkCancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer checkCancel()
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	n.Logger.Info("Starting status check loop with 25-second timeout")
-	for {
-		select {
-		case <-checkCtx.Done():
-			n.Logger.Error("Timed out waiting for proper node statuses after join")
-			return fmt.Errorf("timed out waiting for proper node statuses after join")
-		case <-ticker.C:
-			// Check if nodes can see each other with correct status
-			node1Status := targetNode.GetMemberStatus(n.Hostname)
-			node2Status := n.GetMemberStatus(targetNode.Hostname)
-
-			n.Logger.Infof("Status check: %s sees %s as %s, %s sees %s as %s",
-				targetNode.Hostname, n.Hostname, node1Status,
-				n.Hostname, targetNode.Hostname, node2Status)
-
-			if node1Status == "passive" && node2Status == "active" {
-				n.Logger.Info("Node statuses are correct, join successful")
-				return nil
-			}
-
-			// If we're not getting the right statuses, try to explicitly set them
-			n.Logger.Debug("Setting explicit node statuses in member lists")
-
-			// Directly modify the member list in each server
-			if targetNode.Server != nil && targetNode.Server.GetMemberList() != nil {
-				if member := targetNode.Server.GetMemberList().GetMemberByHostname(n.Hostname); member != nil {
-					member.Status = membership.StatusPassive
-					n.Logger.Debugf("Explicitly set %s to passive in %s's member list",
-						n.Hostname, targetNode.Hostname)
-				}
-				if member := targetNode.Server.GetMemberList().GetMemberByHostname(targetNode.Hostname); member != nil {
-					member.Status = membership.StatusActive
-					n.Logger.Debugf("Explicitly set %s to active in %s's member list",
-						targetNode.Hostname, targetNode.Hostname)
-				}
-			}
-
-			if n.Server != nil && n.Server.GetMemberList() != nil {
-				if member := n.Server.GetMemberList().GetMemberByHostname(targetNode.Hostname); member != nil {
-					member.Status = membership.StatusActive
-					n.Logger.Debugf("Explicitly set %s to active in %s's member list",
-						targetNode.Hostname, n.Hostname)
-				}
-				if member := n.Server.GetMemberList().GetMemberByHostname(n.Hostname); member != nil {
-					member.Status = membership.StatusPassive
-					n.Logger.Debugf("Explicitly set %s to passive in %s's member list",
-						n.Hostname, n.Hostname)
-				}
-			}
-		}
-	}
+	n.Logger.Infof("Successfully joined cluster with node %s", targetNode.Hostname)
+	return nil
 }
 
 // GetMemberStatus returns the status of a member from this node's perspective

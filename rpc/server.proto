@@ -48,15 +48,17 @@ service Server {
 
 // Join Request/Response
 message JoinRequest {
-    string hostname = 1;  // Still need hostname for initial join
-    string token = 2;
-    string node_id = 3;  // Optional: UUID if already known
+    string address = 1;  // Address of the node (FQDN or IP)
+    string token = 2;    // Cluster join token
+    string node_id = 3;  // Optional node ID
+    string bind_ip = 4;  // Optional local bind IP
+    string bind_port = 5; // Optional local bind port
 }
 
 message JoinResponse {
     bool success = 1;
     string message = 2;
-    string node_id = 3;  // UUID of the node
+    string node_id = 3;
 }
 
 // Leave Request/Response

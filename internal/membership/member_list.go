@@ -11,7 +11,7 @@ import (
 // MemberList defines our member list object
 type MemberList struct {
 	sync.RWMutex
-	Members   []*Member
+	Members   map[string]*Member
 	config    *config.Config
 	logger    *logrus.Logger
 	ipMonitor *IPMonitor
@@ -20,7 +20,7 @@ type MemberList struct {
 // NewMemberList creates a new member list
 func NewMemberList(cfg *config.Config, logger *logrus.Logger) *MemberList {
 	ml := &MemberList{
-		Members: []*Member{},
+		Members: make(map[string]*Member),
 		config:  cfg,
 		logger:  logger,
 	}
@@ -194,52 +194,39 @@ func (m *MemberList) getActiveNode() *Member {
 	return nil
 }
 
-// AddMember adds a new member to the list
-func (m *MemberList) AddMember(id string) error {
-	// Don't lock the entire method, just the critical sections
-	m.logger.Debugf("Starting AddMember process for ID: %s", id)
+// AddMember adds a new member to the member list
+func (m *MemberList) AddMember(nodeID, hostname, bindIP, bindPort string) error {
+	m.logger.Debugf("Starting AddMember process for ID: %s", nodeID)
 
-	// Check if member exists - use RLock for reading
-	m.RLock()
-	existingMember := m.GetMemberByID(id)
-	m.RUnlock()
-
-	if existingMember != nil {
-		m.logger.Warnf("Member with ID %s already exists in member list", id)
-		return fmt.Errorf("member with ID %s already exists", id)
+	// Check if member already exists
+	if _, exists := m.Members[nodeID]; exists {
+		m.logger.Warningf("Member with ID %s already exists in member list", nodeID)
+		return nil
 	}
 
-	// Get node config
-	node, ok := m.config.Nodes[id]
-	if !ok {
-		m.logger.Errorf("No configuration found for member ID %s", id)
-		return fmt.Errorf("no configuration found for member ID %s", id)
+	// Create new member instance
+	m.logger.Debugf("Creating new member instance for %s (ID: %s)", hostname, nodeID)
+	member := &Member{
+		ID:       nodeID,
+		Hostname: hostname,
+		IP:       bindIP,
+		Port:     bindPort,
+		Status:   StatusPassive,
+		config:   m.config,
+		logger:   m.logger,
 	}
 
-	m.logger.Debugf("Creating new member instance for %s (ID: %s)", node.Hostname, id)
-	member := NewMember(id, node.Hostname, m.config, m.logger)
-	if member == nil {
-		m.logger.Errorf("Failed to create member instance for %s (ID: %s)", node.Hostname, id)
-		return fmt.Errorf("failed to create member instance for %s", node.Hostname)
-	}
+	m.logger.Debugf("Member instance created successfully for %s (ID: %s)", hostname, nodeID)
 
-	// Lock only when modifying the members slice
-	m.Lock()
-	m.Members = append(m.Members, member)
-	m.Unlock()
+	// Add member to list
+	m.Members[nodeID] = member
 
-	m.logger.Infof("Successfully added member %s (ID: %s) to member list", node.Hostname, id)
+	m.logger.Infof("Successfully added member %s (ID: %s) to member list", hostname, nodeID)
 	return nil
 }
 
-// AddMemberQuiet adds a member to the list without debug logging
-// This is useful for tests to avoid duplicate logging
+// AddMemberQuiet adds a member with just the ID for backward compatibility
 func (m *MemberList) AddMemberQuiet(id string) error {
-	// Check if member already exists
-	if m.GetMemberByID(id) != nil {
-		return fmt.Errorf("member with ID %s already exists", id)
-	}
-
 	// Get node config
 	node, ok := m.config.Nodes[id]
 	if !ok {
@@ -247,36 +234,16 @@ func (m *MemberList) AddMemberQuiet(id string) error {
 		return fmt.Errorf("no configuration found for member ID %s", id)
 	}
 
-	// Create member without debug logging
-	member := NewMember(id, node.Hostname, m.config, m.logger)
-	if member == nil {
-		m.logger.Errorf("Failed to create member instance for %s (ID: %s)", node.Hostname, id)
-		return fmt.Errorf("failed to create member instance for %s", node.Hostname)
-	}
-
-	// Lock only when modifying the members slice
-	m.Lock()
-	m.Members = append(m.Members, member)
-	m.Unlock()
-
-	m.logger.Infof("Successfully added member %s (ID: %s) to member list", node.Hostname, id)
-	return nil
+	return m.AddMember(id, node.Hostname, node.IP, node.Port)
 }
 
 // GetMemberByID returns a member by ID
 func (m *MemberList) GetMemberByID(id string) *Member {
-	for _, member := range m.Members {
-		if member.ID == id {
-			return member
-		}
-	}
-	return nil
+	return m.Members[id]
 }
 
 // GetMemberByHostname returns a member by hostname
 func (m *MemberList) GetMemberByHostname(hostname string) *Member {
-	m.RLock()
-	defer m.RUnlock()
 	for _, member := range m.Members {
 		if member.Hostname == hostname {
 			return member
@@ -287,8 +254,6 @@ func (m *MemberList) GetMemberByHostname(hostname string) *Member {
 
 // GetMemberCount returns the total number of members in the list
 func (m *MemberList) GetMemberCount() int {
-	m.RLock()
-	defer m.RUnlock()
 	return len(m.Members)
 }
 
@@ -299,25 +264,23 @@ func (m *MemberList) RemoveMember(id string) error {
 	defer m.Unlock()
 
 	// First try to find by node ID
-	for i, member := range m.Members {
-		if member.ID == id {
-			// Found by node ID
-			m.logger.Debugf("Removing member with ID: %s", id)
-			// Redistribute IPs if member was active
-			if len(member.ActiveIPs) > 0 {
-				if err := m.RedistributeIPs(member.ActiveIPs); err != nil {
-					m.logger.Errorf("Failed to redistribute IPs for removed member %s: %v", member.Hostname, err)
-				}
+	if member, exists := m.Members[id]; exists {
+		// Found by node ID
+		m.logger.Debugf("Removing member with ID: %s", id)
+		// Redistribute IPs if member was active
+		if len(member.ActiveIPs) > 0 {
+			if err := m.RedistributeIPs(member.ActiveIPs); err != nil {
+				m.logger.Errorf("Failed to redistribute IPs for removed member %s: %v", member.Hostname, err)
 			}
-
-			// Remove member
-			m.Members = append(m.Members[:i], m.Members[i+1:]...)
-			return nil
 		}
+
+		// Remove member
+		delete(m.Members, id)
+		return nil
 	}
 
 	// If not found by ID, try to find by hostname
-	for i, member := range m.Members {
+	for _, member := range m.Members {
 		if member.Hostname == id {
 			// Found by hostname
 			m.logger.Debugf("Removing member with hostname: %s (ID: %s)", id, member.ID)
@@ -329,7 +292,7 @@ func (m *MemberList) RemoveMember(id string) error {
 			}
 
 			// Remove member
-			m.Members = append(m.Members[:i], m.Members[i+1:]...)
+			delete(m.Members, member.ID)
 			return nil
 		}
 	}
@@ -339,14 +302,9 @@ func (m *MemberList) RemoveMember(id string) error {
 
 // GetMemberByIdentifier returns a member by either node ID or hostname
 func (m *MemberList) GetMemberByIdentifier(identifier string) *Member {
-	m.RLock()
-	defer m.RUnlock()
-
 	// First try by ID
-	for _, member := range m.Members {
-		if member.ID == identifier {
-			return member
-		}
+	if member, exists := m.Members[identifier]; exists {
+		return member
 	}
 
 	// Then try by hostname

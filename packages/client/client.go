@@ -19,6 +19,8 @@ package client
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/syleron/pulseha/internal/client"
 	"github.com/syleron/pulseha/packages/config"
@@ -238,4 +240,39 @@ func (c *Client) CastVote(sessionID string, voterID string, decision rpc.VoteDec
 		return nil, err
 	}
 	return resp, nil
+}
+
+// JoinCluster joins an existing cluster
+func (c *Client) JoinCluster(address, token, bindIP, bindPort string) error {
+	// Split address into host and port if port is specified
+	host, port := address, "8080"
+	if strings.Contains(address, ":") {
+		parts := strings.Split(address, ":")
+		if len(parts) == 2 {
+			host = parts[0]
+			port = parts[1]
+		}
+	}
+
+	// Connect to the target node
+	if err := c.Connect(host, port, false); err != nil {
+		return fmt.Errorf("failed to connect to target node: %v", err)
+	}
+
+	// Get local hostname
+	hostname, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("failed to get hostname: %v", err)
+	}
+
+	// Create join request
+	joinReq := &rpc.JoinRequest{
+		Address:  hostname,
+		Token:    token,
+		BindIp:   bindIP,
+		BindPort: bindPort,
+	}
+
+	_, err = c.CLI().Join(context.Background(), joinReq)
+	return err
 }

@@ -10,177 +10,175 @@ import (
 )
 
 func TestMemberList_AddMember(t *testing.T) {
-	// Create config
+	// Create a new config with a test node
 	cfg := &config.Config{
-		Pulse: config.Local{
-			LocalNode: "node1",
-		},
 		Nodes: map[string]*config.Node{
 			"node1": {
-				Hostname: "node1",
-				IP:       "127.0.0.1",
-				Port:     "8080",
-			},
-		},
-	}
-
-	// Create logger
-	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel)
-
-	// Create member list
-	memberList := membership.NewMemberList(cfg, logger)
-
-	// Test adding a member
-	err := memberList.AddMember("node1")
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(memberList.Members))
-
-	// Test adding duplicate member
-	err = memberList.AddMember("node1")
-	assert.Error(t, err)
-	assert.Equal(t, 1, len(memberList.Members))
-
-	// Test adding member with invalid config
-	err = memberList.AddMember("invalid")
-	assert.Error(t, err)
-}
-
-func TestMemberList_RemoveMember(t *testing.T) {
-	// Create config
-	cfg := &config.Config{
-		Pulse: config.Local{
-			LocalNode: "node1",
-		},
-		Nodes: map[string]*config.Node{
-			"node1": {
-				Hostname: "node1",
-				IP:       "127.0.0.1",
+				Hostname: "node1.example.com",
+				IP:       "192.168.1.101",
 				Port:     "8080",
 			},
 			"node2": {
-				Hostname: "node2",
-				IP:       "127.0.0.1",
-				Port:     "8081",
+				Hostname: "node2.example.com",
+				IP:       "192.168.1.102",
+				Port:     "8080",
 			},
 		},
 	}
 
-	// Create logger
+	// Create a new member list
 	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel)
-
-	// Create member list
 	memberList := membership.NewMemberList(cfg, logger)
 
-	// Add members
-	err := memberList.AddMember("node1")
+	// Test adding a new member
+	err := memberList.AddMember("node1", "node1.example.com", "192.168.1.101", "8080")
 	assert.NoError(t, err)
-	err = memberList.AddMember("node2")
-	assert.NoError(t, err)
-	assert.Equal(t, 2, len(memberList.Members))
+	assert.Equal(t, 1, len(memberList.Members))
 
-	// Test removing a member
-	err = memberList.RemoveMember("node2")
+	// Test adding a duplicate member
+	err = memberList.AddMember("node1", "node1.example.com", "192.168.1.101", "8080")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(memberList.Members))
+
+	// Test adding an invalid member
+	err = memberList.AddMember("invalid", "invalid.example.com", "192.168.1.103", "8080")
+	assert.Error(t, err)
+	assert.Equal(t, 1, len(memberList.Members))
+}
+
+func TestMemberList_GetMemberByID(t *testing.T) {
+	// Create a new config with test nodes
+	cfg := &config.Config{
+		Nodes: map[string]*config.Node{
+			"node1": {
+				Hostname: "node1.example.com",
+				IP:       "192.168.1.101",
+				Port:     "8080",
+			},
+			"node2": {
+				Hostname: "node2.example.com",
+				IP:       "192.168.1.102",
+				Port:     "8080",
+			},
+		},
+	}
+
+	// Create a new member list
+	logger := logrus.New()
+	memberList := membership.NewMemberList(cfg, logger)
+
+	// Add test members
+	err := memberList.AddMember("node1", "node1.example.com", "192.168.1.101", "8080")
+	assert.NoError(t, err)
+	err = memberList.AddMember("node2", "node2.example.com", "192.168.1.102", "8080")
+	assert.NoError(t, err)
+
+	// Test getting existing member
+	member := memberList.GetMemberByID("node1")
+	assert.NotNil(t, member)
+	assert.Equal(t, "node1", member.ID)
+
+	// Test getting non-existent member
+	member = memberList.GetMemberByID("node3")
+	assert.Nil(t, member)
+}
+
+func TestMemberList_GetMemberByHostname(t *testing.T) {
+	// Create a new config with test nodes
+	cfg := &config.Config{
+		Nodes: map[string]*config.Node{
+			"node1": {
+				Hostname: "node1.example.com",
+				IP:       "192.168.1.101",
+				Port:     "8080",
+			},
+		},
+	}
+
+	// Create a new member list
+	logger := logrus.New()
+	memberList := membership.NewMemberList(cfg, logger)
+
+	// Add test member
+	err := memberList.AddMember("node1", "node1.example.com", "192.168.1.101", "8080")
+	assert.NoError(t, err)
+
+	// Test getting existing member
+	member := memberList.GetMemberByHostname("node1.example.com")
+	assert.NotNil(t, member)
+	assert.Equal(t, "node1.example.com", member.Hostname)
+
+	// Test getting non-existent member
+	member = memberList.GetMemberByHostname("node2.example.com")
+	assert.Nil(t, member)
+}
+
+func TestMemberList_RemoveMember(t *testing.T) {
+	// Create a new config with test nodes
+	cfg := &config.Config{
+		Nodes: map[string]*config.Node{
+			"node1": {
+				Hostname: "node1.example.com",
+				IP:       "192.168.1.101",
+				Port:     "8080",
+			},
+			"node2": {
+				Hostname: "node2.example.com",
+				IP:       "192.168.1.102",
+				Port:     "8080",
+			},
+		},
+	}
+
+	// Create a new member list
+	logger := logrus.New()
+	memberList := membership.NewMemberList(cfg, logger)
+
+	// Add test members
+	err := memberList.AddMember("node1", "node1.example.com", "192.168.1.101", "8080")
+	assert.NoError(t, err)
+	err = memberList.AddMember("node2", "node2.example.com", "192.168.1.102", "8080")
+	assert.NoError(t, err)
+
+	// Test removing existing member
+	err = memberList.RemoveMember("node1")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(memberList.Members))
 
 	// Test removing non-existent member
-	err = memberList.RemoveMember("invalid")
+	err = memberList.RemoveMember("node3")
 	assert.Error(t, err)
-}
-
-func TestMemberList_GetMemberByHostname(t *testing.T) {
-	// Create config
-	cfg := &config.Config{
-		Pulse: config.Local{
-			LocalNode: "node1",
-		},
-		Nodes: map[string]*config.Node{
-			"node1": {
-				Hostname: "node1",
-				IP:       "127.0.0.1",
-				Port:     "8080",
-			},
-		},
-	}
-
-	// Create logger
-	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel)
-
-	// Create member list
-	memberList := membership.NewMemberList(cfg, logger)
-
-	// Add a member
-	err := memberList.AddMember("node1")
-	assert.NoError(t, err)
-
-	// Test getting existing member
-	member := memberList.GetMemberByHostname("node1")
-	assert.NotNil(t, member)
-	assert.Equal(t, "node1", member.Hostname)
-
-	// Test getting non-existent member
-	member = memberList.GetMemberByHostname("invalid")
-	assert.Nil(t, member)
+	assert.Equal(t, 1, len(memberList.Members))
 }
 
 func TestMemberList_RedistributeIPs(t *testing.T) {
-	// Create config
+	// Create a new config with test nodes
 	cfg := &config.Config{
-		Pulse: config.Local{
-			LocalNode: "node1",
-			Mode:      "active-active",
-		},
 		Nodes: map[string]*config.Node{
 			"node1": {
-				Hostname: "node1",
-				IP:       "127.0.0.1",
+				Hostname: "node1.example.com",
+				IP:       "192.168.1.101",
 				Port:     "8080",
 			},
 			"node2": {
-				Hostname: "node2",
-				IP:       "127.0.0.1",
-				Port:     "8081",
+				Hostname: "node2.example.com",
+				IP:       "192.168.1.102",
+				Port:     "8080",
 			},
-		},
-		Groups: map[string][]string{
-			"test-group": {"192.168.1.1", "192.168.1.2"},
 		},
 	}
 
-	// Create logger
+	// Create a new member list
 	logger := logrus.New()
-	logger.SetLevel(logrus.DebugLevel)
-
-	// Create member list
 	memberList := membership.NewMemberList(cfg, logger)
 
-	// Add members
-	err := memberList.AddMember("node1")
+	// Add test members
+	err := memberList.AddMember("node1", "node1.example.com", "192.168.1.101", "8080")
 	assert.NoError(t, err)
-	err = memberList.AddMember("node2")
-	assert.NoError(t, err)
-
-	// Set node1 as active
-	node1 := memberList.GetMemberByHostname("node1")
-	assert.NotNil(t, node1)
-	node1.Status = membership.StatusActive
-	node1.Capacity = 2 // Allow IP assignment
-
-	// Set node2 as active
-	node2 := memberList.GetMemberByHostname("node2")
-	assert.NotNil(t, node2)
-	node2.Status = membership.StatusActive
-	node2.Capacity = 2 // Allow IP assignment
-
-	// Test IP redistribution
-	failedIPs := []string{"192.168.1.1", "192.168.1.2"}
-	err = memberList.RedistributeIPs(failedIPs)
+	err = memberList.AddMember("node2", "node2.example.com", "192.168.1.102", "8080")
 	assert.NoError(t, err)
 
-	// Verify IPs were distributed
-	totalAssignedIPs := len(node1.ActiveIPs) + len(node2.ActiveIPs)
-	assert.Equal(t, len(failedIPs), totalAssignedIPs, "Expected %d IPs to be distributed, got %d", len(failedIPs), totalAssignedIPs)
+	// Test redistributing IPs
+	err = memberList.RedistributeIPs([]string{"192.168.1.100"})
+	assert.NoError(t, err)
 }

@@ -269,7 +269,7 @@ func (s *Server) loadInitialMembers() error {
 			continue
 		}
 
-		if err := s.memberList.AddMember(id); err != nil {
+		if err := s.memberList.AddMember(id, node.Hostname, node.IP, node.Port); err != nil {
 			s.logger.Errorf("FATAL: Failed to add member %s: %v", id, err)
 			return fmt.Errorf("failed to add member %s: %v", id, err)
 		}
@@ -298,210 +298,95 @@ func (s *Server) loadInitialMembers() error {
 
 // HandleNodeJoin processes a new node joining the cluster
 func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc.JoinResponse, error) {
-	s.logger.Infof("Handling join request from node: %s", req.Hostname)
+	s.logger.Infof("Handling join request from node: %s", req.Address)
 
 	s.Lock()
 	defer s.Unlock()
 
 	// Check if this is initial cluster creation
 	if len(s.memberList.Members) == 0 && req.Token == "" {
-		s.logger.Info("Initializing new cluster with first node: ", req.Hostname)
+		s.logger.Info("Initializing new cluster with first node: ", req.Address)
 
 		// Generate or use provided UUID for the node
 		var nodeID string
 		if req.NodeId != "" {
-			// Use provided node_id if available
 			nodeID = req.NodeId
 			s.logger.Debugf("Using provided node_id: %s", nodeID)
 		} else {
-			// Generate UUID for the node
 			nodeID = s.config.GenerateNodeID()
 			s.logger.Debugf("Generated node_id: %s", nodeID)
 		}
 
-		// Get local IP and port from config or use defaults
-		localIP := "0.0.0.0"
-		localPort := "8080"
-		if node, err := s.config.GetLocalNode(); err == nil {
-			localIP = node.IP
-			localPort = node.Port
+		// Add the node to the member list
+		if err := s.memberList.AddMember(nodeID, req.Address, req.BindIp, req.BindPort); err != nil {
+			s.logger.WithError(err).Error("Failed to add member to member list")
+			return &rpc.JoinResponse{
+				Success: false,
+				Message: fmt.Sprintf("failed to add member: %v", err),
+			}, nil
 		}
 
-		// Add node to config first
-		s.config.Nodes[nodeID] = &config.Node{
-			Hostname: req.Hostname,
-			IP:       localIP,
-			Port:     localPort,
-			IPGroups: make(map[string][]string),
-		}
+		// Set the cluster token
+		s.config.Pulse.ClusterToken = uuid.New().String()
+		s.logger.Debugf("Generated cluster token: %s", s.config.Pulse.ClusterToken)
 
-		// Set as local node
-		s.config.Pulse.LocalNode = nodeID
-
-		// Create default IP groups for each network interface
-		interfaces, err := net.Interfaces()
-		if err != nil {
-			s.logger.Warnf("Failed to get network interfaces: %v", err)
-		} else {
-			for _, iface := range interfaces {
-				// Skip loopback, down interfaces, and interfaces without addresses
-				if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-					continue
-				}
-
-				addrs, err := iface.Addrs()
-				if err != nil {
-					s.logger.Warnf("Failed to get addresses for interface %s: %v", iface.Name, err)
-					continue
-				}
-
-				if len(addrs) == 0 {
-					continue
-				}
-
-				// Create a group for this interface
-				groupName := fmt.Sprintf("default-%s", iface.Name)
-
-				// Initialize the group if it doesn't exist
-				if _, exists := s.config.Groups[groupName]; !exists {
-					s.config.Groups[groupName] = []string{}
-					s.logger.Infof("Created default IP group for interface %s", iface.Name)
-
-					// Assign this group to the node's interface
-					if s.config.Nodes[nodeID].IPGroups == nil {
-						s.config.Nodes[nodeID].IPGroups = make(map[string][]string)
-					}
-					s.config.Nodes[nodeID].IPGroups[iface.Name] = append(s.config.Nodes[nodeID].IPGroups[iface.Name], groupName)
-					s.logger.Infof("Assigned default IP group %s to interface %s on node %s", groupName, iface.Name, req.Hostname)
-				}
-			}
-		}
-
-		// Save config
+		// Save the config
 		if err := s.config.Save(); err != nil {
-			s.logger.Errorf("Failed to save config: %v", err)
+			s.logger.WithError(err).Error("Failed to save config")
 			return &rpc.JoinResponse{
 				Success: false,
 				Message: fmt.Sprintf("failed to save config: %v", err),
 			}, nil
 		}
 
-		// Add the first member
-		s.logger.Debug("Adding first member to cluster...")
-		if err := s.memberList.AddMember(nodeID); err != nil {
-			s.logger.Errorf("Failed to add first node: %v", err)
-			return &rpc.JoinResponse{
-				Success: false,
-				Message: fmt.Sprintf("failed to add first node: %v", err),
-			}, nil
-		}
-
-		// Make it active
-		s.logger.Debug("Setting first node as active...")
-		member := s.memberList.GetMemberByID(nodeID)
-		if member != nil {
-			member.Status = membership.StatusActive
-			s.logger.Info("First node activated successfully")
-		}
-
 		return &rpc.JoinResponse{
 			Success: true,
-			Message: "Cluster initialized successfully",
 			NodeId:  nodeID,
+			Message: "Successfully initialized new cluster",
 		}, nil
 	}
 
-	// For subsequent joins, verify token
-	if req.Token == "" {
-		s.logger.Warn("Join request received without token")
-		return &rpc.JoinResponse{
-			Success: false,
-			Message: "Token required for joining existing cluster",
-		}, nil
-	}
-
-	// TODO: Implement proper token verification
-	s.logger.Debug("Verifying cluster join token...")
+	// Validate cluster token for existing cluster
 	if req.Token != s.config.Pulse.ClusterToken {
-		s.logger.Warn("Invalid cluster join token received")
+		s.logger.Warning("Invalid cluster join token received")
 		return &rpc.JoinResponse{
 			Success: false,
 			Message: "Invalid cluster token",
 		}, nil
 	}
 
-	// Generate or use provided UUID for the new node
+	// Generate or use provided UUID for the node
 	var nodeID string
 	if req.NodeId != "" {
-		// Use provided node_id if available
 		nodeID = req.NodeId
 		s.logger.Debugf("Using provided node_id: %s", nodeID)
 	} else {
-		// Generate UUID for the new node
 		nodeID = s.config.GenerateNodeID()
 		s.logger.Debugf("Generated node_id: %s", nodeID)
 	}
 
-	// Get local IP and port from config or use defaults
-	localIP := "0.0.0.0"
-	localPort := "8080"
-	if node, err := s.config.GetLocalNode(); err == nil {
-		localIP = node.IP
-		localPort = node.Port
+	// Add the node to the member list
+	if err := s.memberList.AddMember(nodeID, req.Address, req.BindIp, req.BindPort); err != nil {
+		s.logger.WithError(err).Error("Failed to add member to member list")
+		return &rpc.JoinResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to add member: %v", err),
+		}, nil
 	}
 
-	// Add node to config first
-	s.config.Nodes[nodeID] = &config.Node{
-		Hostname: req.Hostname,
-		IP:       localIP,
-		Port:     localPort,
-		IPGroups: make(map[string][]string),
-	}
-
-	// Save config
+	// Save the config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.WithError(err).Error("Failed to save config")
 		return &rpc.JoinResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
 
-	// Add the new member
-	s.logger.Debugf("Adding new member to cluster: %s (ID: %s)", req.Hostname, nodeID)
-	if err := s.memberList.AddMember(nodeID); err != nil {
-		s.logger.Errorf("Failed to add new member: %v", err)
-		return &rpc.JoinResponse{
-			Success: false,
-			Message: err.Error(),
-		}, nil
-	}
-
-	// Set the joining node's status to passive
-	if member := s.memberList.GetMemberByID(nodeID); member != nil {
-		member.Status = membership.StatusPassive
-		s.logger.Debugf("Set joining node %s status to passive", req.Hostname)
-	}
-
-	// Trigger IP redistribution if in active-active mode
-	if s.config.Pulse.AutoFailback {
-		s.logger.Info("Active-Active mode detected, rebalancing IPs...")
-		var allIPs []string
-		for _, group := range s.config.Groups {
-			allIPs = append(allIPs, group...)
-		}
-		s.logger.Debugf("Redistributing IPs: %v", allIPs)
-
-		if err := s.memberList.RedistributeIPs(allIPs); err != nil {
-			s.logger.Errorf("Failed to redistribute IPs: %v", err)
-		}
-	}
-
-	s.logger.Infof("Node %s (ID: %s) joined cluster successfully", req.Hostname, nodeID)
 	return &rpc.JoinResponse{
 		Success: true,
-		Message: "Node joined successfully",
 		NodeId:  nodeID,
+		Message: "Successfully joined cluster",
 	}, nil
 }
 
@@ -642,11 +527,11 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 	}, nil
 }
 
-// CLI Service Implementation
+// Join handles the CLI Join RPC call
 func (s *Server) Join(ctx context.Context, req *rpc.JoinRequest) (*rpc.JoinResponse, error) {
 	s.logger.WithFields(logrus.Fields{
-		"hostname": req.Hostname,
-		"token":    req.Token != "",
+		"address": req.Address,
+		"token":   req.Token != "",
 	}).Info("Received CLI Join request")
 
 	resp, err := s.HandleNodeJoin(ctx, req)
@@ -1588,7 +1473,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	}
 
 	// Add the first member to the member list
-	if err := s.memberList.AddMember(nodeID); err != nil {
+	if err := s.memberList.AddMember(nodeID, hostname, req.BindIp, bindPort); err != nil {
 		s.logger.Errorf("Failed to add first node to member list: %v", err)
 		return &rpc.CreateClusterResponse{
 			Success: false,
@@ -1728,4 +1613,23 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		Success: true,
 		Message: "configuration successfully synchronized",
 	}, nil
+}
+
+// AddNode adds a new node to the cluster
+func (s *Server) AddNode(nodeID string) error {
+	s.logger.Debugf("Adding node %s to cluster", nodeID)
+
+	// Get node config
+	node, ok := s.config.Nodes[nodeID]
+	if !ok {
+		s.logger.Errorf("FATAL: No configuration found for node %s", nodeID)
+		return fmt.Errorf("no configuration found for node %s", nodeID)
+	}
+
+	if err := s.memberList.AddMember(nodeID, node.Hostname, node.IP, node.Port); err != nil {
+		s.logger.Errorf("FATAL: Failed to add member %s: %v", nodeID, err)
+		return fmt.Errorf("failed to add member %s: %v", nodeID, err)
+	}
+
+	return nil
 }
