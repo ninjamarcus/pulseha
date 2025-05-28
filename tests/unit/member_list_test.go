@@ -131,6 +131,7 @@ func TestMemberList_RedistributeIPs(t *testing.T) {
 	cfg := &config.Config{
 		Pulse: config.Local{
 			LocalNode: "node1",
+			Mode:      "active-active",
 		},
 		Nodes: map[string]*config.Node{
 			"node1": {
@@ -143,6 +144,9 @@ func TestMemberList_RedistributeIPs(t *testing.T) {
 				IP:       "127.0.0.1",
 				Port:     "8081",
 			},
+		},
+		Groups: map[string][]string{
+			"test-group": {"192.168.1.1", "192.168.1.2"},
 		},
 	}
 
@@ -163,11 +167,13 @@ func TestMemberList_RedistributeIPs(t *testing.T) {
 	node1 := memberList.GetMemberByHostname("node1")
 	assert.NotNil(t, node1)
 	node1.Status = membership.StatusActive
+	node1.Capacity = 2 // Allow IP assignment
 
 	// Set node2 as active
 	node2 := memberList.GetMemberByHostname("node2")
 	assert.NotNil(t, node2)
 	node2.Status = membership.StatusActive
+	node2.Capacity = 2 // Allow IP assignment
 
 	// Test IP redistribution
 	failedIPs := []string{"192.168.1.1", "192.168.1.2"}
@@ -176,5 +182,5 @@ func TestMemberList_RedistributeIPs(t *testing.T) {
 
 	// Verify IPs were distributed
 	totalAssignedIPs := len(node1.ActiveIPs) + len(node2.ActiveIPs)
-	assert.Equal(t, len(failedIPs), totalAssignedIPs)
+	assert.Equal(t, len(failedIPs), totalAssignedIPs, "Expected %d IPs to be distributed, got %d", len(failedIPs), totalAssignedIPs)
 }

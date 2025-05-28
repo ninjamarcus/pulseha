@@ -61,8 +61,7 @@ message JoinResponse {
 
 // Leave Request/Response
 message LeaveRequest {
-    string hostname = 1;  // Kept for backwards compatibility
-    string node_id = 2;   // Primary identifier (UUID)
+    string node_id = 1;   // Primary identifier (UUID)
 }
 
 message LeaveResponse {
@@ -93,9 +92,8 @@ message Member {
 
 // Promote Request/Response
 message PromoteRequest {
-    string hostname = 1;  // Kept for backwards compatibility
+    string node_id = 1;   // Primary identifier (UUID)
     repeated string ips = 2;
-    string node_id = 3;   // Primary identifier (UUID)
 }
 
 message PromoteResponse {
@@ -115,8 +113,7 @@ message ConfigSyncResponse {
 
 // MakePassive Request/Response
 message MakePassiveRequest {
-    string hostname = 1;  // Kept for backwards compatibility
-    string node_id = 2;   // Primary identifier (UUID)
+    string node_id = 1;   // Primary identifier (UUID)
 }
 
 message MakePassiveResponse {
@@ -147,8 +144,7 @@ message DownIpResponse {
 
 // Health Check Request/Response
 message HealthCheckRequest {
-    string hostname = 1;  // Kept for backwards compatibility
-    string node_id = 2;   // Primary identifier (UUID)
+    string node_id = 1;   // Primary identifier (UUID)
 }
 
 message HealthCheckResponse {
@@ -158,12 +154,11 @@ message HealthCheckResponse {
 
 // Logs Request/Response
 message LogsRequest {
-    string hostname = 1;  // Kept for backwards compatibility
-    int32 lines = 2;
-    LogLevel level = 3;
-    string message = 4;
-    string node = 5;
-    string node_id = 6;   // Primary identifier (UUID)
+    int32 lines = 1;
+    LogLevel level = 2;
+    string message = 3;
+    string node = 4;
+    string node_id = 5;   // Primary identifier (UUID)
 }
 
 message LogsResponse {
@@ -172,8 +167,7 @@ message LogsResponse {
 
 // Remove Request/Response
 message RemoveRequest {
-    string hostname = 1;  // Kept for backwards compatibility
-    string node_id = 2;   // Primary identifier (UUID)
+    string node_id = 1;   // Primary identifier (UUID)
 }
 
 message RemoveResponse {

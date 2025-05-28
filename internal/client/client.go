@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -299,8 +301,29 @@ func (c *Client) CreateCluster(bindIP, bindPort, mode string) error {
 }
 
 // JoinCluster joins an existing cluster
-func (c *Client) JoinCluster(hostname, token string) error {
-	_, err := c.CLI().Join(context.Background(), &rpc.JoinRequest{
+func (c *Client) JoinCluster(address, token string) error {
+	// Split address into host and port if port is specified
+	host, port := address, "8080"
+	if strings.Contains(address, ":") {
+		parts := strings.Split(address, ":")
+		if len(parts) == 2 {
+			host = parts[0]
+			port = parts[1]
+		}
+	}
+
+	// Connect to the target node
+	if err := c.Connect(host, port, false); err != nil {
+		return fmt.Errorf("failed to connect to target node: %v", err)
+	}
+
+	// Get local hostname
+	hostname, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("failed to get hostname: %v", err)
+	}
+
+	_, err = c.CLI().Join(context.Background(), &rpc.JoinRequest{
 		Hostname: hostname,
 		Token:    token,
 	})
@@ -309,7 +332,16 @@ func (c *Client) JoinCluster(hostname, token string) error {
 
 // LeaveCluster removes this node from the cluster
 func (c *Client) LeaveCluster() error {
-	_, err := c.CLI().Leave(context.Background(), &rpc.LeaveRequest{})
+	// Get current config to read the local node ID
+	cfg := c.GetConfig()
+	localNodeID, err := cfg.GetLocalNodeUUID()
+	if err != nil {
+		return fmt.Errorf("failed to get local node ID: %v", err)
+	}
+
+	_, err = c.CLI().Leave(context.Background(), &rpc.LeaveRequest{
+		NodeId: localNodeID,
+	})
 	return err
 }
 
@@ -402,11 +434,10 @@ func (c *Client) PromoteNode(hostname string, ips []string) error {
 		return fmt.Errorf("failed to get node_id for hostname %s: %v", hostname, err)
 	}
 
-	// Send request with both hostname (for backward compatibility) and node_id
+	// Send request with only node_id
 	_, err = c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
-		Hostname: hostname, // Keep for backward compatibility
-		Ips:      ips,
-		NodeId:   nodeID, // Primary identifier
+		NodeId: nodeID,
+		Ips:    ips,
 	})
 	return err
 }

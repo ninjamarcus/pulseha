@@ -505,48 +505,72 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	}, nil
 }
 
-// HandleNodeLeave processes a node leaving the cluster
+// HandleNodeLeave handles the node leave RPC call
 func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveResponse, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	// For transitional compatibility, handle either node_id or hostname
+	// Get node ID for the request
 	var nodeID string
-	var err error
 
 	if req.NodeId != "" {
-		// If node_id is provided, use it directly
 		nodeID = req.NodeId
 		s.logger.Debugf("Using provided node_id for leave: %s", nodeID)
-	} else if req.Hostname != "" {
-		// Otherwise, try to look up the node_id by hostname
-		nodeID, _, err = s.config.GetNodeByHostname(req.Hostname)
-		if err != nil {
-			s.logger.Errorf("Failed to find node_id for hostname %s: %v", req.Hostname, err)
-			return &rpc.LeaveResponse{
-				Success: false,
-				Message: fmt.Sprintf("node not found with hostname %s", req.Hostname),
-			}, nil
-		}
-		s.logger.Debugf("Found node_id %s for hostname %s", nodeID, req.Hostname)
 	} else {
 		// Neither node_id nor hostname provided
 		return &rpc.LeaveResponse{
 			Success: false,
-			Message: "either node_id or hostname must be provided",
+			Message: "missing node_id",
 		}, nil
 	}
 
-	if err := s.memberList.RemoveMember(nodeID); err != nil {
+	// Get the member
+	member := s.memberList.GetMemberByID(nodeID)
+	if member == nil {
 		return &rpc.LeaveResponse{
 			Success: false,
-			Message: err.Error(),
+			Message: fmt.Sprintf("node not found with ID %s", nodeID),
 		}, nil
 	}
 
+	// We can't leave ourself from a cluster
+	localNodeID, err := s.config.GetLocalNodeUUID()
+	if err != nil {
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: "Unable to get local node: " + err.Error(),
+		}, nil
+	}
+
+	// If this is the local node, we need to stop the server
+	if nodeID == localNodeID {
+		s.logger.Info("Leaving cluster as local node")
+		go func() {
+			time.Sleep(1 * time.Second)
+			s.Stop()
+		}()
+		return &rpc.LeaveResponse{
+			Success: true,
+			Message: "Successfully left the cluster",
+		}, nil
+	}
+
+	// Remove the node from our member list
+	if err := s.memberList.RemoveMember(nodeID); err != nil {
+		s.logger.Errorf("Failed to remove member: %v", err)
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: "Failed to remove member: " + err.Error(),
+		}, nil
+	}
+
+	// Update our config to remove the node
+	delete(s.config.Nodes, nodeID)
+
+	// Success
 	return &rpc.LeaveResponse{
 		Success: true,
-		Message: "node removed successfully",
+		Message: fmt.Sprintf("Successfully removed node %s from the cluster", nodeID),
 	}, nil
 }
 
@@ -573,53 +597,48 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 	}, nil
 }
 
-// PromoteNode promotes a node to active or partially active state
+// PromoteNode promotes a node to active status
 func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	var member *membership.Member
+	s.logger.Infof("Handling promote request for node ID: %s", req.NodeId)
 
-	// First try to get member by node_id if provided
+	// Get node ID for the request
+	var nodeID string
+
 	if req.NodeId != "" {
-		member = s.memberList.GetMemberByID(req.NodeId)
-		if member == nil {
-			return &rpc.PromoteResponse{
-				Success: false,
-				Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
-			}, nil
-		}
-		s.logger.Debugf("Found node by ID: %s (%s)", req.NodeId, member.Hostname)
-	} else if req.Hostname != "" {
-		// Fall back to hostname lookup for backward compatibility
-		member = s.memberList.GetMemberByHostname(req.Hostname)
-		if member == nil {
-			return &rpc.PromoteResponse{
-				Success: false,
-				Message: fmt.Sprintf("Node not found with hostname: %s", req.Hostname),
-			}, nil
-		}
-		s.logger.Debugf("Found node by hostname: %s (ID: %s)", req.Hostname, member.ID)
+		nodeID = req.NodeId
+		s.logger.Debugf("Using provided node_id for promote: %s", nodeID)
 	} else {
+		// No node_id provided
 		return &rpc.PromoteResponse{
 			Success: false,
-			Message: "Either node_id or hostname must be provided",
+			Message: "missing node_id",
 		}, nil
 	}
 
-	// For active-active, we assign specific IPs
-	if len(req.Ips) > 0 {
-		if err := member.MakePartialActive(req.Ips); err != nil {
-			return &rpc.PromoteResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to promote node: %v", err),
-			}, nil
-		}
+	// Get the member
+	member := s.memberList.GetMemberByID(nodeID)
+	if member == nil {
+		return &rpc.PromoteResponse{
+			Success: false,
+			Message: fmt.Sprintf("node not found with ID %s", nodeID),
+		}, nil
+	}
+
+	// Promote the member
+	if err := member.MakeActive(req.Ips); err != nil {
+		s.logger.Errorf("Failed to promote node: %v", err)
+		return &rpc.PromoteResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to promote node: %v", err),
+		}, nil
 	}
 
 	return &rpc.PromoteResponse{
 		Success: true,
-		Message: "Node promoted successfully",
+		Message: fmt.Sprintf("successfully promoted node %s", nodeID),
 	}, nil
 }
 
@@ -642,316 +661,208 @@ func (s *Server) Join(ctx context.Context, req *rpc.JoinRequest) (*rpc.JoinRespo
 	return resp, err
 }
 
+// Leave handles the CLI Leave RPC call
 func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveResponse, error) {
-	s.logger.WithField("hostname", req.Hostname).Info("Received CLI Leave request")
+	s.logger.WithFields(logrus.Fields{
+		"node_id": req.NodeId,
+	}).Info("Received CLI Leave request")
 
-	resp, err := s.HandleNodeLeave(ctx, req)
+	if req.NodeId == "" {
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: "node_id is required",
+		}, nil
+	}
+
+	// Get the member
+	member := s.memberList.GetMemberByID(req.NodeId)
+	if member == nil {
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
+		}, nil
+	}
+
+	// We can't leave ourself from a cluster
+	localNodeID, err := s.config.GetLocalNodeUUID()
 	if err != nil {
-		s.logger.WithError(err).Error("CLI Leave request failed")
-	} else {
-		s.logger.WithFields(logrus.Fields{
-			"success": resp.Success,
-			"message": resp.Message,
-		}).Info("CLI Leave request completed")
-	}
-	return resp, err
-}
-
-// Status returns the current cluster status
-func (s *Server) Status(ctx context.Context, req *rpc.StatusRequest) (*rpc.StatusResponse, error) {
-	s.logger.Info("Received CLI Status request")
-	s.RLock()
-	defer s.RUnlock()
-
-	s.logger.Debugf("Config: %+v", s.config)
-	s.logger.Debugf("Member list: %+v", s.memberList.Members)
-
-	members := make([]*rpc.Member, 0)
-	for _, member := range s.memberList.Members {
-		s.logger.Debugf("Processing member: %+v", member)
-		status := ""
-		switch member.Status {
-		case membership.StatusUnknown:
-			status = "Unknown"
-		case membership.StatusActive:
-			status = "Active"
-		case membership.StatusPassive:
-			status = "Passive"
-		case membership.StatusPartialActive:
-			status = "PartialActive"
-		}
-
-		lastResponse := member.LastHCResponse.String()
-
-		// Ensure latency is set
-		latency := member.Latency
-		if latency == "" {
-			latency = "N/A"
-		}
-		s.logger.Debugf("Member %s latency: %s", member.Hostname, latency)
-
-		// Get node config for IP and Port
-		s.logger.Debugf("Looking up node %s in config", member.Hostname)
-		s.logger.Debugf("Config nodes: %+v", s.config.Nodes)
-		uuid, node, err := s.config.GetNodeByHostname(member.Hostname)
-		ip := ""
-		port := ""
-		if err == nil && node != nil {
-			s.logger.Debugf("Found node in config: UUID=%s, IP=%s, Port=%s", uuid, node.IP, node.Port)
-			ip = node.IP
-			port = node.Port
-		} else {
-			s.logger.Debugf("Node not found in config: %v", err)
-		}
-
-		members = append(members, &rpc.Member{
-			Hostname:      member.Hostname,
-			Status:        status,
-			ActiveIps:     member.ActiveIPs,
-			LastResponse:  lastResponse,
-			Latency:       latency,
-			PartialActive: member.PartialActive,
-			Ip:            ip,
-			Port:          port,
-			NodeId:        uuid,
-		})
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: "Unable to get local node: " + err.Error(),
+		}, nil
 	}
 
-	// We'll get group information from the config in the client side
-	// since we can't rely on the proto update yet
+	// If this is the local node, we need to stop the server
+	if member.ID == localNodeID {
+		s.logger.Info("Leaving cluster as local node")
+		s.Stop() // Assuming Stop() method exists
+		return &rpc.LeaveResponse{
+			Success: true,
+			Message: "Successfully left the cluster",
+		}, nil
+	}
 
-	s.logger.WithField("member_count", len(members)).Info("CLI Status request completed")
-	return &rpc.StatusResponse{
-		Members: members,
+	// Remove the node from our member list
+	if err := s.memberList.RemoveMember(member.ID); err != nil {
+		s.logger.Errorf("Failed to remove member: %v", err)
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: "Failed to remove member: " + err.Error(),
+		}, nil
+	}
+
+	// Update our config to remove the node
+	delete(s.config.Nodes, member.ID)
+
+	// Success
+	return &rpc.LeaveResponse{
+		Success: true,
+		Message: fmt.Sprintf("Successfully removed node %s from the cluster", member.ID),
 	}, nil
 }
 
-// Promote promotes a node to active state
+// Promote handles the CLI Promote RPC call
 func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error) {
-	s.Lock()
-	defer s.Unlock()
+	s.logger.Infof("Received promote request for node ID: %s", req.NodeId)
 
-	member := s.memberList.GetMemberByHostname(req.Hostname)
+	if req.NodeId == "" {
+		return &rpc.PromoteResponse{
+			Success: false,
+			Message: "node_id is required",
+		}, nil
+	}
+
+	// Get the member
+	member := s.memberList.GetMemberByID(req.NodeId)
 	if member == nil {
 		return &rpc.PromoteResponse{
 			Success: false,
-			Message: "member not found",
+			Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
 		}, nil
 	}
 
-	if err := member.MakePartialActive(req.Ips); err != nil {
+	// Promote the member
+	if err := member.MakeActive(req.Ips); err != nil {
+		s.logger.Errorf("Failed to promote member: %v", err)
 		return &rpc.PromoteResponse{
 			Success: false,
-			Message: err.Error(),
+			Message: "Failed to promote member: " + err.Error(),
 		}, nil
 	}
 
+	// Success
 	return &rpc.PromoteResponse{
 		Success: true,
-		Message: "node promoted successfully",
+		Message: fmt.Sprintf("Successfully promoted node %s to active", req.NodeId),
 	}, nil
 }
 
-// Server Service Implementation
-func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*rpc.ConfigSyncResponse, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	s.logger.Debug("Received config sync request")
-
-	// Unmarshal the received config
-	var newConfig config.Config
-	if err := json.Unmarshal(req.Config, &newConfig); err != nil {
-		s.logger.Errorf("Failed to unmarshal config: %v", err)
-		return &rpc.ConfigSyncResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to unmarshal config: %v", err),
-		}, nil
-	}
-
-	// Update groups
-	s.config.Groups = newConfig.Groups
-
-	// Update Pulse configuration (including quorum settings)
-	s.config.Pulse.QuorumEnabled = newConfig.Pulse.QuorumEnabled
-	s.config.Pulse.QuorumMinNodes = newConfig.Pulse.QuorumMinNodes
-	s.config.Pulse.QuorumMajorityMode = newConfig.Pulse.QuorumMajorityMode
-
-	// Save the updated config
-	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save synced config: %v", err)
-		return &rpc.ConfigSyncResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to save config: %v", err),
-		}, nil
-	}
-
-	s.logger.Info("Config synchronized successfully")
-	return &rpc.ConfigSyncResponse{
-		Success: true,
-		Message: "config synced successfully",
-	}, nil
-}
-
-// MakePassive demotes a node to passive state
+// MakePassive handles the passive RPC call making one node passive
 func (s *Server) MakePassive(ctx context.Context, req *rpc.MakePassiveRequest) (*rpc.MakePassiveResponse, error) {
-	s.Lock()
-	defer s.Unlock()
+	s.logger.Infof("Received make passive request for node ID: %s", req.NodeId)
 
-	member := s.memberList.GetMemberByHostname(req.Hostname)
+	if req.NodeId == "" {
+		return &rpc.MakePassiveResponse{
+			Success: false,
+			Message: "node_id is required",
+		}, nil
+	}
+
+	// Get the member
+	member := s.memberList.GetMemberByID(req.NodeId)
 	if member == nil {
 		return &rpc.MakePassiveResponse{
 			Success: false,
-			Message: "member not found",
+			Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
 		}, nil
 	}
 
+	// Make the member passive by setting its status
 	member.Status = membership.StatusPassive
 	member.ActiveIPs = nil
 	member.PartialActive = false
 
+	// Success
 	return &rpc.MakePassiveResponse{
 		Success: true,
-		Message: "node made passive",
+		Message: fmt.Sprintf("Successfully made node %s passive", req.NodeId),
 	}, nil
 }
 
-func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIpResponse, error) {
-	s.logger.Infof("Received request to bring up IPs on interface %s", req.Iface)
-
-	// Validate request
-	if req.Iface == "" {
-		return &rpc.UpIpResponse{
-			Success: false,
-			Message: "interface name is required",
-		}, nil
-	}
-	if len(req.Ips) == 0 {
-		return &rpc.UpIpResponse{
-			Success: false,
-			Message: "no IPs provided",
-		}, nil
-	}
-
-	// Get local node
-	localNode, err := s.config.GetLocalNode()
-	if err != nil {
-		return &rpc.UpIpResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to get local node: %v", err),
-		}, nil
-	}
-
-	// Get member for local node
-	member := s.memberList.GetMemberByHostname(localNode.Hostname)
-	if member == nil {
-		return &rpc.UpIpResponse{
-			Success: false,
-			Message: "local node not found in member list",
-		}, nil
-	}
-
-	// Bring up IPs locally
-	if err := member.BringUpIPs(req.Ips); err != nil {
-		return &rpc.UpIpResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to bring up IPs: %v", err),
-		}, nil
-	}
-
-	s.logger.Infof("Successfully brought up %d IPs on interface %s", len(req.Ips), req.Iface)
-	return &rpc.UpIpResponse{
-		Success: true,
-		Message: fmt.Sprintf("successfully brought up %d IPs", len(req.Ips)),
-	}, nil
-}
-
-func (s *Server) BringDownIP(ctx context.Context, req *rpc.DownIpRequest) (*rpc.DownIpResponse, error) {
-	s.logger.Infof("Received request to bring down IPs on interface %s", req.Iface)
-
-	// Validate request
-	if req.Iface == "" {
-		return &rpc.DownIpResponse{
-			Success: false,
-			Message: "interface name is required",
-		}, nil
-	}
-	if len(req.Ips) == 0 {
-		return &rpc.DownIpResponse{
-			Success: false,
-			Message: "no IPs provided",
-		}, nil
-	}
-
-	// Get local node
-	localNode, err := s.config.GetLocalNode()
-	if err != nil {
-		return &rpc.DownIpResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to get local node: %v", err),
-		}, nil
-	}
-
-	// Get member for local node
-	member := s.memberList.GetMemberByHostname(localNode.Hostname)
-	if member == nil {
-		return &rpc.DownIpResponse{
-			Success: false,
-			Message: "local node not found in member list",
-		}, nil
-	}
-
-	// Bring down each IP
-	for _, ip := range req.Ips {
-		if err := network.BringIPdown(req.Iface, ip); err != nil {
-			s.logger.Errorf("Failed to bring down IP %s: %v", ip, err)
-			// Continue with other IPs even if one fails
-			continue
-		}
-		s.logger.Debugf("Successfully brought down IP %s on interface %s", ip, req.Iface)
-	}
-
-	// Update member's active IPs
-	member.Lock()
-	member.RemoveIPs(req.Ips)
-	member.Unlock()
-
-	s.logger.Infof("Successfully brought down %d IPs on interface %s", len(req.Ips), req.Iface)
-	return &rpc.DownIpResponse{
-		Success: true,
-		Message: fmt.Sprintf("successfully brought down %d IPs", len(req.Ips)),
-	}, nil
-}
-
+// HealthCheck handles the health check RPC call
 func (s *Server) HealthCheck(ctx context.Context, req *rpc.HealthCheckRequest) (*rpc.HealthCheckResponse, error) {
-	// TODO: Implement health check
+	// Get the member
+	var member *membership.Member
+
+	if req.NodeId != "" {
+		member = s.memberList.GetMemberByID(req.NodeId)
+		if member == nil {
+			return &rpc.HealthCheckResponse{
+				Success: false,
+				Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
+			}, nil
+		}
+		s.logger.Debugf("Found node by ID: %s (%s)", req.NodeId, member.Hostname)
+	}
+
+	if member == nil {
+		return &rpc.HealthCheckResponse{
+			Success: false,
+			Message: "No node identifier provided",
+		}, nil
+	}
+
+	// Update last response time
+	member.LastHCResponse = time.Now()
+
+	// Calculate and update latency
+	latency := time.Since(member.LastHCResponse).String()
+	member.Latency = latency
+	s.logger.Debugf("Member %s latency: %s", member.Hostname, latency)
+
+	// Return healthy response
 	return &rpc.HealthCheckResponse{
 		Success: true,
-		Message: "health check passed",
+		Message: fmt.Sprintf("Node %s is healthy", member.Hostname),
 	}, nil
 }
 
-func (s *Server) Logs(ctx context.Context, req *rpc.LogsRequest) (*rpc.LogsResponse, error) {
-	// TODO: Implement log retrieval
-	return &rpc.LogsResponse{
-		Logs: []string{"log1", "log2"},
-	}, nil
-}
-
+// Remove removes a node from the cluster
 func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.RemoveResponse, error) {
-	s.Lock()
-	defer s.Unlock()
+	s.logger.Infof("Received remove request for node ID: %s", req.NodeId)
 
-	if err := s.memberList.RemoveMember(req.Hostname); err != nil {
+	if req.NodeId == "" {
 		return &rpc.RemoveResponse{
 			Success: false,
-			Message: err.Error(),
+			Message: "node_id is required",
 		}, nil
 	}
 
+	// Get the member
+	member := s.memberList.GetMemberByID(req.NodeId)
+	if member == nil {
+		return &rpc.RemoveResponse{
+			Success: false,
+			Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
+		}, nil
+	}
+
+	// Remove the node from our member list
+	if err := s.memberList.RemoveMember(member.ID); err != nil {
+		s.logger.Errorf("Failed to remove member: %v", err)
+		return &rpc.RemoveResponse{
+			Success: false,
+			Message: "Failed to remove member: " + err.Error(),
+		}, nil
+	}
+
+	// Update our config to remove the node
+	delete(s.config.Nodes, member.ID)
+
+	// Success
 	return &rpc.RemoveResponse{
 		Success: true,
-		Message: "node removed successfully",
+		Message: fmt.Sprintf("Successfully removed node %s from the cluster", req.NodeId),
 	}, nil
 }
 
@@ -1772,4 +1683,49 @@ func (s *Server) GetVotingSessionDetails(ctx context.Context, req *rpc.GetVoting
 // GetQuorumManager returns the quorum manager instance
 func (s *Server) GetQuorumManager() *quorum.QuorumManager {
 	return s.quorumManager
+}
+
+// ConfigSync handles configuration synchronization between nodes
+func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*rpc.ConfigSyncResponse, error) {
+	s.logger.Debug("Received configuration sync request")
+
+	if req.Config == nil {
+		return &rpc.ConfigSyncResponse{
+			Success: false,
+			Message: "no configuration data provided",
+		}, nil
+	}
+
+	// Create a new config instance
+	newConfig := &config.Config{}
+
+	// Unmarshal the received configuration
+	if err := json.Unmarshal(req.Config, newConfig); err != nil {
+		s.logger.Errorf("Failed to unmarshal configuration: %v", err)
+		return &rpc.ConfigSyncResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to unmarshal configuration: %v", err),
+		}, nil
+	}
+
+	s.Lock()
+	defer s.Unlock()
+
+	// Update our configuration
+	s.config = newConfig
+
+	// Reconfigure the server with the new configuration
+	if err := s.Reconfigure(); err != nil {
+		s.logger.Errorf("Failed to reconfigure server: %v", err)
+		return &rpc.ConfigSyncResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to reconfigure server: %v", err),
+		}, nil
+	}
+
+	s.logger.Info("Configuration successfully synchronized")
+	return &rpc.ConfigSyncResponse{
+		Success: true,
+		Message: "configuration successfully synchronized",
+	}, nil
 }

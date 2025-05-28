@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"errors"
 	"net"
-	"os"
 	"os/exec"
 	"strings"
 

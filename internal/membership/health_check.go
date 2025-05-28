@@ -60,6 +60,8 @@ func (h *HealthChecker) SetServerReference(server ServerReference) {
 // Start begins the health checking process
 func (h *HealthChecker) Start(interval time.Duration) {
 	h.Lock()
+	defer h.Unlock()
+
 	if h.stopped {
 		h.logger.Debug("Health checker is stopped, reinitializing...")
 		h.stopChan = make(chan struct{})
@@ -67,7 +69,6 @@ func (h *HealthChecker) Start(interval time.Duration) {
 	}
 	h.checkTicker = time.NewTicker(interval)
 	h.ready = true
-	h.Unlock()
 
 	// Add initial delay before starting health checks
 	h.logger.Debug("Adding initial delay before starting health checks...")
@@ -83,8 +84,15 @@ func (h *HealthChecker) Stop() {
 	defer h.Unlock()
 
 	h.logger.Debug("Stopping health checker...")
+
+	// Set flags first to prevent new checks from starting
+	h.ready = false
+	h.stopped = true
+
+	// Stop the ticker
 	if h.checkTicker != nil {
 		h.checkTicker.Stop()
+		h.checkTicker = nil
 	}
 
 	// Only close stopChan once
@@ -92,9 +100,6 @@ func (h *HealthChecker) Stop() {
 		h.logger.Debug("Closing stop channel...")
 		close(h.stopChan)
 	})
-
-	h.ready = false
-	h.stopped = true
 }
 
 // run executes the health check loop
@@ -102,20 +107,33 @@ func (h *HealthChecker) run() {
 	h.logger.Debug("Health check loop started")
 	for {
 		select {
-		case <-h.checkTicker.C:
-			h.RLock()
-			if !h.ready {
-				h.logger.Debug("Health checker not ready, skipping check")
-				h.RUnlock()
-				continue
-			}
-			h.RUnlock()
-
-			h.logger.Debug("Starting scheduled health check")
-			h.performHealthChecks()
 		case <-h.stopChan:
 			h.logger.Debug("Health checker stopping")
 			return
+		default:
+			h.RLock()
+			if !h.ready || h.stopped || h.checkTicker == nil {
+				h.RUnlock()
+				return
+			}
+			ticker := h.checkTicker
+			h.RUnlock()
+
+			select {
+			case <-ticker.C:
+				h.RLock()
+				if !h.ready || h.stopped {
+					h.RUnlock()
+					return
+				}
+				h.RUnlock()
+
+				h.logger.Debug("Starting scheduled health check")
+				h.performHealthChecks()
+			case <-h.stopChan:
+				h.logger.Debug("Health checker stopping")
+				return
+			}
 		}
 	}
 }

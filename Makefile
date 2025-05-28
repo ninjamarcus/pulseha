@@ -1,4 +1,4 @@
-.PHONEY: clean get protos test
+.PHONEY: clean get protos test integration-test quiet-integration-test test-all
 
 VERSION=`git describe --tags`
 BUILD=`git rev-parse HEAD`
@@ -34,6 +34,14 @@ test:
 	 go test -timeout 30s -v ./internal/...
 	 go test -timeout 30s -v ./cmd/...
 	 go test -timeout 30s -v ./packages/...
+integration-test:
+	 @echo "Running integration tests (verbose mode)..."
+	 go test -timeout 2m -v ./tests/integration/...
+quiet-integration-test:
+	 @echo "Running integration tests (quiet mode)..."
+	 PULSEHA_TEST_LOGLEVEL=error go test -timeout 2m ./tests/integration/...
+test-all: test quiet-integration-test
+	 @echo "All tests completed!"
 clean:
 	go clean -modcache
 	rm -f ./rpc/*.pb.go
