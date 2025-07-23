@@ -1,0 +1,25 @@
+{
+  "pulseha": {
+    "hcs_interval": 1000,
+    "fos_interval": 5000,
+    "fo_limit": 10000,
+    "local_node": "",
+    "cluster_token": "",
+    "logging_level": "info",
+    "auto_failback": true,
+    "log_to_file": true,
+    "log_file_location": "/etc/pulseha/pulseha.log",
+    "log_to_syslog": true,
+    "syslog_network": "",
+    "syslog_address": "",
+    "syslog_facility": "LOG_LOCAL0",
+    "syslog_tag": "pulseha",
+    "mode": "active-passive",
+    "quorum_enabled": false,
+    "quorum_min_nodes": 2,
+    "quorum_majority": true
+  },
+  "floating_ip_groups": {},
+  "nodes": {},
+  "plugins": {}
+}

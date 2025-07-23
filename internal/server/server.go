@@ -482,6 +482,11 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 	}, nil
 }
 
+// Status implements the CLI.Status RPC method
+func (s *Server) Status(ctx context.Context, req *rpc.StatusRequest) (*rpc.StatusResponse, error) {
+	return s.GetClusterStatus(ctx, req)
+}
+
 // PromoteNode promotes a node to active status
 func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error) {
 	s.Lock()

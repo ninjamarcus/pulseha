@@ -83,6 +83,11 @@ type Local struct {
 	AutoFailback        bool   `json:"auto_failback"`
 	LogToFile           bool   `json:"log_to_file"`
 	LogFileLocation     string `json:"log_file_location"`
+	LogToSyslog         bool   `json:"log_to_syslog"`    // Enable syslog logging
+	SyslogNetwork       string `json:"syslog_network"`   // Network type: "", "tcp", "udp"
+	SyslogAddress       string `json:"syslog_address"`   // Syslog server address
+	SyslogFacility      string `json:"syslog_facility"`  // Syslog facility: LOG_LOCAL0, etc.
+	SyslogTag           string `json:"syslog_tag"`       // Syslog tag
 	Mode                string `json:"mode"` // active-passive or active-active
 	// Quorum configuration
 	QuorumEnabled      bool `json:"quorum_enabled"`   // Whether to use quorum voting
@@ -109,6 +114,11 @@ func New() *Config {
 			AutoFailback:        true,
 			LogToFile:           true,
 			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
+			LogToSyslog:         true,
+			SyslogNetwork:       "",
+			SyslogAddress:       "",
+			SyslogFacility:      "LOG_INFO",
+			SyslogTag:           "pulseha",
 			Mode:                "active-passive",
 		},
 		Groups:  make(map[string][]string),
@@ -243,6 +253,10 @@ func (c *Config) Load() error {
 		if err = json.Unmarshal(b, &c); err != nil {
 			return fmt.Errorf("unable to unmarshal config: %v", err)
 		}
+		
+		// Migrate old configs: set default syslog values if missing
+		c.migrateConfig()
+		
 		if err := c.Validate(); err != nil {
 			return fmt.Errorf("config validation failed: %v", err)
 		}
@@ -253,6 +267,33 @@ func (c *Config) Load() error {
 		}
 	}
 	return nil
+}
+
+// migrateConfig ensures backward compatibility by setting default values for new fields
+func (c *Config) migrateConfig() {
+	migrated := false
+	
+	// Check if syslog fields are missing and set defaults
+	if c.Pulse.SyslogNetwork == "" && c.Pulse.SyslogAddress == "" && 
+	   c.Pulse.SyslogFacility == "" && c.Pulse.SyslogTag == "" {
+		// This looks like an old config, set syslog defaults
+		c.Pulse.LogToSyslog = true
+		c.Pulse.SyslogNetwork = ""
+		c.Pulse.SyslogAddress = ""
+		c.Pulse.SyslogFacility = "LOG_INFO"
+		c.Pulse.SyslogTag = "pulseha"
+		migrated = true
+		log.Debug("Migrated config: added default syslog settings")
+	}
+	
+	// Save the migrated config if changes were made
+	if migrated {
+		if err := c.Save(); err != nil {
+			log.Warnf("Failed to save migrated config: %v", err)
+		} else {
+			log.Info("Config migrated successfully with new syslog settings")
+		}
+	}
 }
 
 // Reload the config file into memory.
@@ -275,6 +316,11 @@ func (c *Config) SaveDefaultLocalConfig() error {
 			LoggingLevel:        "info",
 			LogToFile:           true,
 			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
+			LogToSyslog:         true,
+			SyslogNetwork:       "",
+			SyslogAddress:       "",
+			SyslogFacility:      "LOG_INFO",
+			SyslogTag:           "pulseha",
 			Mode:                "active-passive",
 		},
 		Groups:  make(map[string][]string),

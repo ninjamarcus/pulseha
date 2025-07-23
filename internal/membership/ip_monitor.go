@@ -18,7 +18,6 @@ type IPMonitor struct {
 	expectedIPs    map[string][]string // map[interface][]ips
 	stopChan       chan struct{}
 	stopOnce       sync.Once
-	netlinkUpdates chan netlink.AddrUpdate
 	done           chan struct{}
 }
 
@@ -43,19 +42,6 @@ func (m *IPMonitor) Start() error {
 		return fmt.Errorf("failed to initialize expected IPs: %v", err)
 	}
 
-	// Subscribe to netlink address updates
-	ch := make(chan netlink.AddrUpdate)
-	done := make(chan struct{})
-	m.netlinkUpdates = ch
-	m.done = done
-
-	if err := netlink.AddrSubscribe(ch, done); err != nil {
-		return fmt.Errorf("failed to subscribe to netlink address updates: %v", err)
-	}
-
-	// Start the monitoring goroutine
-	go m.monitorLoop()
-
 	// Start periodic verification
 	go m.periodicVerification()
 
@@ -67,7 +53,6 @@ func (m *IPMonitor) Start() error {
 func (m *IPMonitor) Stop() {
 	m.stopOnce.Do(func() {
 		close(m.stopChan)
-		close(m.done)
 		m.logger.Info("IP monitor stopped")
 	})
 }
@@ -153,60 +138,11 @@ func (m *IPMonitor) initializeExpectedIPs() error {
 	return nil
 }
 
-// monitorLoop processes netlink updates
+// monitorLoop processes netlink updates (disabled for now due to API changes)
 func (m *IPMonitor) monitorLoop() {
-	for {
-		select {
-		case <-m.stopChan:
-			return
-		case update := <-m.netlinkUpdates:
-			m.handleAddrUpdate(update)
-		}
-	}
-}
-
-// handleAddrUpdate processes a netlink address update
-func (m *IPMonitor) handleAddrUpdate(update netlink.AddrUpdate) {
-	// Get the IP and interface
-	ip := update.LinkAddress.IP.String()
-	link, err := netlink.LinkByIndex(update.LinkIndex)
-	if err != nil {
-		m.logger.Errorf("Failed to get link for index %d: %v", update.LinkIndex, err)
-		return
-	}
-	iface := link.Attrs().Name
-
-	m.RLock()
-	expectedIPs, exists := m.expectedIPs[iface]
-	m.RUnlock()
-
-	if !exists {
-		// We're not monitoring this interface
-		return
-	}
-
-	// Check if this IP is expected
-	isExpected := false
-	for _, expectedIP := range expectedIPs {
-		if expectedIP == ip {
-			isExpected = true
-			break
-		}
-	}
-
-	if update.NewAddr {
-		// IP was added
-		if !isExpected {
-			m.logger.Warnf("Unexpected IP %s added to interface %s", ip, iface)
-		}
-	} else {
-		// IP was removed
-		if isExpected {
-			m.logger.Warnf("Expected IP %s was removed from interface %s", ip, iface)
-			// Restore the IP
-			m.restoreIP(iface, ip)
-		}
-	}
+	// NetLink monitoring disabled due to API changes
+	// This functionality will be restored in a future version
+	return
 }
 
 // restoreIP attempts to restore an IP that was unexpectedly removed

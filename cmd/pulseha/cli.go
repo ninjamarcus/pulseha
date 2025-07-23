@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/syleron/pulseha/internal/cli"
 	"github.com/syleron/pulseha/packages/client"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/rpc"
@@ -26,7 +27,10 @@ func setupCLI() *cobra.Command {
 	// Add commands
 	rootCmd.AddCommand(
 		newQuorumCmd(),
-		// Add other commands here
+		cli.NewClusterCmd(),
+		cli.NewStatusCmd(),
+		cli.NewNodeCmd(),
+		cli.NewGroupCmd(),
 	)
 
 	return rootCmd

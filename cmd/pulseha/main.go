@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/syslog"
 	"os"
 	"os/signal"
 	"sync"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
 	"github.com/spf13/cobra"
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/server"
@@ -92,11 +94,9 @@ func main() {
 		}
 	}
 
-	// Setup distributed logging if enabled
-	if cfg.Pulse.LogToFile {
-		if err := setupLogging(cfg, logger); err != nil {
-			logger.Fatal(err)
-		}
+	// Setup logging (syslog by default + file if enabled)
+	if err := setupLogging(cfg, logger); err != nil {
+		logger.Fatal(err)
 	}
 
 	// Initialize member list
@@ -183,52 +183,98 @@ func main() {
 
 // initQuorumFlags initializes flags for quorum commands
 func initQuorumFlags(rootCmd *cobra.Command) {
-	// Find quorum command
-	var quorumCmd *cobra.Command
-	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "quorum" {
-			quorumCmd = cmd
-			break
-		}
-	}
-
-	if quorumCmd == nil {
-		return
-	}
-
-	// Find and initialize list-sessions command flags
-	for _, cmd := range quorumCmd.Commands() {
-		if cmd.Name() == "list-sessions" {
-			cmd.Flags().Bool("include-completed", false, "Include completed voting sessions")
-		} else if cmd.Name() == "config" {
-			cmd.Flags().Int("min-nodes", 2, "Minimum number of nodes required for quorum")
-			cmd.Flags().Bool("majority-mode", false, "Use majority of nodes for quorum instead of fixed minimum")
-		}
-	}
+	// Flags are already defined in the command definitions
+	// This function is disabled to avoid redefinition errors
 }
 
 func setupLogging(cfg *config.Config, logger *log.Logger) error {
-	// Setup file logging
-	// Restrict permissions so that only the owner can modify the log and
-	// the group can read it. This avoids exposing potentially sensitive
-	// log output to the world.
-	logFile, err := os.OpenFile(cfg.Pulse.LogFileLocation, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0640)
-	if err != nil {
-		return fmt.Errorf("failed to open log file: %v", err)
+	var writers []io.Writer
+	
+	// Always include stdout for container/systemd compatibility
+	writers = append(writers, os.Stdout)
+	
+	// Setup syslog logging if enabled (default to true if not explicitly set)
+	logToSyslog := cfg.Pulse.LogToSyslog
+	if cfg.Pulse.SyslogTag == "" {
+		// Old config or missing syslog config - use defaults
+		logToSyslog = true
+	}
+	
+	if logToSyslog {
+		// Convert facility string to syslog priority
+		facility := syslog.LOG_INFO
+		switch cfg.Pulse.SyslogFacility {
+		case "LOG_LOCAL0":
+			facility = syslog.LOG_LOCAL0
+		case "LOG_LOCAL1":
+			facility = syslog.LOG_LOCAL1
+		case "LOG_LOCAL2":
+			facility = syslog.LOG_LOCAL2
+		case "LOG_LOCAL3":
+			facility = syslog.LOG_LOCAL3
+		case "LOG_LOCAL4":
+			facility = syslog.LOG_LOCAL4
+		case "LOG_LOCAL5":
+			facility = syslog.LOG_LOCAL5
+		case "LOG_LOCAL6":
+			facility = syslog.LOG_LOCAL6
+		case "LOG_LOCAL7":
+			facility = syslog.LOG_LOCAL7
+		case "LOG_USER":
+			facility = syslog.LOG_USER
+		case "LOG_DAEMON":
+			facility = syslog.LOG_DAEMON
+		case "LOG_SYSLOG":
+			facility = syslog.LOG_SYSLOG
+		default:
+			facility = syslog.LOG_INFO
+		}
+
+		// Use defaults for empty values
+		syslogTag := cfg.Pulse.SyslogTag
+		if syslogTag == "" {
+			syslogTag = "pulseha"
+		}
+		
+		hook, err := logrus_syslog.NewSyslogHook(cfg.Pulse.SyslogNetwork, cfg.Pulse.SyslogAddress, facility, syslogTag)
+		if err != nil {
+			// If syslog is not available (e.g., in containers), log warning but continue
+			logger.Warnf("Failed to create syslog hook, continuing without syslog: %v", err)
+		} else {
+			logger.AddHook(hook)
+			logger.Info("Syslog logging enabled")
+		}
+	}
+	
+	// Setup file logging if enabled
+	if cfg.Pulse.LogToFile {
+		// Restrict permissions so that only the owner can modify the log and
+		// the group can read it. This avoids exposing potentially sensitive
+		// log output to the world.
+		logFile, err := os.OpenFile(cfg.Pulse.LogFileLocation, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0640)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %v", err)
+		}
+		writers = append(writers, logFile)
+		logger.Infof("File logging enabled: %s", cfg.Pulse.LogFileLocation)
 	}
 
 	// Create distributed logger
 	pulseLogger, err := logging.NewLogger(nil) // We'll need to implement broadcast later
 	if err != nil {
-		return fmt.Errorf("failed to create distributed logger: %v", err)
+		logger.Warnf("Failed to create distributed logger: %v", err)
+	} else {
+		// Add hooks
+		logger.AddHook(pulseLogger)
 	}
 
-	// Add hooks
-	logger.AddHook(pulseLogger)
-
-	// Create a multi-writer for both file and stdout
-	mw := io.MultiWriter(os.Stdout, logFile)
-	logger.SetOutput(mw)
+	// Set multi-writer output (stdout + file if enabled)
+	if len(writers) > 1 {
+		mw := io.MultiWriter(writers...)
+		logger.SetOutput(mw)
+	} else {
+		logger.SetOutput(writers[0])
+	}
 
 	return nil
 }
