@@ -24,6 +24,8 @@ service CLI {
     rpc AddIPToGroup(AddIPToGroupRequest) returns (AddIPToGroupResponse) {}
     rpc RemoveIPFromGroup(RemoveIPFromGroupRequest) returns (RemoveIPFromGroupResponse) {}
     rpc AssignGroupToNode(AssignGroupRequest) returns (AssignGroupResponse) {}
+    rpc UnassignGroupFromNode(UnassignGroupRequest) returns (UnassignGroupResponse) {}
+    rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {}
     rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
     rpc CreateCluster(CreateClusterRequest) returns (CreateClusterResponse) {}
     // Quorum voting methods
@@ -252,6 +254,30 @@ message ListGroupsResponse {
     string message = 2;
     repeated GroupInfo groups = 3;
     string json_data = 4;  // For raw JSON output
+}
+
+// Group Unassignment
+message UnassignGroupRequest {
+    string group_name = 1;
+    string hostname = 2;
+    string interface = 3;
+}
+
+message UnassignGroupResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Group Deletion
+message DeleteGroupRequest {
+    string group_name = 1;
+    bool force = 2;  // Force deletion even if assigned to nodes
+}
+
+message DeleteGroupResponse {
+    bool success = 1;
+    string message = 2;
+    repeated string warnings = 3;
 }
 
 // Cluster Management

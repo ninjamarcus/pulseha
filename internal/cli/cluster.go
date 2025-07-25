@@ -99,10 +99,26 @@ func newClusterLeaveCmd() *cobra.Command {
 func newClusterTokenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "token",
-		Short: "Manage cluster join tokens",
+		Short: "Display cluster join token",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement token management
-			return fmt.Errorf("token management not implemented yet")
+			client, err := client.New()
+			if err != nil {
+				return fmt.Errorf("failed to connect to PulseHA daemon - ensure the pulseha service is running: %v", err)
+			}
+			defer client.Close()
+
+			// Get cluster status to read token from config
+			cfg := client.GetConfig()
+			if !cfg.ClusterCheck() {
+				return fmt.Errorf("no cluster configured")
+			}
+
+			if cfg.Pulse.ClusterToken == "" {
+				return fmt.Errorf("no cluster token available")
+			}
+
+			fmt.Println(cfg.Pulse.ClusterToken)
+			return nil
 		},
 	}
 
@@ -161,17 +177,12 @@ func createCluster(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid mode %q: must be either 'active-passive' or 'active-active'", mode)
 	}
 
-	// Create client
+	// Create client - this will try to connect to localhost:8080 by default
 	c, err := client.New()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to connect to PulseHA daemon - ensure the pulseha service is running: %v", err)
 	}
 	defer c.Close()
-
-	// Connect to local server
-	if err := c.Connect("127.0.0.1", "8080", false); err != nil {
-		return err
-	}
 
 	// Send create cluster request
 	resp, err := c.CLI().CreateCluster(context.Background(), &rpc.CreateClusterRequest{

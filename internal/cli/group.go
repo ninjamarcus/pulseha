@@ -20,6 +20,8 @@ func NewGroupCmd() *cobra.Command {
 		newGroupAddIPCmd(),
 		newGroupRemoveIPCmd(),
 		newGroupAssignCmd(),
+		newGroupUnassignCmd(),
+		newGroupDeleteCmd(),
 		newGroupListCmd(),
 	)
 
@@ -220,6 +222,74 @@ func newGroupListCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	return cmd
+}
+
+func newGroupUnassignCmd() *cobra.Command {
+	var (
+		group string
+		node  string
+		iface string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "unassign",
+		Short: "Unassign a group from a node's interface",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client.New()
+			if err != nil {
+				fmt.Printf("Failed to create client: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := client.UnassignGroupFromNode(group, node, iface); err != nil {
+				fmt.Printf("Failed to unassign group from node: %v\n", err)
+				os.Exit(1)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&group, "group", "", "Name of the group to unassign")
+	cmd.Flags().StringVar(&node, "node", "", "Hostname of the node to unassign the group from")
+	cmd.Flags().StringVar(&iface, "interface", "", "Network interface to unassign the group from")
+	cmd.MarkFlagRequired("group")
+	cmd.MarkFlagRequired("node")
+	cmd.MarkFlagRequired("interface")
+
+	return cmd
+}
+
+func newGroupDeleteCmd() *cobra.Command {
+	var (
+		name  string
+		force bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete an IP group",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := client.New()
+			if err != nil {
+				fmt.Printf("Failed to create client: %v\n", err)
+				os.Exit(1)
+			}
+
+			if err := client.DeleteGroup(name, force); err != nil {
+				fmt.Printf("Failed to delete group: %v\n", err)
+				os.Exit(1)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "Name of the group to delete")
+	cmd.Flags().BoolVar(&force, "force", false, "Force deletion even if assigned to nodes")
+	cmd.MarkFlagRequired("name")
 
 	return cmd
 }

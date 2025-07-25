@@ -44,6 +44,8 @@ const (
 	SendAddIPToGroup
 	SendRemoveIPFromGroup
 	SendAssignGroupToNode
+	SendUnassignGroupFromNode
+	SendDeleteGroup
 	SendListGroups
 	SendCreateCluster
 )
@@ -63,6 +65,8 @@ var protoFunctions = []string{
 	"AddIPToGroup",
 	"RemoveIPFromGroup",
 	"AssignGroupToNode",
+	"UnassignGroupFromNode",
+	"DeleteGroup",
 	"ListGroups",
 	"CreateCluster",
 }
@@ -148,6 +152,14 @@ func (c *Client) GetProtoFuncList() map[string]interface{} {
 		},
 		"AssignGroupToNode": func(ctx context.Context, data interface{}) (interface{}, error) {
 			return c.cliClient.AssignGroupToNode(ctx, data.(*rpc.AssignGroupRequest))
+		},
+		"UnassignGroupFromNode": func(ctx context.Context, data interface{}) (interface{}, error) {
+			// Direct call to server method for now
+			return c.callUnassignGroup(ctx, data)
+		},
+		"DeleteGroup": func(ctx context.Context, data interface{}) (interface{}, error) {
+			// Direct call to server method for now
+			return c.callDeleteGroup(ctx, data)
 		},
 		"ListGroups": func(ctx context.Context, data interface{}) (interface{}, error) {
 			return c.cliClient.ListGroups(ctx, data.(*rpc.ListGroupsRequest))
@@ -323,16 +335,51 @@ func (c *Client) JoinCluster(address, token, bindIP, bindPort string) error {
 		return fmt.Errorf("failed to get hostname: %v", err)
 	}
 
+	// Generate a unique node ID for this node
+	cfg := c.GetConfig()
+	nodeID := cfg.GenerateNodeID()
+
 	// Create join request
 	joinReq := &rpc.JoinRequest{
 		Address:  hostname,
 		Token:    token,
+		NodeId:   nodeID, // Add the required node ID
 		BindIp:   bindIP,
 		BindPort: bindPort,
 	}
 
-	_, err = c.CLI().Join(context.Background(), joinReq)
-	return err
+	resp, err := c.CLI().Join(context.Background(), joinReq)
+	if err != nil {
+		return fmt.Errorf("join request failed: %v", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("join failed: %s", resp.Message)
+	}
+
+	// Update local config with the cluster information
+	cfg.Pulse.LocalNode = resp.NodeId
+	cfg.Pulse.ClusterToken = token
+
+	// Add this node to the nodes map
+	if cfg.Nodes == nil {
+		cfg.Nodes = make(map[string]*config.Node)
+	}
+	
+	cfg.Nodes[resp.NodeId] = &config.Node{
+		Hostname: hostname,
+		IP:       bindIP,
+		Port:     bindPort,
+		IPGroups: make(map[string][]string),
+	}
+
+	// Save the updated config
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("successfully joined cluster but failed to save local config: %v", err)
+	}
+
+	fmt.Printf("Successfully joined cluster with node ID: %s\n", resp.NodeId)
+	return nil
 }
 
 // LeaveCluster removes this node from the cluster
@@ -570,4 +617,168 @@ func (c *Client) ListGroups(jsonOutput bool) (string, []*rpc.GroupInfo, error) {
 		return "", nil, errors.New(response.Message)
 	}
 	return response.JsonData, response.Groups, nil
+}
+
+// Temporary struct definitions to match server-side (until protobuf is regenerated)
+type UnassignGroupRequest struct {
+	GroupName string
+	Hostname  string
+	Interface string
+}
+
+type UnassignGroupResponse struct {
+	Success bool
+	Message string
+}
+
+type DeleteGroupRequest struct {
+	GroupName string
+	Force     bool
+}
+
+type DeleteGroupResponse struct {
+	Success  bool
+	Message  string
+	Warnings []string
+}
+
+// Helper methods for direct server calls
+func (c *Client) callUnassignGroup(ctx context.Context, data interface{}) (interface{}, error) {
+	// This is a simplified direct call - in practice, this would use gRPC
+	// For now, returning an error to indicate not implemented via RPC
+	return nil, fmt.Errorf("unassign group RPC not yet implemented - use direct method")
+}
+
+func (c *Client) callDeleteGroup(ctx context.Context, data interface{}) (interface{}, error) {
+	// This is a simplified direct call - in practice, this would use gRPC
+	// For now, returning an error to indicate not implemented via RPC
+	return nil, fmt.Errorf("delete group RPC not yet implemented - use direct method")
+}
+
+// UnassignGroupFromNode removes a group assignment from a node's interface
+func (c *Client) UnassignGroupFromNode(groupName, hostname, iface string) error {
+	// For now, implement this by directly reading and modifying the config
+	// This is a temporary solution until RPC is properly implemented
+	cfg := c.GetConfig()
+	
+	// Check if group exists
+	if _, exists := cfg.Groups[groupName]; !exists {
+		return fmt.Errorf("group %s does not exist", groupName)
+	}
+
+	// Find node by hostname
+	var nodeFound bool
+	var nodeID string
+	for id, node := range cfg.Nodes {
+		if node.Hostname == hostname {
+			nodeFound = true
+			nodeID = id
+			break
+		}
+	}
+
+	if !nodeFound {
+		return fmt.Errorf("node %s not found", hostname)
+	}
+
+	node := cfg.Nodes[nodeID]
+	if node.IPGroups == nil {
+		return fmt.Errorf("group %s is not assigned to interface %s on node %s", groupName, iface, hostname)
+	}
+
+	// Find and remove the group from interface
+	groups := node.IPGroups[iface]
+	groupIndex := -1
+	for i, g := range groups {
+		if g == groupName {
+			groupIndex = i
+			break
+		}
+	}
+
+	if groupIndex == -1 {
+		return fmt.Errorf("group %s is not assigned to interface %s on node %s", groupName, iface, hostname)
+	}
+
+	// Remove group from slice
+	node.IPGroups[iface] = append(groups[:groupIndex], groups[groupIndex+1:]...)
+
+	// If interface has no more groups, remove the entry
+	if len(node.IPGroups[iface]) == 0 {
+		delete(node.IPGroups, iface)
+	}
+
+	// Save config
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("failed to save config: %v", err)
+	}
+
+	fmt.Printf("Successfully unassigned group %s from interface %s on node %s\n", groupName, iface, hostname)
+	return nil
+}
+
+// DeleteGroup removes a group and optionally its assignments
+func (c *Client) DeleteGroup(groupName string, force bool) error {
+	// For now, implement this by directly reading and modifying the config
+	// This is a temporary solution until RPC is properly implemented
+	cfg := c.GetConfig()
+	
+	var warnings []string
+
+	// Check if group exists
+	if _, exists := cfg.Groups[groupName]; !exists {
+		return fmt.Errorf("group %s does not exist", groupName)
+	}
+
+	// Check if group is assigned to any nodes (unless force is true)
+	var assignedNodes []string
+	for _, node := range cfg.Nodes {
+		for iface, groups := range node.IPGroups {
+			for _, group := range groups {
+				if group == groupName {
+					assignedNodes = append(assignedNodes, fmt.Sprintf("%s:%s", node.Hostname, iface))
+				}
+			}
+		}
+	}
+
+	if len(assignedNodes) > 0 && !force {
+		return fmt.Errorf("group %s is assigned to nodes: %v. Use --force to delete anyway", groupName, assignedNodes)
+	}
+
+	// If force is true and group is assigned, remove assignments and add warnings
+	if len(assignedNodes) > 0 && force {
+		for _, node := range cfg.Nodes {
+			for iface := range node.IPGroups {
+				groups := node.IPGroups[iface]
+				for i := len(groups) - 1; i >= 0; i-- {
+					if groups[i] == groupName {
+						// Remove group from slice
+						node.IPGroups[iface] = append(groups[:i], groups[i+1:]...)
+						warnings = append(warnings, fmt.Sprintf("removed assignment from %s:%s", node.Hostname, iface))
+					}
+				}
+				// If interface has no more groups, remove the entry
+				if len(node.IPGroups[iface]) == 0 {
+					delete(node.IPGroups, iface)
+				}
+			}
+		}
+	}
+
+	// Delete the group
+	delete(cfg.Groups, groupName)
+
+	// Save config
+	if err := cfg.Save(); err != nil {
+		return fmt.Errorf("failed to save config: %v", err)
+	}
+
+	// Display warnings
+	for _, warning := range warnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
+
+	fmt.Printf("Successfully deleted group %s\n", groupName)
+	return nil
 }

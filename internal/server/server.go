@@ -99,7 +99,7 @@ func (s *Server) Start() error {
 	if err != nil {
 		s.logger.Debug("No local node configured in config, using default settings")
 		localNode = config.Node{
-			IP:   "0.0.0.0",
+			IP:   "127.0.0.1", // Bind to localhost for initial setup
 			Port: "8080",
 		}
 	}
@@ -1307,6 +1307,185 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 	}, nil
 }
 
+// Temporary structs for new RPC methods (until protobuf is regenerated)
+type UnassignGroupRequest struct {
+	GroupName string
+	Hostname  string
+	Interface string
+}
+
+type UnassignGroupResponse struct {
+	Success bool
+	Message string
+}
+
+type DeleteGroupRequest struct {
+	GroupName string
+	Force     bool
+}
+
+type DeleteGroupResponse struct {
+	Success  bool
+	Message  string
+	Warnings []string
+}
+
+// UnassignGroupFromNode implements the CLI.UnassignGroupFromNode RPC method
+func (s *Server) UnassignGroupFromNode(ctx context.Context, req *UnassignGroupRequest) (*UnassignGroupResponse, error) {
+	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node: %s, interface: %s", req.GroupName, req.Hostname, req.Interface)
+	s.Lock()
+	defer s.Unlock()
+
+	// Check if group exists
+	if _, exists := s.config.Groups[req.GroupName]; !exists {
+		return &UnassignGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
+		}, nil
+	}
+
+	// Find node by hostname
+	var nodeFound bool
+	var node *config.Node
+	for _, n := range s.config.Nodes {
+		if n.Hostname == req.Hostname {
+			nodeFound = true
+			node = n
+			break
+		}
+	}
+
+	if !nodeFound || node == nil {
+		return &UnassignGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("node %s not found", req.Hostname),
+		}, nil
+	}
+
+	// Check if group is assigned to this interface
+	if node.IPGroups == nil {
+		return &UnassignGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
+		}, nil
+	}
+
+	// Find and remove the group from interface
+	groups := node.IPGroups[req.Interface]
+	groupIndex := -1
+	for i, g := range groups {
+		if g == req.GroupName {
+			groupIndex = i
+			break
+		}
+	}
+
+	if groupIndex == -1 {
+		return &UnassignGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
+		}, nil
+	}
+
+	// Remove group from slice
+	node.IPGroups[req.Interface] = append(groups[:groupIndex], groups[groupIndex+1:]...)
+
+	// If interface has no more groups, remove the entry
+	if len(node.IPGroups[req.Interface]) == 0 {
+		delete(node.IPGroups, req.Interface)
+	}
+
+	// Save config
+	if err := s.config.Save(); err != nil {
+		s.logger.Errorf("Failed to save config: %v", err)
+		return &UnassignGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save config: %v", err),
+		}, nil
+	}
+
+	s.logger.Infof("Successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, req.Hostname)
+	return &UnassignGroupResponse{
+		Success: true,
+		Message: fmt.Sprintf("successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
+	}, nil
+}
+
+// DeleteGroup implements the CLI.DeleteGroup RPC method
+func (s *Server) DeleteGroup(ctx context.Context, req *DeleteGroupRequest) (*DeleteGroupResponse, error) {
+	s.logger.Infof("Received DeleteGroup request for group: %s, force: %v", req.GroupName, req.Force)
+	s.Lock()
+	defer s.Unlock()
+
+	var warnings []string
+
+	// Check if group exists
+	if _, exists := s.config.Groups[req.GroupName]; !exists {
+		return &DeleteGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
+		}, nil
+	}
+
+	// Check if group is assigned to any nodes (unless force is true)
+	var assignedNodes []string
+	for _, node := range s.config.Nodes {
+		for iface, groups := range node.IPGroups {
+			for _, group := range groups {
+				if group == req.GroupName {
+					assignedNodes = append(assignedNodes, fmt.Sprintf("%s:%s", node.Hostname, iface))
+				}
+			}
+		}
+	}
+
+	if len(assignedNodes) > 0 && !req.Force {
+		return &DeleteGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("group %s is assigned to nodes: %s. Use --force to delete anyway", req.GroupName, assignedNodes),
+		}, nil
+	}
+
+	// If force is true and group is assigned, remove assignments and add warnings
+	if len(assignedNodes) > 0 && req.Force {
+		for _, node := range s.config.Nodes {
+			for iface := range node.IPGroups {
+				groups := node.IPGroups[iface]
+				for i := len(groups) - 1; i >= 0; i-- {
+					if groups[i] == req.GroupName {
+						// Remove group from slice
+						node.IPGroups[iface] = append(groups[:i], groups[i+1:]...)
+						warnings = append(warnings, fmt.Sprintf("removed assignment from %s:%s", node.Hostname, iface))
+					}
+				}
+				// If interface has no more groups, remove the entry
+				if len(node.IPGroups[iface]) == 0 {
+					delete(node.IPGroups, iface)
+				}
+			}
+		}
+	}
+
+	// Delete the group
+	delete(s.config.Groups, req.GroupName)
+
+	// Save config
+	if err := s.config.Save(); err != nil {
+		s.logger.Errorf("Failed to save config: %v", err)
+		return &DeleteGroupResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save config: %v", err),
+		}, nil
+	}
+
+	s.logger.Infof("Successfully deleted group %s", req.GroupName)
+	return &DeleteGroupResponse{
+		Success:  true,
+		Message:  fmt.Sprintf("successfully deleted group %s", req.GroupName),
+		Warnings: warnings,
+	}, nil
+}
+
 // ListGroups implements the CLI.ListGroups RPC method
 func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*rpc.ListGroupsResponse, error) {
 	s.logger.Info("Received ListGroups request")
@@ -1514,6 +1693,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 		NodeId:  nodeID,
 	}, nil
 }
+
 
 // Quorum-related RPC method implementations that delegate to the quorum handler
 
