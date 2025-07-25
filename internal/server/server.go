@@ -1331,14 +1331,14 @@ type DeleteGroupResponse struct {
 }
 
 // UnassignGroupFromNode implements the CLI.UnassignGroupFromNode RPC method
-func (s *Server) UnassignGroupFromNode(ctx context.Context, req *UnassignGroupRequest) (*UnassignGroupResponse, error) {
+func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGroupRequest) (*rpc.UnassignGroupResponse, error) {
 	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node: %s, interface: %s", req.GroupName, req.Hostname, req.Interface)
 	s.Lock()
 	defer s.Unlock()
 
 	// Check if group exists
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
-		return &UnassignGroupResponse{
+		return &rpc.UnassignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
 		}, nil
@@ -1356,7 +1356,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *UnassignGroupRe
 	}
 
 	if !nodeFound || node == nil {
-		return &UnassignGroupResponse{
+		return &rpc.UnassignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("node %s not found", req.Hostname),
 		}, nil
@@ -1364,7 +1364,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *UnassignGroupRe
 
 	// Check if group is assigned to this interface
 	if node.IPGroups == nil {
-		return &UnassignGroupResponse{
+		return &rpc.UnassignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
 		}, nil
@@ -1381,7 +1381,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *UnassignGroupRe
 	}
 
 	if groupIndex == -1 {
-		return &UnassignGroupResponse{
+		return &rpc.UnassignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
 		}, nil
@@ -1398,21 +1398,21 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *UnassignGroupRe
 	// Save config
 	if err := s.config.Save(); err != nil {
 		s.logger.Errorf("Failed to save config: %v", err)
-		return &UnassignGroupResponse{
+		return &rpc.UnassignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
 
 	s.logger.Infof("Successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, req.Hostname)
-	return &UnassignGroupResponse{
+	return &rpc.UnassignGroupResponse{
 		Success: true,
 		Message: fmt.Sprintf("successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
 	}, nil
 }
 
 // DeleteGroup implements the CLI.DeleteGroup RPC method
-func (s *Server) DeleteGroup(ctx context.Context, req *DeleteGroupRequest) (*DeleteGroupResponse, error) {
+func (s *Server) DeleteGroup(ctx context.Context, req *rpc.DeleteGroupRequest) (*rpc.DeleteGroupResponse, error) {
 	s.logger.Infof("Received DeleteGroup request for group: %s, force: %v", req.GroupName, req.Force)
 	s.Lock()
 	defer s.Unlock()
@@ -1421,7 +1421,7 @@ func (s *Server) DeleteGroup(ctx context.Context, req *DeleteGroupRequest) (*Del
 
 	// Check if group exists
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
-		return &DeleteGroupResponse{
+		return &rpc.DeleteGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
 		}, nil
@@ -1440,7 +1440,7 @@ func (s *Server) DeleteGroup(ctx context.Context, req *DeleteGroupRequest) (*Del
 	}
 
 	if len(assignedNodes) > 0 && !req.Force {
-		return &DeleteGroupResponse{
+		return &rpc.DeleteGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("group %s is assigned to nodes: %s. Use --force to delete anyway", req.GroupName, assignedNodes),
 		}, nil
@@ -1472,14 +1472,14 @@ func (s *Server) DeleteGroup(ctx context.Context, req *DeleteGroupRequest) (*Del
 	// Save config
 	if err := s.config.Save(); err != nil {
 		s.logger.Errorf("Failed to save config: %v", err)
-		return &DeleteGroupResponse{
+		return &rpc.DeleteGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
 
 	s.logger.Infof("Successfully deleted group %s", req.GroupName)
-	return &DeleteGroupResponse{
+	return &rpc.DeleteGroupResponse{
 		Success:  true,
 		Message:  fmt.Sprintf("successfully deleted group %s", req.GroupName),
 		Warnings: warnings,

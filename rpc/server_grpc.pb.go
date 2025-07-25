@@ -28,6 +28,8 @@ const (
 	CLI_AddIPToGroup_FullMethodName            = "/rpc.CLI/AddIPToGroup"
 	CLI_RemoveIPFromGroup_FullMethodName       = "/rpc.CLI/RemoveIPFromGroup"
 	CLI_AssignGroupToNode_FullMethodName       = "/rpc.CLI/AssignGroupToNode"
+	CLI_UnassignGroupFromNode_FullMethodName   = "/rpc.CLI/UnassignGroupFromNode"
+	CLI_DeleteGroup_FullMethodName             = "/rpc.CLI/DeleteGroup"
 	CLI_ListGroups_FullMethodName              = "/rpc.CLI/ListGroups"
 	CLI_CreateCluster_FullMethodName           = "/rpc.CLI/CreateCluster"
 	CLI_GetVotingSessions_FullMethodName       = "/rpc.CLI/GetVotingSessions"
@@ -50,6 +52,8 @@ type CLIClient interface {
 	AddIPToGroup(ctx context.Context, in *AddIPToGroupRequest, opts ...grpc.CallOption) (*AddIPToGroupResponse, error)
 	RemoveIPFromGroup(ctx context.Context, in *RemoveIPFromGroupRequest, opts ...grpc.CallOption) (*RemoveIPFromGroupResponse, error)
 	AssignGroupToNode(ctx context.Context, in *AssignGroupRequest, opts ...grpc.CallOption) (*AssignGroupResponse, error)
+	UnassignGroupFromNode(ctx context.Context, in *UnassignGroupRequest, opts ...grpc.CallOption) (*UnassignGroupResponse, error)
+	DeleteGroup(ctx context.Context, in *DeleteGroupRequest, opts ...grpc.CallOption) (*DeleteGroupResponse, error)
 	ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error)
 	CreateCluster(ctx context.Context, in *CreateClusterRequest, opts ...grpc.CallOption) (*CreateClusterResponse, error)
 	// Quorum voting methods
@@ -155,6 +159,26 @@ func (c *cLIClient) AssignGroupToNode(ctx context.Context, in *AssignGroupReques
 	return out, nil
 }
 
+func (c *cLIClient) UnassignGroupFromNode(ctx context.Context, in *UnassignGroupRequest, opts ...grpc.CallOption) (*UnassignGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnassignGroupResponse)
+	err := c.cc.Invoke(ctx, CLI_UnassignGroupFromNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cLIClient) DeleteGroup(ctx context.Context, in *DeleteGroupRequest, opts ...grpc.CallOption) (*DeleteGroupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteGroupResponse)
+	err := c.cc.Invoke(ctx, CLI_DeleteGroup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *cLIClient) ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListGroupsResponse)
@@ -211,6 +235,8 @@ type CLIServer interface {
 	AddIPToGroup(context.Context, *AddIPToGroupRequest) (*AddIPToGroupResponse, error)
 	RemoveIPFromGroup(context.Context, *RemoveIPFromGroupRequest) (*RemoveIPFromGroupResponse, error)
 	AssignGroupToNode(context.Context, *AssignGroupRequest) (*AssignGroupResponse, error)
+	UnassignGroupFromNode(context.Context, *UnassignGroupRequest) (*UnassignGroupResponse, error)
+	DeleteGroup(context.Context, *DeleteGroupRequest) (*DeleteGroupResponse, error)
 	ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error)
 	CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error)
 	// Quorum voting methods
@@ -252,6 +278,12 @@ func (UnimplementedCLIServer) RemoveIPFromGroup(context.Context, *RemoveIPFromGr
 }
 func (UnimplementedCLIServer) AssignGroupToNode(context.Context, *AssignGroupRequest) (*AssignGroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssignGroupToNode not implemented")
+}
+func (UnimplementedCLIServer) UnassignGroupFromNode(context.Context, *UnassignGroupRequest) (*UnassignGroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnassignGroupFromNode not implemented")
+}
+func (UnimplementedCLIServer) DeleteGroup(context.Context, *DeleteGroupRequest) (*DeleteGroupResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteGroup not implemented")
 }
 func (UnimplementedCLIServer) ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListGroups not implemented")
@@ -448,6 +480,42 @@ func _CLI_AssignGroupToNode_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CLI_UnassignGroupFromNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnassignGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).UnassignGroupFromNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_UnassignGroupFromNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).UnassignGroupFromNode(ctx, req.(*UnassignGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CLI_DeleteGroup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteGroupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).DeleteGroup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_DeleteGroup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).DeleteGroup(ctx, req.(*DeleteGroupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CLI_ListGroups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListGroupsRequest)
 	if err := dec(in); err != nil {
@@ -562,6 +630,14 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AssignGroupToNode",
 			Handler:    _CLI_AssignGroupToNode_Handler,
+		},
+		{
+			MethodName: "UnassignGroupFromNode",
+			Handler:    _CLI_UnassignGroupFromNode_Handler,
+		},
+		{
+			MethodName: "DeleteGroup",
+			Handler:    _CLI_DeleteGroup_Handler,
 		},
 		{
 			MethodName: "ListGroups",

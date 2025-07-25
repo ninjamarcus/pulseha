@@ -2189,6 +2189,232 @@ func (x *ListGroupsResponse) GetJsonData() string {
 	return ""
 }
 
+// Group Unassignment
+type UnassignGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupName     string                 `protobuf:"bytes,1,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
+	Hostname      string                 `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Interface     string                 `protobuf:"bytes,3,opt,name=interface,proto3" json:"interface,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnassignGroupRequest) Reset() {
+	*x = UnassignGroupRequest{}
+	mi := &file_rpc_server_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnassignGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnassignGroupRequest) ProtoMessage() {}
+
+func (x *UnassignGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_server_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnassignGroupRequest.ProtoReflect.Descriptor instead.
+func (*UnassignGroupRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_server_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *UnassignGroupRequest) GetGroupName() string {
+	if x != nil {
+		return x.GroupName
+	}
+	return ""
+}
+
+func (x *UnassignGroupRequest) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *UnassignGroupRequest) GetInterface() string {
+	if x != nil {
+		return x.Interface
+	}
+	return ""
+}
+
+type UnassignGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnassignGroupResponse) Reset() {
+	*x = UnassignGroupResponse{}
+	mi := &file_rpc_server_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnassignGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnassignGroupResponse) ProtoMessage() {}
+
+func (x *UnassignGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_server_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnassignGroupResponse.ProtoReflect.Descriptor instead.
+func (*UnassignGroupResponse) Descriptor() ([]byte, []int) {
+	return file_rpc_server_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *UnassignGroupResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *UnassignGroupResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// Group Deletion
+type DeleteGroupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GroupName     string                 `protobuf:"bytes,1,opt,name=group_name,json=groupName,proto3" json:"group_name,omitempty"`
+	Force         bool                   `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"` // Force deletion even if assigned to nodes
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteGroupRequest) Reset() {
+	*x = DeleteGroupRequest{}
+	mi := &file_rpc_server_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteGroupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteGroupRequest) ProtoMessage() {}
+
+func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_server_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteGroupRequest.ProtoReflect.Descriptor instead.
+func (*DeleteGroupRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_server_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *DeleteGroupRequest) GetGroupName() string {
+	if x != nil {
+		return x.GroupName
+	}
+	return ""
+}
+
+func (x *DeleteGroupRequest) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+type DeleteGroupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Warnings      []string               `protobuf:"bytes,3,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteGroupResponse) Reset() {
+	*x = DeleteGroupResponse{}
+	mi := &file_rpc_server_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteGroupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteGroupResponse) ProtoMessage() {}
+
+func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_server_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteGroupResponse.ProtoReflect.Descriptor instead.
+func (*DeleteGroupResponse) Descriptor() ([]byte, []int) {
+	return file_rpc_server_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *DeleteGroupResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeleteGroupResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *DeleteGroupResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 // Cluster Management
 type CreateClusterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2201,7 +2427,7 @@ type CreateClusterRequest struct {
 
 func (x *CreateClusterRequest) Reset() {
 	*x = CreateClusterRequest{}
-	mi := &file_rpc_server_proto_msgTypes[37]
+	mi := &file_rpc_server_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2213,7 +2439,7 @@ func (x *CreateClusterRequest) String() string {
 func (*CreateClusterRequest) ProtoMessage() {}
 
 func (x *CreateClusterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[37]
+	mi := &file_rpc_server_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2226,7 +2452,7 @@ func (x *CreateClusterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateClusterRequest.ProtoReflect.Descriptor instead.
 func (*CreateClusterRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{37}
+	return file_rpc_server_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CreateClusterRequest) GetBindIp() string {
@@ -2262,7 +2488,7 @@ type CreateClusterResponse struct {
 
 func (x *CreateClusterResponse) Reset() {
 	*x = CreateClusterResponse{}
-	mi := &file_rpc_server_proto_msgTypes[38]
+	mi := &file_rpc_server_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2274,7 +2500,7 @@ func (x *CreateClusterResponse) String() string {
 func (*CreateClusterResponse) ProtoMessage() {}
 
 func (x *CreateClusterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[38]
+	mi := &file_rpc_server_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2287,7 +2513,7 @@ func (x *CreateClusterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateClusterResponse.ProtoReflect.Descriptor instead.
 func (*CreateClusterResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{38}
+	return file_rpc_server_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *CreateClusterResponse) GetSuccess() bool {
@@ -2331,7 +2557,7 @@ type StartVotingSessionRequest struct {
 
 func (x *StartVotingSessionRequest) Reset() {
 	*x = StartVotingSessionRequest{}
-	mi := &file_rpc_server_proto_msgTypes[39]
+	mi := &file_rpc_server_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2343,7 +2569,7 @@ func (x *StartVotingSessionRequest) String() string {
 func (*StartVotingSessionRequest) ProtoMessage() {}
 
 func (x *StartVotingSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[39]
+	mi := &file_rpc_server_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2356,7 +2582,7 @@ func (x *StartVotingSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVotingSessionRequest.ProtoReflect.Descriptor instead.
 func (*StartVotingSessionRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{39}
+	return file_rpc_server_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *StartVotingSessionRequest) GetType() VoteType {
@@ -2398,7 +2624,7 @@ type StartVotingSessionResponse struct {
 
 func (x *StartVotingSessionResponse) Reset() {
 	*x = StartVotingSessionResponse{}
-	mi := &file_rpc_server_proto_msgTypes[40]
+	mi := &file_rpc_server_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2410,7 +2636,7 @@ func (x *StartVotingSessionResponse) String() string {
 func (*StartVotingSessionResponse) ProtoMessage() {}
 
 func (x *StartVotingSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[40]
+	mi := &file_rpc_server_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2423,7 +2649,7 @@ func (x *StartVotingSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVotingSessionResponse.ProtoReflect.Descriptor instead.
 func (*StartVotingSessionResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{40}
+	return file_rpc_server_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *StartVotingSessionResponse) GetSuccess() bool {
@@ -2458,7 +2684,7 @@ type CastVoteRequest struct {
 
 func (x *CastVoteRequest) Reset() {
 	*x = CastVoteRequest{}
-	mi := &file_rpc_server_proto_msgTypes[41]
+	mi := &file_rpc_server_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2470,7 +2696,7 @@ func (x *CastVoteRequest) String() string {
 func (*CastVoteRequest) ProtoMessage() {}
 
 func (x *CastVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[41]
+	mi := &file_rpc_server_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2483,7 +2709,7 @@ func (x *CastVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CastVoteRequest.ProtoReflect.Descriptor instead.
 func (*CastVoteRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{41}
+	return file_rpc_server_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CastVoteRequest) GetSessionId() string {
@@ -2517,7 +2743,7 @@ type CastVoteResponse struct {
 
 func (x *CastVoteResponse) Reset() {
 	*x = CastVoteResponse{}
-	mi := &file_rpc_server_proto_msgTypes[42]
+	mi := &file_rpc_server_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2529,7 +2755,7 @@ func (x *CastVoteResponse) String() string {
 func (*CastVoteResponse) ProtoMessage() {}
 
 func (x *CastVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[42]
+	mi := &file_rpc_server_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2542,7 +2768,7 @@ func (x *CastVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CastVoteResponse.ProtoReflect.Descriptor instead.
 func (*CastVoteResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{42}
+	return file_rpc_server_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *CastVoteResponse) GetSuccess() bool {
@@ -2568,7 +2794,7 @@ type GetVotingResultRequest struct {
 
 func (x *GetVotingResultRequest) Reset() {
 	*x = GetVotingResultRequest{}
-	mi := &file_rpc_server_proto_msgTypes[43]
+	mi := &file_rpc_server_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2580,7 +2806,7 @@ func (x *GetVotingResultRequest) String() string {
 func (*GetVotingResultRequest) ProtoMessage() {}
 
 func (x *GetVotingResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[43]
+	mi := &file_rpc_server_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2593,7 +2819,7 @@ func (x *GetVotingResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingResultRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingResultRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{43}
+	return file_rpc_server_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GetVotingResultRequest) GetSessionId() string {
@@ -2617,7 +2843,7 @@ type VotingSessionResult struct {
 
 func (x *VotingSessionResult) Reset() {
 	*x = VotingSessionResult{}
-	mi := &file_rpc_server_proto_msgTypes[44]
+	mi := &file_rpc_server_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2629,7 +2855,7 @@ func (x *VotingSessionResult) String() string {
 func (*VotingSessionResult) ProtoMessage() {}
 
 func (x *VotingSessionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[44]
+	mi := &file_rpc_server_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2642,7 +2868,7 @@ func (x *VotingSessionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotingSessionResult.ProtoReflect.Descriptor instead.
 func (*VotingSessionResult) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{44}
+	return file_rpc_server_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *VotingSessionResult) GetPassed() bool {
@@ -2698,7 +2924,7 @@ type GetVotingResultResponse struct {
 
 func (x *GetVotingResultResponse) Reset() {
 	*x = GetVotingResultResponse{}
-	mi := &file_rpc_server_proto_msgTypes[45]
+	mi := &file_rpc_server_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2710,7 +2936,7 @@ func (x *GetVotingResultResponse) String() string {
 func (*GetVotingResultResponse) ProtoMessage() {}
 
 func (x *GetVotingResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[45]
+	mi := &file_rpc_server_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2723,7 +2949,7 @@ func (x *GetVotingResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingResultResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingResultResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{45}
+	return file_rpc_server_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetVotingResultResponse) GetSuccess() bool {
@@ -2756,7 +2982,7 @@ type GetVotingSessionsRequest struct {
 
 func (x *GetVotingSessionsRequest) Reset() {
 	*x = GetVotingSessionsRequest{}
-	mi := &file_rpc_server_proto_msgTypes[46]
+	mi := &file_rpc_server_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2768,7 +2994,7 @@ func (x *GetVotingSessionsRequest) String() string {
 func (*GetVotingSessionsRequest) ProtoMessage() {}
 
 func (x *GetVotingSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[46]
+	mi := &file_rpc_server_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2781,7 +3007,7 @@ func (x *GetVotingSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionsRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{46}
+	return file_rpc_server_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *GetVotingSessionsRequest) GetIncludeCompleted() bool {
@@ -2807,7 +3033,7 @@ type VotingSessionInfo struct {
 
 func (x *VotingSessionInfo) Reset() {
 	*x = VotingSessionInfo{}
-	mi := &file_rpc_server_proto_msgTypes[47]
+	mi := &file_rpc_server_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2819,7 +3045,7 @@ func (x *VotingSessionInfo) String() string {
 func (*VotingSessionInfo) ProtoMessage() {}
 
 func (x *VotingSessionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[47]
+	mi := &file_rpc_server_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2832,7 +3058,7 @@ func (x *VotingSessionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotingSessionInfo.ProtoReflect.Descriptor instead.
 func (*VotingSessionInfo) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{47}
+	return file_rpc_server_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *VotingSessionInfo) GetId() string {
@@ -2902,7 +3128,7 @@ type GetVotingSessionsResponse struct {
 
 func (x *GetVotingSessionsResponse) Reset() {
 	*x = GetVotingSessionsResponse{}
-	mi := &file_rpc_server_proto_msgTypes[48]
+	mi := &file_rpc_server_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2914,7 +3140,7 @@ func (x *GetVotingSessionsResponse) String() string {
 func (*GetVotingSessionsResponse) ProtoMessage() {}
 
 func (x *GetVotingSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[48]
+	mi := &file_rpc_server_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2927,7 +3153,7 @@ func (x *GetVotingSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionsResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{48}
+	return file_rpc_server_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetVotingSessionsResponse) GetSuccess() bool {
@@ -2960,7 +3186,7 @@ type GetVotingSessionDetailsRequest struct {
 
 func (x *GetVotingSessionDetailsRequest) Reset() {
 	*x = GetVotingSessionDetailsRequest{}
-	mi := &file_rpc_server_proto_msgTypes[49]
+	mi := &file_rpc_server_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2972,7 +3198,7 @@ func (x *GetVotingSessionDetailsRequest) String() string {
 func (*GetVotingSessionDetailsRequest) ProtoMessage() {}
 
 func (x *GetVotingSessionDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[49]
+	mi := &file_rpc_server_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2985,7 +3211,7 @@ func (x *GetVotingSessionDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{49}
+	return file_rpc_server_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetVotingSessionDetailsRequest) GetSessionId() string {
@@ -3006,7 +3232,7 @@ type Vote struct {
 
 func (x *Vote) Reset() {
 	*x = Vote{}
-	mi := &file_rpc_server_proto_msgTypes[50]
+	mi := &file_rpc_server_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3018,7 +3244,7 @@ func (x *Vote) String() string {
 func (*Vote) ProtoMessage() {}
 
 func (x *Vote) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[50]
+	mi := &file_rpc_server_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3031,7 +3257,7 @@ func (x *Vote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vote.ProtoReflect.Descriptor instead.
 func (*Vote) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{50}
+	return file_rpc_server_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *Vote) GetVoterId() string {
@@ -3067,7 +3293,7 @@ type GetVotingSessionDetailsResponse struct {
 
 func (x *GetVotingSessionDetailsResponse) Reset() {
 	*x = GetVotingSessionDetailsResponse{}
-	mi := &file_rpc_server_proto_msgTypes[51]
+	mi := &file_rpc_server_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3079,7 +3305,7 @@ func (x *GetVotingSessionDetailsResponse) String() string {
 func (*GetVotingSessionDetailsResponse) ProtoMessage() {}
 
 func (x *GetVotingSessionDetailsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[51]
+	mi := &file_rpc_server_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3092,7 +3318,7 @@ func (x *GetVotingSessionDetailsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionDetailsResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionDetailsResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{51}
+	return file_rpc_server_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetVotingSessionDetailsResponse) GetSuccess() bool {
@@ -3257,7 +3483,23 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12&\n" +
 	"\x06groups\x18\x03 \x03(\v2\x0e.rpc.GroupInfoR\x06groups\x12\x1b\n" +
-	"\tjson_data\x18\x04 \x01(\tR\bjsonData\"`\n" +
+	"\tjson_data\x18\x04 \x01(\tR\bjsonData\"o\n" +
+	"\x14UnassignGroupRequest\x12\x1d\n" +
+	"\n" +
+	"group_name\x18\x01 \x01(\tR\tgroupName\x12\x1a\n" +
+	"\bhostname\x18\x02 \x01(\tR\bhostname\x12\x1c\n" +
+	"\tinterface\x18\x03 \x01(\tR\tinterface\"K\n" +
+	"\x15UnassignGroupResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"I\n" +
+	"\x12DeleteGroupRequest\x12\x1d\n" +
+	"\n" +
+	"group_name\x18\x01 \x01(\tR\tgroupName\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"e\n" +
+	"\x13DeleteGroupResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1a\n" +
+	"\bwarnings\x18\x03 \x03(\tR\bwarnings\"`\n" +
 	"\x14CreateClusterRequest\x12\x17\n" +
 	"\abind_ip\x18\x01 \x01(\tR\x06bindIp\x12\x1b\n" +
 	"\tbind_port\x18\x02 \x01(\tR\bbindPort\x12\x12\n" +
@@ -3341,7 +3583,7 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\fVoteDecision\x12\a\n" +
 	"\x03YES\x10\x00\x12\x06\n" +
 	"\x02NO\x10\x01\x12\v\n" +
-	"\aABSTAIN\x10\x022\xff\x06\n" +
+	"\aABSTAIN\x10\x022\x95\b\n" +
 	"\x03CLI\x12-\n" +
 	"\x04Join\x12\x10.rpc.JoinRequest\x1a\x11.rpc.JoinResponse\"\x00\x120\n" +
 	"\x05Leave\x12\x11.rpc.LeaveRequest\x1a\x12.rpc.LeaveResponse\"\x00\x123\n" +
@@ -3351,7 +3593,9 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\vCreateGroup\x12\x17.rpc.CreateGroupRequest\x1a\x18.rpc.CreateGroupResponse\"\x00\x12E\n" +
 	"\fAddIPToGroup\x12\x18.rpc.AddIPToGroupRequest\x1a\x19.rpc.AddIPToGroupResponse\"\x00\x12T\n" +
 	"\x11RemoveIPFromGroup\x12\x1d.rpc.RemoveIPFromGroupRequest\x1a\x1e.rpc.RemoveIPFromGroupResponse\"\x00\x12H\n" +
-	"\x11AssignGroupToNode\x12\x17.rpc.AssignGroupRequest\x1a\x18.rpc.AssignGroupResponse\"\x00\x12?\n" +
+	"\x11AssignGroupToNode\x12\x17.rpc.AssignGroupRequest\x1a\x18.rpc.AssignGroupResponse\"\x00\x12P\n" +
+	"\x15UnassignGroupFromNode\x12\x19.rpc.UnassignGroupRequest\x1a\x1a.rpc.UnassignGroupResponse\"\x00\x12B\n" +
+	"\vDeleteGroup\x12\x17.rpc.DeleteGroupRequest\x1a\x18.rpc.DeleteGroupResponse\"\x00\x12?\n" +
 	"\n" +
 	"ListGroups\x12\x16.rpc.ListGroupsRequest\x1a\x17.rpc.ListGroupsResponse\"\x00\x12H\n" +
 	"\rCreateCluster\x12\x19.rpc.CreateClusterRequest\x1a\x1a.rpc.CreateClusterResponse\"\x00\x12T\n" +
@@ -3383,7 +3627,7 @@ func file_rpc_server_proto_rawDescGZIP() []byte {
 }
 
 var file_rpc_server_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_rpc_server_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_rpc_server_proto_msgTypes = make([]protoimpl.MessageInfo, 57)
 var file_rpc_server_proto_goTypes = []any{
 	(LogLevel)(0),                           // 0: rpc.LogLevel
 	(VoteType)(0),                           // 1: rpc.VoteType
@@ -3425,39 +3669,43 @@ var file_rpc_server_proto_goTypes = []any{
 	(*GroupInfo)(nil),                       // 37: rpc.GroupInfo
 	(*GroupAssignment)(nil),                 // 38: rpc.GroupAssignment
 	(*ListGroupsResponse)(nil),              // 39: rpc.ListGroupsResponse
-	(*CreateClusterRequest)(nil),            // 40: rpc.CreateClusterRequest
-	(*CreateClusterResponse)(nil),           // 41: rpc.CreateClusterResponse
-	(*StartVotingSessionRequest)(nil),       // 42: rpc.StartVotingSessionRequest
-	(*StartVotingSessionResponse)(nil),      // 43: rpc.StartVotingSessionResponse
-	(*CastVoteRequest)(nil),                 // 44: rpc.CastVoteRequest
-	(*CastVoteResponse)(nil),                // 45: rpc.CastVoteResponse
-	(*GetVotingResultRequest)(nil),          // 46: rpc.GetVotingResultRequest
-	(*VotingSessionResult)(nil),             // 47: rpc.VotingSessionResult
-	(*GetVotingResultResponse)(nil),         // 48: rpc.GetVotingResultResponse
-	(*GetVotingSessionsRequest)(nil),        // 49: rpc.GetVotingSessionsRequest
-	(*VotingSessionInfo)(nil),               // 50: rpc.VotingSessionInfo
-	(*GetVotingSessionsResponse)(nil),       // 51: rpc.GetVotingSessionsResponse
-	(*GetVotingSessionDetailsRequest)(nil),  // 52: rpc.GetVotingSessionDetailsRequest
-	(*Vote)(nil),                            // 53: rpc.Vote
-	(*GetVotingSessionDetailsResponse)(nil), // 54: rpc.GetVotingSessionDetailsResponse
-	nil,                                     // 55: rpc.Member.GroupAssignmentsEntry
+	(*UnassignGroupRequest)(nil),            // 40: rpc.UnassignGroupRequest
+	(*UnassignGroupResponse)(nil),           // 41: rpc.UnassignGroupResponse
+	(*DeleteGroupRequest)(nil),              // 42: rpc.DeleteGroupRequest
+	(*DeleteGroupResponse)(nil),             // 43: rpc.DeleteGroupResponse
+	(*CreateClusterRequest)(nil),            // 44: rpc.CreateClusterRequest
+	(*CreateClusterResponse)(nil),           // 45: rpc.CreateClusterResponse
+	(*StartVotingSessionRequest)(nil),       // 46: rpc.StartVotingSessionRequest
+	(*StartVotingSessionResponse)(nil),      // 47: rpc.StartVotingSessionResponse
+	(*CastVoteRequest)(nil),                 // 48: rpc.CastVoteRequest
+	(*CastVoteResponse)(nil),                // 49: rpc.CastVoteResponse
+	(*GetVotingResultRequest)(nil),          // 50: rpc.GetVotingResultRequest
+	(*VotingSessionResult)(nil),             // 51: rpc.VotingSessionResult
+	(*GetVotingResultResponse)(nil),         // 52: rpc.GetVotingResultResponse
+	(*GetVotingSessionsRequest)(nil),        // 53: rpc.GetVotingSessionsRequest
+	(*VotingSessionInfo)(nil),               // 54: rpc.VotingSessionInfo
+	(*GetVotingSessionsResponse)(nil),       // 55: rpc.GetVotingSessionsResponse
+	(*GetVotingSessionDetailsRequest)(nil),  // 56: rpc.GetVotingSessionDetailsRequest
+	(*Vote)(nil),                            // 57: rpc.Vote
+	(*GetVotingSessionDetailsResponse)(nil), // 58: rpc.GetVotingSessionDetailsResponse
+	nil,                                     // 59: rpc.Member.GroupAssignmentsEntry
 }
 var file_rpc_server_proto_depIdxs = []int32{
 	9,  // 0: rpc.StatusResponse.members:type_name -> rpc.Member
 	37, // 1: rpc.StatusResponse.groups:type_name -> rpc.GroupInfo
-	55, // 2: rpc.Member.group_assignments:type_name -> rpc.Member.GroupAssignmentsEntry
+	59, // 2: rpc.Member.group_assignments:type_name -> rpc.Member.GroupAssignmentsEntry
 	0,  // 3: rpc.LogsRequest.level:type_name -> rpc.LogLevel
 	38, // 4: rpc.GroupInfo.assignments:type_name -> rpc.GroupAssignment
 	37, // 5: rpc.ListGroupsResponse.groups:type_name -> rpc.GroupInfo
 	1,  // 6: rpc.StartVotingSessionRequest.type:type_name -> rpc.VoteType
 	2,  // 7: rpc.CastVoteRequest.decision:type_name -> rpc.VoteDecision
-	47, // 8: rpc.GetVotingResultResponse.result:type_name -> rpc.VotingSessionResult
+	51, // 8: rpc.GetVotingResultResponse.result:type_name -> rpc.VotingSessionResult
 	1,  // 9: rpc.VotingSessionInfo.type:type_name -> rpc.VoteType
-	47, // 10: rpc.VotingSessionInfo.result:type_name -> rpc.VotingSessionResult
-	50, // 11: rpc.GetVotingSessionsResponse.sessions:type_name -> rpc.VotingSessionInfo
+	51, // 10: rpc.VotingSessionInfo.result:type_name -> rpc.VotingSessionResult
+	54, // 11: rpc.GetVotingSessionsResponse.sessions:type_name -> rpc.VotingSessionInfo
 	2,  // 12: rpc.Vote.decision:type_name -> rpc.VoteDecision
-	50, // 13: rpc.GetVotingSessionDetailsResponse.session:type_name -> rpc.VotingSessionInfo
-	53, // 14: rpc.GetVotingSessionDetailsResponse.votes:type_name -> rpc.Vote
+	54, // 13: rpc.GetVotingSessionDetailsResponse.session:type_name -> rpc.VotingSessionInfo
+	57, // 14: rpc.GetVotingSessionDetailsResponse.votes:type_name -> rpc.Vote
 	38, // 15: rpc.Member.GroupAssignmentsEntry.value:type_name -> rpc.GroupAssignment
 	3,  // 16: rpc.CLI.Join:input_type -> rpc.JoinRequest
 	5,  // 17: rpc.CLI.Leave:input_type -> rpc.LeaveRequest
@@ -3468,45 +3716,49 @@ var file_rpc_server_proto_depIdxs = []int32{
 	30, // 22: rpc.CLI.AddIPToGroup:input_type -> rpc.AddIPToGroupRequest
 	32, // 23: rpc.CLI.RemoveIPFromGroup:input_type -> rpc.RemoveIPFromGroupRequest
 	34, // 24: rpc.CLI.AssignGroupToNode:input_type -> rpc.AssignGroupRequest
-	36, // 25: rpc.CLI.ListGroups:input_type -> rpc.ListGroupsRequest
-	40, // 26: rpc.CLI.CreateCluster:input_type -> rpc.CreateClusterRequest
-	49, // 27: rpc.CLI.GetVotingSessions:input_type -> rpc.GetVotingSessionsRequest
-	52, // 28: rpc.CLI.GetVotingSessionDetails:input_type -> rpc.GetVotingSessionDetailsRequest
-	12, // 29: rpc.Server.ConfigSync:input_type -> rpc.ConfigSyncRequest
-	14, // 30: rpc.Server.MakePassive:input_type -> rpc.MakePassiveRequest
-	16, // 31: rpc.Server.BringUpIP:input_type -> rpc.UpIpRequest
-	18, // 32: rpc.Server.BringDownIP:input_type -> rpc.DownIpRequest
-	20, // 33: rpc.Server.HealthCheck:input_type -> rpc.HealthCheckRequest
-	22, // 34: rpc.Server.Logs:input_type -> rpc.LogsRequest
-	24, // 35: rpc.Server.Remove:input_type -> rpc.RemoveRequest
-	42, // 36: rpc.Server.StartVotingSession:input_type -> rpc.StartVotingSessionRequest
-	44, // 37: rpc.Server.CastVote:input_type -> rpc.CastVoteRequest
-	46, // 38: rpc.Server.GetVotingResult:input_type -> rpc.GetVotingResultRequest
-	4,  // 39: rpc.CLI.Join:output_type -> rpc.JoinResponse
-	6,  // 40: rpc.CLI.Leave:output_type -> rpc.LeaveResponse
-	8,  // 41: rpc.CLI.Status:output_type -> rpc.StatusResponse
-	11, // 42: rpc.CLI.Promote:output_type -> rpc.PromoteResponse
-	27, // 43: rpc.CLI.SetMode:output_type -> rpc.SetModeResponse
-	29, // 44: rpc.CLI.CreateGroup:output_type -> rpc.CreateGroupResponse
-	31, // 45: rpc.CLI.AddIPToGroup:output_type -> rpc.AddIPToGroupResponse
-	33, // 46: rpc.CLI.RemoveIPFromGroup:output_type -> rpc.RemoveIPFromGroupResponse
-	35, // 47: rpc.CLI.AssignGroupToNode:output_type -> rpc.AssignGroupResponse
-	39, // 48: rpc.CLI.ListGroups:output_type -> rpc.ListGroupsResponse
-	41, // 49: rpc.CLI.CreateCluster:output_type -> rpc.CreateClusterResponse
-	51, // 50: rpc.CLI.GetVotingSessions:output_type -> rpc.GetVotingSessionsResponse
-	54, // 51: rpc.CLI.GetVotingSessionDetails:output_type -> rpc.GetVotingSessionDetailsResponse
-	13, // 52: rpc.Server.ConfigSync:output_type -> rpc.ConfigSyncResponse
-	15, // 53: rpc.Server.MakePassive:output_type -> rpc.MakePassiveResponse
-	17, // 54: rpc.Server.BringUpIP:output_type -> rpc.UpIpResponse
-	19, // 55: rpc.Server.BringDownIP:output_type -> rpc.DownIpResponse
-	21, // 56: rpc.Server.HealthCheck:output_type -> rpc.HealthCheckResponse
-	23, // 57: rpc.Server.Logs:output_type -> rpc.LogsResponse
-	25, // 58: rpc.Server.Remove:output_type -> rpc.RemoveResponse
-	43, // 59: rpc.Server.StartVotingSession:output_type -> rpc.StartVotingSessionResponse
-	45, // 60: rpc.Server.CastVote:output_type -> rpc.CastVoteResponse
-	48, // 61: rpc.Server.GetVotingResult:output_type -> rpc.GetVotingResultResponse
-	39, // [39:62] is the sub-list for method output_type
-	16, // [16:39] is the sub-list for method input_type
+	40, // 25: rpc.CLI.UnassignGroupFromNode:input_type -> rpc.UnassignGroupRequest
+	42, // 26: rpc.CLI.DeleteGroup:input_type -> rpc.DeleteGroupRequest
+	36, // 27: rpc.CLI.ListGroups:input_type -> rpc.ListGroupsRequest
+	44, // 28: rpc.CLI.CreateCluster:input_type -> rpc.CreateClusterRequest
+	53, // 29: rpc.CLI.GetVotingSessions:input_type -> rpc.GetVotingSessionsRequest
+	56, // 30: rpc.CLI.GetVotingSessionDetails:input_type -> rpc.GetVotingSessionDetailsRequest
+	12, // 31: rpc.Server.ConfigSync:input_type -> rpc.ConfigSyncRequest
+	14, // 32: rpc.Server.MakePassive:input_type -> rpc.MakePassiveRequest
+	16, // 33: rpc.Server.BringUpIP:input_type -> rpc.UpIpRequest
+	18, // 34: rpc.Server.BringDownIP:input_type -> rpc.DownIpRequest
+	20, // 35: rpc.Server.HealthCheck:input_type -> rpc.HealthCheckRequest
+	22, // 36: rpc.Server.Logs:input_type -> rpc.LogsRequest
+	24, // 37: rpc.Server.Remove:input_type -> rpc.RemoveRequest
+	46, // 38: rpc.Server.StartVotingSession:input_type -> rpc.StartVotingSessionRequest
+	48, // 39: rpc.Server.CastVote:input_type -> rpc.CastVoteRequest
+	50, // 40: rpc.Server.GetVotingResult:input_type -> rpc.GetVotingResultRequest
+	4,  // 41: rpc.CLI.Join:output_type -> rpc.JoinResponse
+	6,  // 42: rpc.CLI.Leave:output_type -> rpc.LeaveResponse
+	8,  // 43: rpc.CLI.Status:output_type -> rpc.StatusResponse
+	11, // 44: rpc.CLI.Promote:output_type -> rpc.PromoteResponse
+	27, // 45: rpc.CLI.SetMode:output_type -> rpc.SetModeResponse
+	29, // 46: rpc.CLI.CreateGroup:output_type -> rpc.CreateGroupResponse
+	31, // 47: rpc.CLI.AddIPToGroup:output_type -> rpc.AddIPToGroupResponse
+	33, // 48: rpc.CLI.RemoveIPFromGroup:output_type -> rpc.RemoveIPFromGroupResponse
+	35, // 49: rpc.CLI.AssignGroupToNode:output_type -> rpc.AssignGroupResponse
+	41, // 50: rpc.CLI.UnassignGroupFromNode:output_type -> rpc.UnassignGroupResponse
+	43, // 51: rpc.CLI.DeleteGroup:output_type -> rpc.DeleteGroupResponse
+	39, // 52: rpc.CLI.ListGroups:output_type -> rpc.ListGroupsResponse
+	45, // 53: rpc.CLI.CreateCluster:output_type -> rpc.CreateClusterResponse
+	55, // 54: rpc.CLI.GetVotingSessions:output_type -> rpc.GetVotingSessionsResponse
+	58, // 55: rpc.CLI.GetVotingSessionDetails:output_type -> rpc.GetVotingSessionDetailsResponse
+	13, // 56: rpc.Server.ConfigSync:output_type -> rpc.ConfigSyncResponse
+	15, // 57: rpc.Server.MakePassive:output_type -> rpc.MakePassiveResponse
+	17, // 58: rpc.Server.BringUpIP:output_type -> rpc.UpIpResponse
+	19, // 59: rpc.Server.BringDownIP:output_type -> rpc.DownIpResponse
+	21, // 60: rpc.Server.HealthCheck:output_type -> rpc.HealthCheckResponse
+	23, // 61: rpc.Server.Logs:output_type -> rpc.LogsResponse
+	25, // 62: rpc.Server.Remove:output_type -> rpc.RemoveResponse
+	47, // 63: rpc.Server.StartVotingSession:output_type -> rpc.StartVotingSessionResponse
+	49, // 64: rpc.Server.CastVote:output_type -> rpc.CastVoteResponse
+	52, // 65: rpc.Server.GetVotingResult:output_type -> rpc.GetVotingResultResponse
+	41, // [41:66] is the sub-list for method output_type
+	16, // [16:41] is the sub-list for method input_type
 	16, // [16:16] is the sub-list for extension type_name
 	16, // [16:16] is the sub-list for extension extendee
 	0,  // [0:16] is the sub-list for field type_name
@@ -3523,7 +3775,7 @@ func file_rpc_server_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_server_proto_rawDesc), len(file_rpc_server_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   53,
+			NumMessages:   57,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
