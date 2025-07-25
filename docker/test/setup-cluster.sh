@@ -23,7 +23,7 @@ wait_for_service() {
     
     echo "⏳ Waiting for $container to be ready..."
     while [ $attempt -le $max_attempts ]; do
-        if docker exec "$container" /usr/local/bin/pulseha status >/dev/null 2>&1; then
+        if docker exec "$container" /usr/local/bin/pulsectl status >/dev/null 2>&1; then
             echo "✅ $container is ready"
             return 0
         fi

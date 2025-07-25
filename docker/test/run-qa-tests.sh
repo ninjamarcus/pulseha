@@ -97,27 +97,27 @@ echo "-------------------------------"
 
 # Test 1: Basic server response
 run_test "Server Status Response" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha status" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl status" \
     "Cluster Status"
 
 # Test 2: Help command works
 run_test "Help Command" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha --help" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl --help" \
     "Available Commands"
 
 # Test 3: Group creation
 run_test "Group Creation" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha group create --name qa-test-group" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl group create --name qa-test-group" \
     "created successfully"
 
 # Test 4: Group listing
 run_test "Group Listing" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha group list" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl group list" \
     "qa-test-group"
 
 # Test 5: Group assignment
 run_test "Group Assignment" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha group assign --group qa-test-group --node node1 --interface eth0" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl group assign --group qa-test-group --node node1 --interface eth0" \
     "successfully assigned"
 
 # Test 6: Network connectivity between nodes
@@ -127,12 +127,12 @@ run_test "Node Network Connectivity" \
 
 # Test 7: JSON output format
 run_test "JSON Status Output" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha status --json" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl status --json" \
     '"members"'
 
 # Test 8: Invalid command handling
 run_test "Invalid Command Handling" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha invalid-command 2>&1 || true" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl invalid-command 2>&1 || true" \
     "unknown command"
 
 # Test 9: Container log analysis (no critical errors)
@@ -170,7 +170,7 @@ docker start pulseha-node1 >/dev/null
 sleep 15
 
 run_test "Container Restart Recovery" \
-    "docker exec pulseha-node1 /usr/local/bin/pulseha status" \
+    "docker exec pulseha-node1 /usr/local/bin/pulsectl status" \
     "Cluster Status"
 
 echo ""
@@ -179,7 +179,7 @@ echo "----------"
 
 # Clean up test data
 echo "Removing test group..."
-docker exec pulseha-node1 /usr/local/bin/pulseha group list 2>/dev/null | grep -q "qa-test-group" || echo "Test group already removed"
+docker exec pulseha-node1 /usr/local/bin/pulsectl group list 2>/dev/null | grep -q "qa-test-group" || echo "Test group already removed"
 
 echo ""
 echo "📊 Test Results Summary"

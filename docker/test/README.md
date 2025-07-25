@@ -46,19 +46,19 @@ The test environment consists of:
 
 ```bash
 # Check cluster status
-docker exec -it pulseha-node1 /usr/local/bin/pulseha status
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl status
 
 # List IP groups
-docker exec -it pulseha-node1 /usr/local/bin/pulseha group list
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl group list
 
 # Create a new group
-docker exec -it pulseha-node1 /usr/local/bin/pulseha group create --name web-servers
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl group create --name web-servers
 
 # Add IP to group
-docker exec -it pulseha-node1 /usr/local/bin/pulseha group add-ip --group web-servers --ip 172.20.100.20/24
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl group add-ip --group web-servers --ip 172.20.100.20/24
 
 # Assign group to node
-docker exec -it pulseha-node1 /usr/local/bin/pulseha group assign --group web-servers --node node2 --interface eth0
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl group assign --group web-servers --node node2 --interface eth0
 ```
 
 ### Failover Testing
@@ -66,15 +66,15 @@ docker exec -it pulseha-node1 /usr/local/bin/pulseha group assign --group web-se
 ```bash
 # Test node failure
 docker stop pulseha-node1
-docker exec -it pulseha-node2 /usr/local/bin/pulseha status
+docker exec -it pulseha-node2 /usr/local/bin/pulsectl status
 
 # Test node recovery  
 docker start pulseha-node1
 sleep 10
-docker exec -it pulseha-node1 /usr/local/bin/pulseha status
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl status
 
 # Test active-active mode
-docker exec -it pulseha-node1 /usr/local/bin/pulseha cluster mode set --mode active-active
+docker exec -it pulseha-node1 /usr/local/bin/pulsectl cluster mode set --mode active-active
 ```
 
 ### Network Testing

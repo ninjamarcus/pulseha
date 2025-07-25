@@ -28,7 +28,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
-	"github.com/spf13/cobra"
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/server"
 	"github.com/syleron/pulseha/packages/config"
@@ -41,20 +40,6 @@ var (
 )
 
 func main() {
-	// Check if running in CLI mode
-	if len(os.Args) > 1 {
-		// Initialize and execute CLI commands
-		rootCmd := setupCLI()
-
-		// Initialize flags for quorum commands
-		initQuorumFlags(rootCmd)
-
-		if err := rootCmd.Execute(); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	// Draw logo
 	buildStr := "unknown"
@@ -181,11 +166,6 @@ func main() {
 	}
 }
 
-// initQuorumFlags initializes flags for quorum commands
-func initQuorumFlags(rootCmd *cobra.Command) {
-	// Flags are already defined in the command definitions
-	// This function is disabled to avoid redefinition errors
-}
 
 func setupLogging(cfg *config.Config, logger *log.Logger) error {
 	var writers []io.Writer
