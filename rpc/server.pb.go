@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v5.29.3
-// source: server.proto
+// source: rpc/server.proto
 
 package rpc
 
@@ -58,11 +58,11 @@ func (x LogLevel) String() string {
 }
 
 func (LogLevel) Descriptor() protoreflect.EnumDescriptor {
-	return file_server_proto_enumTypes[0].Descriptor()
+	return file_rpc_server_proto_enumTypes[0].Descriptor()
 }
 
 func (LogLevel) Type() protoreflect.EnumType {
-	return &file_server_proto_enumTypes[0]
+	return &file_rpc_server_proto_enumTypes[0]
 }
 
 func (x LogLevel) Number() protoreflect.EnumNumber {
@@ -71,7 +71,7 @@ func (x LogLevel) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LogLevel.Descriptor instead.
 func (LogLevel) EnumDescriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{0}
+	return file_rpc_server_proto_rawDescGZIP(), []int{0}
 }
 
 // Quorum Voting Types
@@ -108,11 +108,11 @@ func (x VoteType) String() string {
 }
 
 func (VoteType) Descriptor() protoreflect.EnumDescriptor {
-	return file_server_proto_enumTypes[1].Descriptor()
+	return file_rpc_server_proto_enumTypes[1].Descriptor()
 }
 
 func (VoteType) Type() protoreflect.EnumType {
-	return &file_server_proto_enumTypes[1]
+	return &file_rpc_server_proto_enumTypes[1]
 }
 
 func (x VoteType) Number() protoreflect.EnumNumber {
@@ -121,7 +121,7 @@ func (x VoteType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VoteType.Descriptor instead.
 func (VoteType) EnumDescriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{1}
+	return file_rpc_server_proto_rawDescGZIP(), []int{1}
 }
 
 type VoteDecision int32
@@ -157,11 +157,11 @@ func (x VoteDecision) String() string {
 }
 
 func (VoteDecision) Descriptor() protoreflect.EnumDescriptor {
-	return file_server_proto_enumTypes[2].Descriptor()
+	return file_rpc_server_proto_enumTypes[2].Descriptor()
 }
 
 func (VoteDecision) Type() protoreflect.EnumType {
-	return &file_server_proto_enumTypes[2]
+	return &file_rpc_server_proto_enumTypes[2]
 }
 
 func (x VoteDecision) Number() protoreflect.EnumNumber {
@@ -170,7 +170,7 @@ func (x VoteDecision) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VoteDecision.Descriptor instead.
 func (VoteDecision) EnumDescriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{2}
+	return file_rpc_server_proto_rawDescGZIP(), []int{2}
 }
 
 // Join Request/Response
@@ -187,7 +187,7 @@ type JoinRequest struct {
 
 func (x *JoinRequest) Reset() {
 	*x = JoinRequest{}
-	mi := &file_server_proto_msgTypes[0]
+	mi := &file_rpc_server_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -199,7 +199,7 @@ func (x *JoinRequest) String() string {
 func (*JoinRequest) ProtoMessage() {}
 
 func (x *JoinRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[0]
+	mi := &file_rpc_server_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -212,7 +212,7 @@ func (x *JoinRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinRequest.ProtoReflect.Descriptor instead.
 func (*JoinRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{0}
+	return file_rpc_server_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *JoinRequest) GetAddress() string {
@@ -261,7 +261,7 @@ type JoinResponse struct {
 
 func (x *JoinResponse) Reset() {
 	*x = JoinResponse{}
-	mi := &file_server_proto_msgTypes[1]
+	mi := &file_rpc_server_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -273,7 +273,7 @@ func (x *JoinResponse) String() string {
 func (*JoinResponse) ProtoMessage() {}
 
 func (x *JoinResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[1]
+	mi := &file_rpc_server_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -286,7 +286,7 @@ func (x *JoinResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JoinResponse.ProtoReflect.Descriptor instead.
 func (*JoinResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{1}
+	return file_rpc_server_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *JoinResponse) GetSuccess() bool {
@@ -320,7 +320,7 @@ type LeaveRequest struct {
 
 func (x *LeaveRequest) Reset() {
 	*x = LeaveRequest{}
-	mi := &file_server_proto_msgTypes[2]
+	mi := &file_rpc_server_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -332,7 +332,7 @@ func (x *LeaveRequest) String() string {
 func (*LeaveRequest) ProtoMessage() {}
 
 func (x *LeaveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[2]
+	mi := &file_rpc_server_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -345,7 +345,7 @@ func (x *LeaveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaveRequest.ProtoReflect.Descriptor instead.
 func (*LeaveRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{2}
+	return file_rpc_server_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *LeaveRequest) GetNodeId() string {
@@ -365,7 +365,7 @@ type LeaveResponse struct {
 
 func (x *LeaveResponse) Reset() {
 	*x = LeaveResponse{}
-	mi := &file_server_proto_msgTypes[3]
+	mi := &file_rpc_server_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -377,7 +377,7 @@ func (x *LeaveResponse) String() string {
 func (*LeaveResponse) ProtoMessage() {}
 
 func (x *LeaveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[3]
+	mi := &file_rpc_server_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -390,7 +390,7 @@ func (x *LeaveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaveResponse.ProtoReflect.Descriptor instead.
 func (*LeaveResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{3}
+	return file_rpc_server_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LeaveResponse) GetSuccess() bool {
@@ -416,7 +416,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_server_proto_msgTypes[4]
+	mi := &file_rpc_server_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +428,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[4]
+	mi := &file_rpc_server_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +441,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{4}
+	return file_rpc_server_proto_rawDescGZIP(), []int{4}
 }
 
 type StatusResponse struct {
@@ -454,7 +454,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_server_proto_msgTypes[5]
+	mi := &file_rpc_server_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -466,7 +466,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[5]
+	mi := &file_rpc_server_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -479,7 +479,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{5}
+	return file_rpc_server_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StatusResponse) GetMembers() []*Member {
@@ -514,7 +514,7 @@ type Member struct {
 
 func (x *Member) Reset() {
 	*x = Member{}
-	mi := &file_server_proto_msgTypes[6]
+	mi := &file_rpc_server_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -526,7 +526,7 @@ func (x *Member) String() string {
 func (*Member) ProtoMessage() {}
 
 func (x *Member) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[6]
+	mi := &file_rpc_server_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +539,7 @@ func (x *Member) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Member.ProtoReflect.Descriptor instead.
 func (*Member) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{6}
+	return file_rpc_server_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Member) GetHostname() string {
@@ -623,7 +623,7 @@ type PromoteRequest struct {
 
 func (x *PromoteRequest) Reset() {
 	*x = PromoteRequest{}
-	mi := &file_server_proto_msgTypes[7]
+	mi := &file_rpc_server_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -635,7 +635,7 @@ func (x *PromoteRequest) String() string {
 func (*PromoteRequest) ProtoMessage() {}
 
 func (x *PromoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[7]
+	mi := &file_rpc_server_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -648,7 +648,7 @@ func (x *PromoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteRequest.ProtoReflect.Descriptor instead.
 func (*PromoteRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{7}
+	return file_rpc_server_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PromoteRequest) GetNodeId() string {
@@ -675,7 +675,7 @@ type PromoteResponse struct {
 
 func (x *PromoteResponse) Reset() {
 	*x = PromoteResponse{}
-	mi := &file_server_proto_msgTypes[8]
+	mi := &file_rpc_server_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -687,7 +687,7 @@ func (x *PromoteResponse) String() string {
 func (*PromoteResponse) ProtoMessage() {}
 
 func (x *PromoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[8]
+	mi := &file_rpc_server_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -700,7 +700,7 @@ func (x *PromoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PromoteResponse.ProtoReflect.Descriptor instead.
 func (*PromoteResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{8}
+	return file_rpc_server_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PromoteResponse) GetSuccess() bool {
@@ -727,7 +727,7 @@ type ConfigSyncRequest struct {
 
 func (x *ConfigSyncRequest) Reset() {
 	*x = ConfigSyncRequest{}
-	mi := &file_server_proto_msgTypes[9]
+	mi := &file_rpc_server_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -739,7 +739,7 @@ func (x *ConfigSyncRequest) String() string {
 func (*ConfigSyncRequest) ProtoMessage() {}
 
 func (x *ConfigSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[9]
+	mi := &file_rpc_server_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -752,7 +752,7 @@ func (x *ConfigSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigSyncRequest.ProtoReflect.Descriptor instead.
 func (*ConfigSyncRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{9}
+	return file_rpc_server_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ConfigSyncRequest) GetConfig() []byte {
@@ -772,7 +772,7 @@ type ConfigSyncResponse struct {
 
 func (x *ConfigSyncResponse) Reset() {
 	*x = ConfigSyncResponse{}
-	mi := &file_server_proto_msgTypes[10]
+	mi := &file_rpc_server_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +784,7 @@ func (x *ConfigSyncResponse) String() string {
 func (*ConfigSyncResponse) ProtoMessage() {}
 
 func (x *ConfigSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[10]
+	mi := &file_rpc_server_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +797,7 @@ func (x *ConfigSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigSyncResponse.ProtoReflect.Descriptor instead.
 func (*ConfigSyncResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{10}
+	return file_rpc_server_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ConfigSyncResponse) GetSuccess() bool {
@@ -824,7 +824,7 @@ type MakePassiveRequest struct {
 
 func (x *MakePassiveRequest) Reset() {
 	*x = MakePassiveRequest{}
-	mi := &file_server_proto_msgTypes[11]
+	mi := &file_rpc_server_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -836,7 +836,7 @@ func (x *MakePassiveRequest) String() string {
 func (*MakePassiveRequest) ProtoMessage() {}
 
 func (x *MakePassiveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[11]
+	mi := &file_rpc_server_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -849,7 +849,7 @@ func (x *MakePassiveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MakePassiveRequest.ProtoReflect.Descriptor instead.
 func (*MakePassiveRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{11}
+	return file_rpc_server_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MakePassiveRequest) GetNodeId() string {
@@ -869,7 +869,7 @@ type MakePassiveResponse struct {
 
 func (x *MakePassiveResponse) Reset() {
 	*x = MakePassiveResponse{}
-	mi := &file_server_proto_msgTypes[12]
+	mi := &file_rpc_server_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +881,7 @@ func (x *MakePassiveResponse) String() string {
 func (*MakePassiveResponse) ProtoMessage() {}
 
 func (x *MakePassiveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[12]
+	mi := &file_rpc_server_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +894,7 @@ func (x *MakePassiveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MakePassiveResponse.ProtoReflect.Descriptor instead.
 func (*MakePassiveResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{12}
+	return file_rpc_server_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MakePassiveResponse) GetSuccess() bool {
@@ -922,7 +922,7 @@ type UpIpRequest struct {
 
 func (x *UpIpRequest) Reset() {
 	*x = UpIpRequest{}
-	mi := &file_server_proto_msgTypes[13]
+	mi := &file_rpc_server_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -934,7 +934,7 @@ func (x *UpIpRequest) String() string {
 func (*UpIpRequest) ProtoMessage() {}
 
 func (x *UpIpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[13]
+	mi := &file_rpc_server_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -947,7 +947,7 @@ func (x *UpIpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpIpRequest.ProtoReflect.Descriptor instead.
 func (*UpIpRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{13}
+	return file_rpc_server_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UpIpRequest) GetIface() string {
@@ -974,7 +974,7 @@ type UpIpResponse struct {
 
 func (x *UpIpResponse) Reset() {
 	*x = UpIpResponse{}
-	mi := &file_server_proto_msgTypes[14]
+	mi := &file_rpc_server_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -986,7 +986,7 @@ func (x *UpIpResponse) String() string {
 func (*UpIpResponse) ProtoMessage() {}
 
 func (x *UpIpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[14]
+	mi := &file_rpc_server_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -999,7 +999,7 @@ func (x *UpIpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpIpResponse.ProtoReflect.Descriptor instead.
 func (*UpIpResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{14}
+	return file_rpc_server_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UpIpResponse) GetSuccess() bool {
@@ -1026,7 +1026,7 @@ type DownIpRequest struct {
 
 func (x *DownIpRequest) Reset() {
 	*x = DownIpRequest{}
-	mi := &file_server_proto_msgTypes[15]
+	mi := &file_rpc_server_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1038,7 +1038,7 @@ func (x *DownIpRequest) String() string {
 func (*DownIpRequest) ProtoMessage() {}
 
 func (x *DownIpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[15]
+	mi := &file_rpc_server_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1051,7 +1051,7 @@ func (x *DownIpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownIpRequest.ProtoReflect.Descriptor instead.
 func (*DownIpRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{15}
+	return file_rpc_server_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DownIpRequest) GetIface() string {
@@ -1078,7 +1078,7 @@ type DownIpResponse struct {
 
 func (x *DownIpResponse) Reset() {
 	*x = DownIpResponse{}
-	mi := &file_server_proto_msgTypes[16]
+	mi := &file_rpc_server_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1090,7 +1090,7 @@ func (x *DownIpResponse) String() string {
 func (*DownIpResponse) ProtoMessage() {}
 
 func (x *DownIpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[16]
+	mi := &file_rpc_server_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1103,7 +1103,7 @@ func (x *DownIpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownIpResponse.ProtoReflect.Descriptor instead.
 func (*DownIpResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{16}
+	return file_rpc_server_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *DownIpResponse) GetSuccess() bool {
@@ -1130,7 +1130,7 @@ type HealthCheckRequest struct {
 
 func (x *HealthCheckRequest) Reset() {
 	*x = HealthCheckRequest{}
-	mi := &file_server_proto_msgTypes[17]
+	mi := &file_rpc_server_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1142,7 +1142,7 @@ func (x *HealthCheckRequest) String() string {
 func (*HealthCheckRequest) ProtoMessage() {}
 
 func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[17]
+	mi := &file_rpc_server_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1155,7 +1155,7 @@ func (x *HealthCheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckRequest.ProtoReflect.Descriptor instead.
 func (*HealthCheckRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{17}
+	return file_rpc_server_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *HealthCheckRequest) GetNodeId() string {
@@ -1175,7 +1175,7 @@ type HealthCheckResponse struct {
 
 func (x *HealthCheckResponse) Reset() {
 	*x = HealthCheckResponse{}
-	mi := &file_server_proto_msgTypes[18]
+	mi := &file_rpc_server_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1187,7 +1187,7 @@ func (x *HealthCheckResponse) String() string {
 func (*HealthCheckResponse) ProtoMessage() {}
 
 func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[18]
+	mi := &file_rpc_server_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1200,7 +1200,7 @@ func (x *HealthCheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthCheckResponse.ProtoReflect.Descriptor instead.
 func (*HealthCheckResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{18}
+	return file_rpc_server_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *HealthCheckResponse) GetSuccess() bool {
@@ -1231,7 +1231,7 @@ type LogsRequest struct {
 
 func (x *LogsRequest) Reset() {
 	*x = LogsRequest{}
-	mi := &file_server_proto_msgTypes[19]
+	mi := &file_rpc_server_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1243,7 +1243,7 @@ func (x *LogsRequest) String() string {
 func (*LogsRequest) ProtoMessage() {}
 
 func (x *LogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[19]
+	mi := &file_rpc_server_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1256,7 +1256,7 @@ func (x *LogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogsRequest.ProtoReflect.Descriptor instead.
 func (*LogsRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{19}
+	return file_rpc_server_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *LogsRequest) GetLines() int32 {
@@ -1303,7 +1303,7 @@ type LogsResponse struct {
 
 func (x *LogsResponse) Reset() {
 	*x = LogsResponse{}
-	mi := &file_server_proto_msgTypes[20]
+	mi := &file_rpc_server_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1315,7 +1315,7 @@ func (x *LogsResponse) String() string {
 func (*LogsResponse) ProtoMessage() {}
 
 func (x *LogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[20]
+	mi := &file_rpc_server_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1328,7 +1328,7 @@ func (x *LogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogsResponse.ProtoReflect.Descriptor instead.
 func (*LogsResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{20}
+	return file_rpc_server_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *LogsResponse) GetLogs() []string {
@@ -1348,7 +1348,7 @@ type RemoveRequest struct {
 
 func (x *RemoveRequest) Reset() {
 	*x = RemoveRequest{}
-	mi := &file_server_proto_msgTypes[21]
+	mi := &file_rpc_server_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1360,7 +1360,7 @@ func (x *RemoveRequest) String() string {
 func (*RemoveRequest) ProtoMessage() {}
 
 func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[21]
+	mi := &file_rpc_server_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1373,7 +1373,7 @@ func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveRequest.ProtoReflect.Descriptor instead.
 func (*RemoveRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{21}
+	return file_rpc_server_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RemoveRequest) GetNodeId() string {
@@ -1393,7 +1393,7 @@ type RemoveResponse struct {
 
 func (x *RemoveResponse) Reset() {
 	*x = RemoveResponse{}
-	mi := &file_server_proto_msgTypes[22]
+	mi := &file_rpc_server_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1405,7 +1405,7 @@ func (x *RemoveResponse) String() string {
 func (*RemoveResponse) ProtoMessage() {}
 
 func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[22]
+	mi := &file_rpc_server_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1418,7 +1418,7 @@ func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveResponse.ProtoReflect.Descriptor instead.
 func (*RemoveResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{22}
+	return file_rpc_server_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *RemoveResponse) GetSuccess() bool {
@@ -1445,7 +1445,7 @@ type SetModeRequest struct {
 
 func (x *SetModeRequest) Reset() {
 	*x = SetModeRequest{}
-	mi := &file_server_proto_msgTypes[23]
+	mi := &file_rpc_server_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1457,7 +1457,7 @@ func (x *SetModeRequest) String() string {
 func (*SetModeRequest) ProtoMessage() {}
 
 func (x *SetModeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[23]
+	mi := &file_rpc_server_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1470,7 +1470,7 @@ func (x *SetModeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModeRequest.ProtoReflect.Descriptor instead.
 func (*SetModeRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{23}
+	return file_rpc_server_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SetModeRequest) GetMode() string {
@@ -1490,7 +1490,7 @@ type SetModeResponse struct {
 
 func (x *SetModeResponse) Reset() {
 	*x = SetModeResponse{}
-	mi := &file_server_proto_msgTypes[24]
+	mi := &file_rpc_server_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1502,7 +1502,7 @@ func (x *SetModeResponse) String() string {
 func (*SetModeResponse) ProtoMessage() {}
 
 func (x *SetModeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[24]
+	mi := &file_rpc_server_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1515,7 +1515,7 @@ func (x *SetModeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModeResponse.ProtoReflect.Descriptor instead.
 func (*SetModeResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{24}
+	return file_rpc_server_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SetModeResponse) GetSuccess() bool {
@@ -1542,7 +1542,7 @@ type CreateGroupRequest struct {
 
 func (x *CreateGroupRequest) Reset() {
 	*x = CreateGroupRequest{}
-	mi := &file_server_proto_msgTypes[25]
+	mi := &file_rpc_server_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1554,7 +1554,7 @@ func (x *CreateGroupRequest) String() string {
 func (*CreateGroupRequest) ProtoMessage() {}
 
 func (x *CreateGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[25]
+	mi := &file_rpc_server_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1567,7 +1567,7 @@ func (x *CreateGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGroupRequest.ProtoReflect.Descriptor instead.
 func (*CreateGroupRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{25}
+	return file_rpc_server_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CreateGroupRequest) GetName() string {
@@ -1587,7 +1587,7 @@ type CreateGroupResponse struct {
 
 func (x *CreateGroupResponse) Reset() {
 	*x = CreateGroupResponse{}
-	mi := &file_server_proto_msgTypes[26]
+	mi := &file_rpc_server_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1599,7 +1599,7 @@ func (x *CreateGroupResponse) String() string {
 func (*CreateGroupResponse) ProtoMessage() {}
 
 func (x *CreateGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[26]
+	mi := &file_rpc_server_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1612,7 +1612,7 @@ func (x *CreateGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGroupResponse.ProtoReflect.Descriptor instead.
 func (*CreateGroupResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{26}
+	return file_rpc_server_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateGroupResponse) GetSuccess() bool {
@@ -1639,7 +1639,7 @@ type AddIPToGroupRequest struct {
 
 func (x *AddIPToGroupRequest) Reset() {
 	*x = AddIPToGroupRequest{}
-	mi := &file_server_proto_msgTypes[27]
+	mi := &file_rpc_server_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1651,7 +1651,7 @@ func (x *AddIPToGroupRequest) String() string {
 func (*AddIPToGroupRequest) ProtoMessage() {}
 
 func (x *AddIPToGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[27]
+	mi := &file_rpc_server_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1664,7 +1664,7 @@ func (x *AddIPToGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddIPToGroupRequest.ProtoReflect.Descriptor instead.
 func (*AddIPToGroupRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{27}
+	return file_rpc_server_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *AddIPToGroupRequest) GetGroupName() string {
@@ -1692,7 +1692,7 @@ type AddIPToGroupResponse struct {
 
 func (x *AddIPToGroupResponse) Reset() {
 	*x = AddIPToGroupResponse{}
-	mi := &file_server_proto_msgTypes[28]
+	mi := &file_rpc_server_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1704,7 +1704,7 @@ func (x *AddIPToGroupResponse) String() string {
 func (*AddIPToGroupResponse) ProtoMessage() {}
 
 func (x *AddIPToGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[28]
+	mi := &file_rpc_server_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1717,7 +1717,7 @@ func (x *AddIPToGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddIPToGroupResponse.ProtoReflect.Descriptor instead.
 func (*AddIPToGroupResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{28}
+	return file_rpc_server_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *AddIPToGroupResponse) GetSuccess() bool {
@@ -1751,7 +1751,7 @@ type RemoveIPFromGroupRequest struct {
 
 func (x *RemoveIPFromGroupRequest) Reset() {
 	*x = RemoveIPFromGroupRequest{}
-	mi := &file_server_proto_msgTypes[29]
+	mi := &file_rpc_server_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1763,7 +1763,7 @@ func (x *RemoveIPFromGroupRequest) String() string {
 func (*RemoveIPFromGroupRequest) ProtoMessage() {}
 
 func (x *RemoveIPFromGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[29]
+	mi := &file_rpc_server_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1776,7 +1776,7 @@ func (x *RemoveIPFromGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveIPFromGroupRequest.ProtoReflect.Descriptor instead.
 func (*RemoveIPFromGroupRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{29}
+	return file_rpc_server_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RemoveIPFromGroupRequest) GetGroupName() string {
@@ -1804,7 +1804,7 @@ type RemoveIPFromGroupResponse struct {
 
 func (x *RemoveIPFromGroupResponse) Reset() {
 	*x = RemoveIPFromGroupResponse{}
-	mi := &file_server_proto_msgTypes[30]
+	mi := &file_rpc_server_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1816,7 +1816,7 @@ func (x *RemoveIPFromGroupResponse) String() string {
 func (*RemoveIPFromGroupResponse) ProtoMessage() {}
 
 func (x *RemoveIPFromGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[30]
+	mi := &file_rpc_server_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1829,7 +1829,7 @@ func (x *RemoveIPFromGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveIPFromGroupResponse.ProtoReflect.Descriptor instead.
 func (*RemoveIPFromGroupResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{30}
+	return file_rpc_server_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *RemoveIPFromGroupResponse) GetSuccess() bool {
@@ -1864,7 +1864,7 @@ type AssignGroupRequest struct {
 
 func (x *AssignGroupRequest) Reset() {
 	*x = AssignGroupRequest{}
-	mi := &file_server_proto_msgTypes[31]
+	mi := &file_rpc_server_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1876,7 +1876,7 @@ func (x *AssignGroupRequest) String() string {
 func (*AssignGroupRequest) ProtoMessage() {}
 
 func (x *AssignGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[31]
+	mi := &file_rpc_server_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1889,7 +1889,7 @@ func (x *AssignGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignGroupRequest.ProtoReflect.Descriptor instead.
 func (*AssignGroupRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{31}
+	return file_rpc_server_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AssignGroupRequest) GetGroupName() string {
@@ -1923,7 +1923,7 @@ type AssignGroupResponse struct {
 
 func (x *AssignGroupResponse) Reset() {
 	*x = AssignGroupResponse{}
-	mi := &file_server_proto_msgTypes[32]
+	mi := &file_rpc_server_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1935,7 +1935,7 @@ func (x *AssignGroupResponse) String() string {
 func (*AssignGroupResponse) ProtoMessage() {}
 
 func (x *AssignGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[32]
+	mi := &file_rpc_server_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1948,7 +1948,7 @@ func (x *AssignGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignGroupResponse.ProtoReflect.Descriptor instead.
 func (*AssignGroupResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{32}
+	return file_rpc_server_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AssignGroupResponse) GetSuccess() bool {
@@ -1974,7 +1974,7 @@ type ListGroupsRequest struct {
 
 func (x *ListGroupsRequest) Reset() {
 	*x = ListGroupsRequest{}
-	mi := &file_server_proto_msgTypes[33]
+	mi := &file_rpc_server_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1986,7 +1986,7 @@ func (x *ListGroupsRequest) String() string {
 func (*ListGroupsRequest) ProtoMessage() {}
 
 func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[33]
+	mi := &file_rpc_server_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1999,7 +1999,7 @@ func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupsRequest.ProtoReflect.Descriptor instead.
 func (*ListGroupsRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{33}
+	return file_rpc_server_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ListGroupsRequest) GetJsonOutput() bool {
@@ -2020,7 +2020,7 @@ type GroupInfo struct {
 
 func (x *GroupInfo) Reset() {
 	*x = GroupInfo{}
-	mi := &file_server_proto_msgTypes[34]
+	mi := &file_rpc_server_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2032,7 +2032,7 @@ func (x *GroupInfo) String() string {
 func (*GroupInfo) ProtoMessage() {}
 
 func (x *GroupInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[34]
+	mi := &file_rpc_server_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2045,7 +2045,7 @@ func (x *GroupInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupInfo.ProtoReflect.Descriptor instead.
 func (*GroupInfo) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{34}
+	return file_rpc_server_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GroupInfo) GetName() string {
@@ -2079,7 +2079,7 @@ type GroupAssignment struct {
 
 func (x *GroupAssignment) Reset() {
 	*x = GroupAssignment{}
-	mi := &file_server_proto_msgTypes[35]
+	mi := &file_rpc_server_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2091,7 +2091,7 @@ func (x *GroupAssignment) String() string {
 func (*GroupAssignment) ProtoMessage() {}
 
 func (x *GroupAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[35]
+	mi := &file_rpc_server_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2104,7 +2104,7 @@ func (x *GroupAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupAssignment.ProtoReflect.Descriptor instead.
 func (*GroupAssignment) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{35}
+	return file_rpc_server_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GroupAssignment) GetHostname() string {
@@ -2133,7 +2133,7 @@ type ListGroupsResponse struct {
 
 func (x *ListGroupsResponse) Reset() {
 	*x = ListGroupsResponse{}
-	mi := &file_server_proto_msgTypes[36]
+	mi := &file_rpc_server_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2145,7 +2145,7 @@ func (x *ListGroupsResponse) String() string {
 func (*ListGroupsResponse) ProtoMessage() {}
 
 func (x *ListGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[36]
+	mi := &file_rpc_server_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2158,7 +2158,7 @@ func (x *ListGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupsResponse.ProtoReflect.Descriptor instead.
 func (*ListGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{36}
+	return file_rpc_server_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListGroupsResponse) GetSuccess() bool {
@@ -2201,7 +2201,7 @@ type UnassignGroupRequest struct {
 
 func (x *UnassignGroupRequest) Reset() {
 	*x = UnassignGroupRequest{}
-	mi := &file_server_proto_msgTypes[37]
+	mi := &file_rpc_server_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2213,7 +2213,7 @@ func (x *UnassignGroupRequest) String() string {
 func (*UnassignGroupRequest) ProtoMessage() {}
 
 func (x *UnassignGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[37]
+	mi := &file_rpc_server_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2226,7 +2226,7 @@ func (x *UnassignGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnassignGroupRequest.ProtoReflect.Descriptor instead.
 func (*UnassignGroupRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{37}
+	return file_rpc_server_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *UnassignGroupRequest) GetGroupName() string {
@@ -2260,7 +2260,7 @@ type UnassignGroupResponse struct {
 
 func (x *UnassignGroupResponse) Reset() {
 	*x = UnassignGroupResponse{}
-	mi := &file_server_proto_msgTypes[38]
+	mi := &file_rpc_server_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2272,7 +2272,7 @@ func (x *UnassignGroupResponse) String() string {
 func (*UnassignGroupResponse) ProtoMessage() {}
 
 func (x *UnassignGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[38]
+	mi := &file_rpc_server_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2285,7 +2285,7 @@ func (x *UnassignGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnassignGroupResponse.ProtoReflect.Descriptor instead.
 func (*UnassignGroupResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{38}
+	return file_rpc_server_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *UnassignGroupResponse) GetSuccess() bool {
@@ -2313,7 +2313,7 @@ type DeleteGroupRequest struct {
 
 func (x *DeleteGroupRequest) Reset() {
 	*x = DeleteGroupRequest{}
-	mi := &file_server_proto_msgTypes[39]
+	mi := &file_rpc_server_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2325,7 +2325,7 @@ func (x *DeleteGroupRequest) String() string {
 func (*DeleteGroupRequest) ProtoMessage() {}
 
 func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[39]
+	mi := &file_rpc_server_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2338,7 +2338,7 @@ func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGroupRequest.ProtoReflect.Descriptor instead.
 func (*DeleteGroupRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{39}
+	return file_rpc_server_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *DeleteGroupRequest) GetGroupName() string {
@@ -2366,7 +2366,7 @@ type DeleteGroupResponse struct {
 
 func (x *DeleteGroupResponse) Reset() {
 	*x = DeleteGroupResponse{}
-	mi := &file_server_proto_msgTypes[40]
+	mi := &file_rpc_server_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2378,7 +2378,7 @@ func (x *DeleteGroupResponse) String() string {
 func (*DeleteGroupResponse) ProtoMessage() {}
 
 func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[40]
+	mi := &file_rpc_server_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2391,7 +2391,7 @@ func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGroupResponse.ProtoReflect.Descriptor instead.
 func (*DeleteGroupResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{40}
+	return file_rpc_server_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *DeleteGroupResponse) GetSuccess() bool {
@@ -2427,7 +2427,7 @@ type CreateClusterRequest struct {
 
 func (x *CreateClusterRequest) Reset() {
 	*x = CreateClusterRequest{}
-	mi := &file_server_proto_msgTypes[41]
+	mi := &file_rpc_server_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2439,7 +2439,7 @@ func (x *CreateClusterRequest) String() string {
 func (*CreateClusterRequest) ProtoMessage() {}
 
 func (x *CreateClusterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[41]
+	mi := &file_rpc_server_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2452,7 +2452,7 @@ func (x *CreateClusterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateClusterRequest.ProtoReflect.Descriptor instead.
 func (*CreateClusterRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{41}
+	return file_rpc_server_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *CreateClusterRequest) GetBindIp() string {
@@ -2488,7 +2488,7 @@ type CreateClusterResponse struct {
 
 func (x *CreateClusterResponse) Reset() {
 	*x = CreateClusterResponse{}
-	mi := &file_server_proto_msgTypes[42]
+	mi := &file_rpc_server_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2500,7 +2500,7 @@ func (x *CreateClusterResponse) String() string {
 func (*CreateClusterResponse) ProtoMessage() {}
 
 func (x *CreateClusterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[42]
+	mi := &file_rpc_server_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2513,7 +2513,7 @@ func (x *CreateClusterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateClusterResponse.ProtoReflect.Descriptor instead.
 func (*CreateClusterResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{42}
+	return file_rpc_server_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *CreateClusterResponse) GetSuccess() bool {
@@ -2557,7 +2557,7 @@ type StartVotingSessionRequest struct {
 
 func (x *StartVotingSessionRequest) Reset() {
 	*x = StartVotingSessionRequest{}
-	mi := &file_server_proto_msgTypes[43]
+	mi := &file_rpc_server_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2569,7 +2569,7 @@ func (x *StartVotingSessionRequest) String() string {
 func (*StartVotingSessionRequest) ProtoMessage() {}
 
 func (x *StartVotingSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[43]
+	mi := &file_rpc_server_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2582,7 +2582,7 @@ func (x *StartVotingSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVotingSessionRequest.ProtoReflect.Descriptor instead.
 func (*StartVotingSessionRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{43}
+	return file_rpc_server_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *StartVotingSessionRequest) GetType() VoteType {
@@ -2624,7 +2624,7 @@ type StartVotingSessionResponse struct {
 
 func (x *StartVotingSessionResponse) Reset() {
 	*x = StartVotingSessionResponse{}
-	mi := &file_server_proto_msgTypes[44]
+	mi := &file_rpc_server_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2636,7 +2636,7 @@ func (x *StartVotingSessionResponse) String() string {
 func (*StartVotingSessionResponse) ProtoMessage() {}
 
 func (x *StartVotingSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[44]
+	mi := &file_rpc_server_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2649,7 +2649,7 @@ func (x *StartVotingSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVotingSessionResponse.ProtoReflect.Descriptor instead.
 func (*StartVotingSessionResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{44}
+	return file_rpc_server_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *StartVotingSessionResponse) GetSuccess() bool {
@@ -2684,7 +2684,7 @@ type CastVoteRequest struct {
 
 func (x *CastVoteRequest) Reset() {
 	*x = CastVoteRequest{}
-	mi := &file_server_proto_msgTypes[45]
+	mi := &file_rpc_server_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2696,7 +2696,7 @@ func (x *CastVoteRequest) String() string {
 func (*CastVoteRequest) ProtoMessage() {}
 
 func (x *CastVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[45]
+	mi := &file_rpc_server_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2709,7 +2709,7 @@ func (x *CastVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CastVoteRequest.ProtoReflect.Descriptor instead.
 func (*CastVoteRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{45}
+	return file_rpc_server_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CastVoteRequest) GetSessionId() string {
@@ -2743,7 +2743,7 @@ type CastVoteResponse struct {
 
 func (x *CastVoteResponse) Reset() {
 	*x = CastVoteResponse{}
-	mi := &file_server_proto_msgTypes[46]
+	mi := &file_rpc_server_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2755,7 +2755,7 @@ func (x *CastVoteResponse) String() string {
 func (*CastVoteResponse) ProtoMessage() {}
 
 func (x *CastVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[46]
+	mi := &file_rpc_server_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2768,7 +2768,7 @@ func (x *CastVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CastVoteResponse.ProtoReflect.Descriptor instead.
 func (*CastVoteResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{46}
+	return file_rpc_server_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *CastVoteResponse) GetSuccess() bool {
@@ -2794,7 +2794,7 @@ type GetVotingResultRequest struct {
 
 func (x *GetVotingResultRequest) Reset() {
 	*x = GetVotingResultRequest{}
-	mi := &file_server_proto_msgTypes[47]
+	mi := &file_rpc_server_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2806,7 +2806,7 @@ func (x *GetVotingResultRequest) String() string {
 func (*GetVotingResultRequest) ProtoMessage() {}
 
 func (x *GetVotingResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[47]
+	mi := &file_rpc_server_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2819,7 +2819,7 @@ func (x *GetVotingResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingResultRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingResultRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{47}
+	return file_rpc_server_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *GetVotingResultRequest) GetSessionId() string {
@@ -2843,7 +2843,7 @@ type VotingSessionResult struct {
 
 func (x *VotingSessionResult) Reset() {
 	*x = VotingSessionResult{}
-	mi := &file_server_proto_msgTypes[48]
+	mi := &file_rpc_server_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2855,7 +2855,7 @@ func (x *VotingSessionResult) String() string {
 func (*VotingSessionResult) ProtoMessage() {}
 
 func (x *VotingSessionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[48]
+	mi := &file_rpc_server_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2868,7 +2868,7 @@ func (x *VotingSessionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotingSessionResult.ProtoReflect.Descriptor instead.
 func (*VotingSessionResult) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{48}
+	return file_rpc_server_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *VotingSessionResult) GetPassed() bool {
@@ -2924,7 +2924,7 @@ type GetVotingResultResponse struct {
 
 func (x *GetVotingResultResponse) Reset() {
 	*x = GetVotingResultResponse{}
-	mi := &file_server_proto_msgTypes[49]
+	mi := &file_rpc_server_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2936,7 +2936,7 @@ func (x *GetVotingResultResponse) String() string {
 func (*GetVotingResultResponse) ProtoMessage() {}
 
 func (x *GetVotingResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[49]
+	mi := &file_rpc_server_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2949,7 +2949,7 @@ func (x *GetVotingResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingResultResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingResultResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{49}
+	return file_rpc_server_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *GetVotingResultResponse) GetSuccess() bool {
@@ -2982,7 +2982,7 @@ type GetVotingSessionsRequest struct {
 
 func (x *GetVotingSessionsRequest) Reset() {
 	*x = GetVotingSessionsRequest{}
-	mi := &file_server_proto_msgTypes[50]
+	mi := &file_rpc_server_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2994,7 +2994,7 @@ func (x *GetVotingSessionsRequest) String() string {
 func (*GetVotingSessionsRequest) ProtoMessage() {}
 
 func (x *GetVotingSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[50]
+	mi := &file_rpc_server_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3007,7 +3007,7 @@ func (x *GetVotingSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionsRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{50}
+	return file_rpc_server_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *GetVotingSessionsRequest) GetIncludeCompleted() bool {
@@ -3033,7 +3033,7 @@ type VotingSessionInfo struct {
 
 func (x *VotingSessionInfo) Reset() {
 	*x = VotingSessionInfo{}
-	mi := &file_server_proto_msgTypes[51]
+	mi := &file_rpc_server_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3045,7 +3045,7 @@ func (x *VotingSessionInfo) String() string {
 func (*VotingSessionInfo) ProtoMessage() {}
 
 func (x *VotingSessionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[51]
+	mi := &file_rpc_server_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3058,7 +3058,7 @@ func (x *VotingSessionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotingSessionInfo.ProtoReflect.Descriptor instead.
 func (*VotingSessionInfo) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{51}
+	return file_rpc_server_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *VotingSessionInfo) GetId() string {
@@ -3128,7 +3128,7 @@ type GetVotingSessionsResponse struct {
 
 func (x *GetVotingSessionsResponse) Reset() {
 	*x = GetVotingSessionsResponse{}
-	mi := &file_server_proto_msgTypes[52]
+	mi := &file_rpc_server_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3140,7 +3140,7 @@ func (x *GetVotingSessionsResponse) String() string {
 func (*GetVotingSessionsResponse) ProtoMessage() {}
 
 func (x *GetVotingSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[52]
+	mi := &file_rpc_server_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3153,7 +3153,7 @@ func (x *GetVotingSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionsResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{52}
+	return file_rpc_server_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetVotingSessionsResponse) GetSuccess() bool {
@@ -3186,7 +3186,7 @@ type GetVotingSessionDetailsRequest struct {
 
 func (x *GetVotingSessionDetailsRequest) Reset() {
 	*x = GetVotingSessionDetailsRequest{}
-	mi := &file_server_proto_msgTypes[53]
+	mi := &file_rpc_server_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3198,7 +3198,7 @@ func (x *GetVotingSessionDetailsRequest) String() string {
 func (*GetVotingSessionDetailsRequest) ProtoMessage() {}
 
 func (x *GetVotingSessionDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[53]
+	mi := &file_rpc_server_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3211,7 +3211,7 @@ func (x *GetVotingSessionDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{53}
+	return file_rpc_server_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetVotingSessionDetailsRequest) GetSessionId() string {
@@ -3232,7 +3232,7 @@ type Vote struct {
 
 func (x *Vote) Reset() {
 	*x = Vote{}
-	mi := &file_server_proto_msgTypes[54]
+	mi := &file_rpc_server_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3244,7 +3244,7 @@ func (x *Vote) String() string {
 func (*Vote) ProtoMessage() {}
 
 func (x *Vote) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[54]
+	mi := &file_rpc_server_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3257,7 +3257,7 @@ func (x *Vote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vote.ProtoReflect.Descriptor instead.
 func (*Vote) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{54}
+	return file_rpc_server_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *Vote) GetVoterId() string {
@@ -3293,7 +3293,7 @@ type GetVotingSessionDetailsResponse struct {
 
 func (x *GetVotingSessionDetailsResponse) Reset() {
 	*x = GetVotingSessionDetailsResponse{}
-	mi := &file_server_proto_msgTypes[55]
+	mi := &file_rpc_server_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3305,7 +3305,7 @@ func (x *GetVotingSessionDetailsResponse) String() string {
 func (*GetVotingSessionDetailsResponse) ProtoMessage() {}
 
 func (x *GetVotingSessionDetailsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[55]
+	mi := &file_rpc_server_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3318,7 +3318,7 @@ func (x *GetVotingSessionDetailsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionDetailsResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionDetailsResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{55}
+	return file_rpc_server_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetVotingSessionDetailsResponse) GetSuccess() bool {
@@ -3359,7 +3359,7 @@ type TokenRequest struct {
 
 func (x *TokenRequest) Reset() {
 	*x = TokenRequest{}
-	mi := &file_server_proto_msgTypes[56]
+	mi := &file_rpc_server_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3371,7 +3371,7 @@ func (x *TokenRequest) String() string {
 func (*TokenRequest) ProtoMessage() {}
 
 func (x *TokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[56]
+	mi := &file_rpc_server_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3384,7 +3384,7 @@ func (x *TokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenRequest.ProtoReflect.Descriptor instead.
 func (*TokenRequest) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{56}
+	return file_rpc_server_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *TokenRequest) GetRegenerate() bool {
@@ -3405,7 +3405,7 @@ type TokenResponse struct {
 
 func (x *TokenResponse) Reset() {
 	*x = TokenResponse{}
-	mi := &file_server_proto_msgTypes[57]
+	mi := &file_rpc_server_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3417,7 +3417,7 @@ func (x *TokenResponse) String() string {
 func (*TokenResponse) ProtoMessage() {}
 
 func (x *TokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_server_proto_msgTypes[57]
+	mi := &file_rpc_server_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3430,7 +3430,7 @@ func (x *TokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenResponse.ProtoReflect.Descriptor instead.
 func (*TokenResponse) Descriptor() ([]byte, []int) {
-	return file_server_proto_rawDescGZIP(), []int{57}
+	return file_rpc_server_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *TokenResponse) GetSuccess() bool {
@@ -3454,11 +3454,11 @@ func (x *TokenResponse) GetToken() string {
 	return ""
 }
 
-var File_server_proto protoreflect.FileDescriptor
+var File_rpc_server_proto protoreflect.FileDescriptor
 
-const file_server_proto_rawDesc = "" +
+const file_rpc_server_proto_rawDesc = "" +
 	"\n" +
-	"\fserver.proto\x12\x03rpc\"\x8c\x01\n" +
+	"\x10rpc/server.proto\x12\x03rpc\"\x8c\x01\n" +
 	"\vJoinRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x17\n" +
@@ -3729,20 +3729,20 @@ const file_server_proto_rawDesc = "" +
 	"\x0fGetVotingResult\x12\x1b.rpc.GetVotingResultRequest\x1a\x1c.rpc.GetVotingResultResponse\"\x00B\aZ\x05./rpcb\x06proto3"
 
 var (
-	file_server_proto_rawDescOnce sync.Once
-	file_server_proto_rawDescData []byte
+	file_rpc_server_proto_rawDescOnce sync.Once
+	file_rpc_server_proto_rawDescData []byte
 )
 
-func file_server_proto_rawDescGZIP() []byte {
-	file_server_proto_rawDescOnce.Do(func() {
-		file_server_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_server_proto_rawDesc), len(file_server_proto_rawDesc)))
+func file_rpc_server_proto_rawDescGZIP() []byte {
+	file_rpc_server_proto_rawDescOnce.Do(func() {
+		file_rpc_server_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_rpc_server_proto_rawDesc), len(file_rpc_server_proto_rawDesc)))
 	})
-	return file_server_proto_rawDescData
+	return file_rpc_server_proto_rawDescData
 }
 
-var file_server_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_server_proto_msgTypes = make([]protoimpl.MessageInfo, 59)
-var file_server_proto_goTypes = []any{
+var file_rpc_server_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_rpc_server_proto_msgTypes = make([]protoimpl.MessageInfo, 59)
+var file_rpc_server_proto_goTypes = []any{
 	(LogLevel)(0),                           // 0: rpc.LogLevel
 	(VoteType)(0),                           // 1: rpc.VoteType
 	(VoteDecision)(0),                       // 2: rpc.VoteDecision
@@ -3806,7 +3806,7 @@ var file_server_proto_goTypes = []any{
 	(*TokenResponse)(nil),                   // 60: rpc.TokenResponse
 	nil,                                     // 61: rpc.Member.GroupAssignmentsEntry
 }
-var file_server_proto_depIdxs = []int32{
+var file_rpc_server_proto_depIdxs = []int32{
 	9,  // 0: rpc.StatusResponse.members:type_name -> rpc.Member
 	37, // 1: rpc.StatusResponse.groups:type_name -> rpc.GroupInfo
 	61, // 2: rpc.Member.group_assignments:type_name -> rpc.Member.GroupAssignmentsEntry
@@ -3882,27 +3882,27 @@ var file_server_proto_depIdxs = []int32{
 	0,  // [0:16] is the sub-list for field type_name
 }
 
-func init() { file_server_proto_init() }
-func file_server_proto_init() {
-	if File_server_proto != nil {
+func init() { file_rpc_server_proto_init() }
+func file_rpc_server_proto_init() {
+	if File_rpc_server_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_server_proto_rawDesc), len(file_server_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_server_proto_rawDesc), len(file_rpc_server_proto_rawDesc)),
 			NumEnums:      3,
 			NumMessages:   59,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
-		GoTypes:           file_server_proto_goTypes,
-		DependencyIndexes: file_server_proto_depIdxs,
-		EnumInfos:         file_server_proto_enumTypes,
-		MessageInfos:      file_server_proto_msgTypes,
+		GoTypes:           file_rpc_server_proto_goTypes,
+		DependencyIndexes: file_rpc_server_proto_depIdxs,
+		EnumInfos:         file_rpc_server_proto_enumTypes,
+		MessageInfos:      file_rpc_server_proto_msgTypes,
 	}.Build()
-	File_server_proto = out.File
-	file_server_proto_goTypes = nil
-	file_server_proto_depIdxs = nil
+	File_rpc_server_proto = out.File
+	file_rpc_server_proto_goTypes = nil
+	file_rpc_server_proto_depIdxs = nil
 }
