@@ -1694,6 +1694,69 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	}, nil
 }
 
+// Token implements the CLI.Token RPC method
+func (s *Server) Token(ctx context.Context, req *rpc.TokenRequest) (*rpc.TokenResponse, error) {
+	s.logger.Infof("Received Token request with regenerate: %t", req.Regenerate)
+	s.Lock()
+	defer s.Unlock()
+
+	// Check if cluster is configured
+	if !s.config.ClusterCheck() {
+		return &rpc.TokenResponse{
+			Success: false,
+			Message: "no cluster configured",
+		}, nil
+	}
+
+	currentToken := s.config.Pulse.ClusterToken
+
+	// If regenerate is false, just return the current token
+	if !req.Regenerate {
+		if currentToken == "" {
+			return &rpc.TokenResponse{
+				Success: false,
+				Message: "no cluster token available",
+			}, nil
+		}
+		return &rpc.TokenResponse{
+			Success: true,
+			Message: "current cluster token",
+			Token:   currentToken,
+		}, nil
+	}
+
+	// Generate new token
+	newToken := uuid.New().String()
+	if newToken == "" {
+		return &rpc.TokenResponse{
+			Success: false,
+			Message: "failed to generate new token",
+		}, nil
+	}
+	
+	// Update the config
+	s.config.Pulse.ClusterToken = newToken
+	
+	// TODO: Implement cluster-wide config synchronization
+	// For now, the token will be updated on this node only
+	// Future enhancement: sync with all cluster members
+
+	// Save the configuration
+	if err := s.config.Save(); err != nil {
+		s.logger.Errorf("Failed to save configuration with new token: %v", err)
+		return &rpc.TokenResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save new token: %v", err),
+		}, nil
+	}
+
+	s.logger.Infof("Successfully generated new cluster token")
+	return &rpc.TokenResponse{
+		Success: true,
+		Message: "new cluster token generated",
+		Token:   newToken,
+	}, nil
+}
 
 // Quorum-related RPC method implementations that delegate to the quorum handler
 

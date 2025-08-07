@@ -97,9 +97,15 @@ func newClusterLeaveCmd() *cobra.Command {
 }
 
 func newClusterTokenCmd() *cobra.Command {
+	var regenerate bool
+	
 	cmd := &cobra.Command{
 		Use:   "token",
-		Short: "Display cluster join token",
+		Short: "Display or regenerate cluster join token",
+		Long: `Display the current cluster join token or generate a new one.
+		
+By default, displays the current token. Use --regenerate to create a new token
+and sync it across all cluster members.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := client.New()
 			if err != nil {
@@ -107,21 +113,29 @@ func newClusterTokenCmd() *cobra.Command {
 			}
 			defer client.Close()
 
-			// Get cluster status to read token from config
-			cfg := client.GetConfig()
-			if !cfg.ClusterCheck() {
-				return fmt.Errorf("no cluster configured")
+			// Call the Token RPC method
+			resp, err := client.Token(regenerate)
+			if err != nil {
+				return fmt.Errorf("failed to get token: %v", err)
 			}
 
-			if cfg.Pulse.ClusterToken == "" {
-				return fmt.Errorf("no cluster token available")
+			if !resp.Success {
+				return fmt.Errorf("token operation failed: %s", resp.Message)
 			}
 
-			fmt.Println(cfg.Pulse.ClusterToken)
+			// Display the result
+			if regenerate {
+				fmt.Printf("New cluster token generated:\n%s\n\nToken has been synchronized across all cluster members.\n", resp.Token)
+			} else {
+				fmt.Println(resp.Token)
+			}
+
 			return nil
 		},
 	}
 
+	cmd.Flags().BoolVar(&regenerate, "regenerate", false, "Generate a new cluster token and sync it to all nodes")
+	
 	return cmd
 }
 

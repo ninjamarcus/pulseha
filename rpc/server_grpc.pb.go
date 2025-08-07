@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.3
-// source: rpc/server.proto
+// source: server.proto
 
 package rpc
 
@@ -32,6 +32,7 @@ const (
 	CLI_DeleteGroup_FullMethodName             = "/rpc.CLI/DeleteGroup"
 	CLI_ListGroups_FullMethodName              = "/rpc.CLI/ListGroups"
 	CLI_CreateCluster_FullMethodName           = "/rpc.CLI/CreateCluster"
+	CLI_Token_FullMethodName                   = "/rpc.CLI/Token"
 	CLI_GetVotingSessions_FullMethodName       = "/rpc.CLI/GetVotingSessions"
 	CLI_GetVotingSessionDetails_FullMethodName = "/rpc.CLI/GetVotingSessionDetails"
 )
@@ -56,6 +57,8 @@ type CLIClient interface {
 	DeleteGroup(ctx context.Context, in *DeleteGroupRequest, opts ...grpc.CallOption) (*DeleteGroupResponse, error)
 	ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error)
 	CreateCluster(ctx context.Context, in *CreateClusterRequest, opts ...grpc.CallOption) (*CreateClusterResponse, error)
+	// Token management
+	Token(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenResponse, error)
 	// Quorum voting methods
 	GetVotingSessions(ctx context.Context, in *GetVotingSessionsRequest, opts ...grpc.CallOption) (*GetVotingSessionsResponse, error)
 	GetVotingSessionDetails(ctx context.Context, in *GetVotingSessionDetailsRequest, opts ...grpc.CallOption) (*GetVotingSessionDetailsResponse, error)
@@ -199,6 +202,16 @@ func (c *cLIClient) CreateCluster(ctx context.Context, in *CreateClusterRequest,
 	return out, nil
 }
 
+func (c *cLIClient) Token(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TokenResponse)
+	err := c.cc.Invoke(ctx, CLI_Token_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *cLIClient) GetVotingSessions(ctx context.Context, in *GetVotingSessionsRequest, opts ...grpc.CallOption) (*GetVotingSessionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetVotingSessionsResponse)
@@ -239,6 +252,8 @@ type CLIServer interface {
 	DeleteGroup(context.Context, *DeleteGroupRequest) (*DeleteGroupResponse, error)
 	ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error)
 	CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error)
+	// Token management
+	Token(context.Context, *TokenRequest) (*TokenResponse, error)
 	// Quorum voting methods
 	GetVotingSessions(context.Context, *GetVotingSessionsRequest) (*GetVotingSessionsResponse, error)
 	GetVotingSessionDetails(context.Context, *GetVotingSessionDetailsRequest) (*GetVotingSessionDetailsResponse, error)
@@ -290,6 +305,9 @@ func (UnimplementedCLIServer) ListGroups(context.Context, *ListGroupsRequest) (*
 }
 func (UnimplementedCLIServer) CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCluster not implemented")
+}
+func (UnimplementedCLIServer) Token(context.Context, *TokenRequest) (*TokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Token not implemented")
 }
 func (UnimplementedCLIServer) GetVotingSessions(context.Context, *GetVotingSessionsRequest) (*GetVotingSessionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVotingSessions not implemented")
@@ -552,6 +570,24 @@ func _CLI_CreateCluster_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CLI_Token_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).Token(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_Token_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).Token(ctx, req.(*TokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CLI_GetVotingSessions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetVotingSessionsRequest)
 	if err := dec(in); err != nil {
@@ -648,6 +684,10 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CLI_CreateCluster_Handler,
 		},
 		{
+			MethodName: "Token",
+			Handler:    _CLI_Token_Handler,
+		},
+		{
 			MethodName: "GetVotingSessions",
 			Handler:    _CLI_GetVotingSessions_Handler,
 		},
@@ -657,7 +697,7 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/server.proto",
+	Metadata: "server.proto",
 }
 
 const (
@@ -1107,5 +1147,5 @@ var Server_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/server.proto",
+	Metadata: "server.proto",
 }

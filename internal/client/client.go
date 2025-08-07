@@ -48,6 +48,7 @@ const (
 	SendDeleteGroup
 	SendListGroups
 	SendCreateCluster
+	SendToken
 )
 
 var protoFunctions = []string{
@@ -69,6 +70,7 @@ var protoFunctions = []string{
 	"DeleteGroup",
 	"ListGroups",
 	"CreateCluster",
+	"Token",
 }
 
 func (p ProtoFunction) String() string {
@@ -166,6 +168,9 @@ func (c *Client) GetProtoFuncList() map[string]interface{} {
 		},
 		"CreateCluster": func(ctx context.Context, data interface{}) (interface{}, error) {
 			return c.cliClient.CreateCluster(ctx, data.(*rpc.CreateClusterRequest))
+		},
+		"Token": func(ctx context.Context, data interface{}) (interface{}, error) {
+			return c.cliClient.Token(ctx, data.(*rpc.TokenRequest))
 		},
 	}
 }
@@ -310,6 +315,21 @@ func (c *Client) CreateCluster(bindIP, bindPort, mode string) error {
 	}
 	fmt.Println(response.Message)
 	return nil
+}
+
+// Token gets the current cluster token or generates a new one
+func (c *Client) Token(regenerate bool) (*rpc.TokenResponse, error) {
+	r, err := c.Send(
+		SendToken,
+		&rpc.TokenRequest{
+			Regenerate: regenerate,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	response := r.(*rpc.TokenResponse)
+	return response, nil
 }
 
 // JoinCluster joins an existing cluster

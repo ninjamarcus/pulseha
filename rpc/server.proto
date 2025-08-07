@@ -28,6 +28,8 @@ service CLI {
     rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {}
     rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
     rpc CreateCluster(CreateClusterRequest) returns (CreateClusterResponse) {}
+    // Token management
+    rpc Token(TokenRequest) returns (TokenResponse) {}
     // Quorum voting methods
     rpc GetVotingSessions(GetVotingSessionsRequest) returns (GetVotingSessionsResponse) {}
     rpc GetVotingSessionDetails(GetVotingSessionDetailsRequest) returns (GetVotingSessionDetailsResponse) {}
@@ -387,4 +389,15 @@ message GetVotingSessionDetailsResponse {
     string message = 2;
     VotingSessionInfo session = 3;
     repeated Vote votes = 4;
+}
+
+// Token Management Request/Response
+message TokenRequest {
+    bool regenerate = 1; // If true, generate a new token; if false, return current token
+}
+
+message TokenResponse {
+    bool success = 1;
+    string message = 2;
+    string token = 3; // The cluster join token
 } 
