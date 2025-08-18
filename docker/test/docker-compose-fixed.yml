@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  pulseha-node1:
+    build:
+      context: ../../
+      dockerfile: docker/test/Dockerfile
+    container_name: pulseha-node1
+    hostname: node1
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      pulseha-net:
+        ipv4_address: 172.20.0.10
+    volumes:
+      - node1-config:/home/pulseha/.pulseha
+    environment:
+      - PULSEHA_NODE_ID=node1
+      - PULSEHA_BIND_IP=172.20.0.10
+      - PULSEHA_BIND_PORT=8080
+    command: ["/bin/bash", "-c", "mkdir -p /etc/pulseha && echo '{\"pulseha\":{\"logging_level\":\"debug\",\"log_to_file\":false}, \"nodes\":{}}' > /etc/pulseha/config.json && /usr/local/bin/pulseha"]
+    ports:
+      - "8081:8080"
+
+  pulseha-node2:
+    build:
+      context: ../../
+      dockerfile: docker/test/Dockerfile
+    container_name: pulseha-node2
+    hostname: node2
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      pulseha-net:
+        ipv4_address: 172.20.0.11
+    volumes:
+      - node2-config:/home/pulseha/.pulseha
+    environment:
+      - PULSEHA_NODE_ID=node2
+      - PULSEHA_BIND_IP=172.20.0.11
+      - PULSEHA_BIND_PORT=8080
+    command: ["/bin/bash", "-c", "mkdir -p /etc/pulseha && echo '{\"pulseha\":{\"logging_level\":\"debug\",\"log_to_file\":false}, \"nodes\":{}}' > /etc/pulseha/config.json && sleep 5 && /usr/local/bin/pulseha"]
+    ports:
+      - "8082:8080"
+
+  pulseha-node3:
+    build:
+      context: ../../
+      dockerfile: docker/test/Dockerfile
+    container_name: pulseha-node3
+    hostname: node3
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      pulseha-net:
+        ipv4_address: 172.20.0.12
+    volumes:
+      - node3-config:/home/pulseha/.pulseha
+    environment:
+      - PULSEHA_NODE_ID=node3
+      - PULSEHA_BIND_IP=172.20.0.12
+      - PULSEHA_BIND_PORT=8080
+    command: ["/bin/bash", "-c", "mkdir -p /etc/pulseha && echo '{\"pulseha\":{\"logging_level\":\"debug\",\"log_to_file\":false}, \"nodes\":{}}' > /etc/pulseha/config.json && sleep 10 && /usr/local/bin/pulseha"]
+    ports:
+      - "8083:8080"
+
+networks:
+  pulseha-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+
+volumes:
+  node1-config:
+  node2-config:
+  node3-config:

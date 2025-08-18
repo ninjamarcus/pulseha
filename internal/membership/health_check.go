@@ -3,6 +3,7 @@ package membership
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -143,74 +144,62 @@ func (h *HealthChecker) performHealthChecks() {
 	h.RLock()
 	defer h.RUnlock()
 
-	h.logger.Debug("Beginning health checks for all members")
 	memberCount := len(h.members.Members)
 	if memberCount == 0 {
-		h.logger.Debug("No members to check, waiting for members to join")
-		return
+		return // No logging needed when no members exist
 	}
-	h.logger.Debugf("Found %d members to check", memberCount)
+
+	// Collect cluster status information for a single consolidated log
+	clusterStatus := make([]string, 0, memberCount)
+	var failedMembers []string
+	var statusChanges []string
 
 	for _, member := range h.members.Members {
-		h.logger.Debugf("Checking member: %s (Status: %v)", member.Hostname, member.Status)
-
-		// If this is the local node, mark it as active
+		// If this is the local node, just update its health check time
 		if member.IsLocal() {
-			h.logger.Debugf("Local node %s detected - preserving current status", member.Hostname)
 			member.Lock()
-			// Don't change the status, just update the health check response time
 			member.LastHCResponse = time.Now()
-			member.Latency = "0ms" // Local node has zero latency
+			member.Latency = "0ms"
 			member.Unlock()
+			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(local/%s)", 
+				member.Hostname, StatusToString(member.Status)))
 			continue
 		}
 
-		// For remote nodes, check their status
-		h.logger.Debugf("Checking remote member %s", member.Hostname)
-
-		// Store the previous response time for logging purposes
+		// Store previous state for change detection
 		member.Lock()
-		prevResponse := member.LastHCResponse
 		wasUnknown := member.Status == StatusUnknown
 		member.Unlock()
 
-		// Check node connectivity first - this will also update the latency
+		// Check node connectivity
 		startTime := time.Now()
 		isReachable := h.checkNodeConnectivity(member)
 		responseTime := time.Since(startTime)
 
 		member.Lock()
-
-		// Update last response time regardless of reachability
 		member.LastHCResponse = time.Now()
 
 		if !isReachable {
-			h.logger.Infof("Member %s is unreachable", member.Hostname)
 			// Only set to unknown if it's not already in a known state
 			if member.Status != StatusActive && member.Status != StatusPassive {
 				member.Status = StatusUnknown
 			}
-			member.Latency = "N/A" // Mark latency as N/A for unreachable nodes
-			h.logger.Infof("Member %s is unreachable, latency set to N/A", member.Hostname)
+			member.Latency = "N/A"
 			member.Unlock()
+			
+			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(unreachable/%s)", 
+				member.Hostname, StatusToString(member.Status)))
+			failedMembers = append(failedMembers, member.Hostname)
 			continue
 		}
 
-		// Node is reachable
-		h.logger.Debugf("Member %s is reachable (response time: %v)", member.Hostname, responseTime)
-
-		// Set the latency based on the actual response time
-		member.Latency = fmt.Sprintf("%v", responseTime)
-		h.logger.Infof("Updated latency for member %s: %s", member.Hostname, member.Latency)
+		// Node is reachable - update latency once
+		member.Latency = fmt.Sprintf("%.2fms", float64(responseTime.Nanoseconds())/1000000)
 
 		// Handle auto-failback for previously failed nodes
 		if wasUnknown && h.members.config.Pulse.AutoFailback {
-			h.logger.Infof("Auto-failback enabled, promoting previously failed node %s", member.Hostname)
-
-			// Determine promotion based on cluster mode
 			switch h.members.config.Pulse.Mode {
 			case "active-passive":
-				// In active-passive, only promote if no other node is active
 				activeExists := false
 				for _, otherMember := range h.members.Members {
 					if otherMember.ID != member.ID && otherMember.Status == StatusActive {
@@ -218,106 +207,70 @@ func (h *HealthChecker) performHealthChecks() {
 						break
 					}
 				}
-
 				if !activeExists {
-					h.logger.Infof("No active node found, promoting %s to active", member.Hostname)
 					member.Status = StatusActive
+					statusChanges = append(statusChanges, fmt.Sprintf("%s promoted to active", member.Hostname))
 				} else {
-					h.logger.Infof("Active node exists, setting %s to passive", member.Hostname)
 					member.Status = StatusPassive
+					statusChanges = append(statusChanges, fmt.Sprintf("%s restored to passive", member.Hostname))
 				}
-
 			case "active-active":
-				// In active-active, promote to partial active
-				h.logger.Infof("Setting %s to partial active in active-active mode", member.Hostname)
 				member.Status = StatusPartialActive
-
+				statusChanges = append(statusChanges, fmt.Sprintf("%s restored to partial-active", member.Hostname))
 			default:
-				h.logger.Warnf("Unknown cluster mode %s, defaulting to passive", h.members.config.Pulse.Mode)
 				member.Status = StatusPassive
+				statusChanges = append(statusChanges, fmt.Sprintf("%s restored to passive", member.Hostname))
 			}
 		} else if member.Status == StatusUnknown {
-			h.logger.Infof("Member %s is now reachable, marking as passive", member.Hostname)
 			member.Status = StatusPassive
+			statusChanges = append(statusChanges, fmt.Sprintf("%s recovered to passive", member.Hostname))
 		}
 
-		// Log the time since the previous response for monitoring purposes
-		if !prevResponse.IsZero() {
-			timeSincePrev := time.Now().Sub(prevResponse)
-			h.logger.Debugf("Time since previous health check for %s: %v", member.Hostname, timeSincePrev)
-		} else {
-			h.logger.Debugf("First health check for %s", member.Hostname)
-		}
+		clusterStatus = append(clusterStatus, fmt.Sprintf("%s(%s/%s)", 
+			member.Hostname, member.Latency, StatusToString(member.Status)))
 
 		member.Unlock()
 
-		// Check each IP assigned to this member
+		// Check IPs if member has any
 		if len(member.ActiveIPs) > 0 {
-			h.logger.Debugf("Checking %d IPs for member %s", len(member.ActiveIPs), member.Hostname)
 			failedIPs := h.checkMemberIPs(member)
-
-			// Handle any failed IPs
 			if len(failedIPs) > 0 {
-				h.logger.Infof("Member %s has %d failed IPs", member.Hostname, len(failedIPs))
+				h.logger.Warnf("Member %s has %d failed IPs, initiating redistribution", member.Hostname, len(failedIPs))
 				h.handlePartialFailure(member, failedIPs)
-			} else {
-				h.logger.Debugf("All IPs for member %s are healthy", member.Hostname)
 			}
-		} else {
-			h.logger.Debugf("Member %s has no active IPs to check", member.Hostname)
 		}
 	}
 
-	h.logger.Debug("Health checks completed")
+	// Log a single consolidated cluster status message
+	h.logger.Infof("Cluster health: %s", strings.Join(clusterStatus, ", "))
+	
+	// Log any status changes
+	for _, change := range statusChanges {
+		h.logger.Infof("Status change: %s", change)
+	}
+	
+	// Log any failed members
+	if len(failedMembers) > 0 {
+		h.logger.Warnf("Unreachable members: %s", strings.Join(failedMembers, ", "))
+	}
 }
 
 // checkNodeConnectivity verifies basic node connectivity
 func (h *HealthChecker) checkNodeConnectivity(member *Member) bool {
-	h.logger.Debugf("Testing connectivity to %s", member.Hostname)
-
-	// Get node config using member ID
-	node, ok := h.members.config.Nodes[member.ID]
-	if !ok {
-		h.logger.Debugf("No configuration found for member ID %s", member.ID)
+	// Use member's stored IP and Port directly (no config lookup needed)
+	if member.IP == "" || member.Port == "" {
 		return false
 	}
 
-	// Try to establish basic connection with retries
-	address := fmt.Sprintf("%s:%s", node.IP, node.Port)
-	h.logger.Debugf("Attempting to connect to %s", address)
-
-	// Track latency for connection
-	var connectionLatency time.Duration
-	var connected bool
-
-	// Reduce retries and timeout for testing
-	for i := 0; i < 1; i++ {
-		connStart := time.Now()
-		conn, err := net.DialTimeout("tcp", address, 500*time.Millisecond)
-		if err == nil {
-			// Successfully connected, measure latency
-			connectionLatency = time.Since(connStart)
-			conn.Close()
-			h.logger.Infof("Successfully connected to %s (latency: %v)", address, connectionLatency)
-
-			// Update member's latency with the actual network latency
-			member.Lock()
-			member.Latency = fmt.Sprintf("%v", connectionLatency)
-			h.logger.Infof("Updated latency for member %s: %s", member.Hostname, member.Latency)
-			member.Unlock()
-
-			connected = true
-			break
-		}
-		h.logger.Debugf("Connection attempt %d to %s failed: %v", i+1, address, err)
-		time.Sleep(100 * time.Millisecond)
+	// Try to establish basic connection
+	address := fmt.Sprintf("%s:%s", member.IP, member.Port)
+	conn, err := net.DialTimeout("tcp", address, 500*time.Millisecond)
+	if err == nil {
+		conn.Close()
+		return true
 	}
 
-	if !connected {
-		h.logger.Debugf("Failed to connect to %s after retries", address)
-	}
-
-	return connected
+	return false
 }
 
 // checkMemberIPs checks all IPs assigned to a member

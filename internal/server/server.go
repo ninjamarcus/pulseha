@@ -93,15 +93,36 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to load initial members: %v", err)
 	}
 
-	// Get local node config
+	// Get local node config for binding - try multiple approaches
 	s.logger.Debug("Retrieving local node configuration...")
-	localNode, err := s.config.GetLocalNode()
+	localNode, err := s.config.GetLocalNodeForBinding()
 	if err != nil {
-		s.logger.Debug("No local node configured in config, using default settings")
-		localNode = config.Node{
-			IP:   "127.0.0.1", // Bind to localhost for initial setup
-			Port: "8080",
+		s.logger.Debug("No local node configured for binding, trying cluster-based lookup...")
+		localNode, err = s.config.GetLocalNode()
+		if err != nil {
+			s.logger.Debug("No local node configured in config, checking environment variables...")
+			// Check for environment variable overrides
+			bindIP := os.Getenv("PULSEHA_BIND_IP")
+			bindPort := os.Getenv("PULSEHA_BIND_PORT")
+			if bindIP != "" {
+				if bindPort == "" {
+					bindPort = "8080"
+				}
+				localNode = config.Node{
+					IP:   bindIP,
+					Port: bindPort,
+				}
+				s.logger.Debugf("Using environment variable bind address: IP=%s, Port=%s", bindIP, bindPort)
+			} else {
+				s.logger.Debug("No bind address found, using default settings")
+				localNode = config.Node{
+					IP:   "127.0.0.1", // Bind to localhost for initial setup
+					Port: "8080",
+				}
+			}
 		}
+	} else {
+		s.logger.Debugf("Using configured local node: IP=%s, Port=%s", localNode.IP, localNode.Port)
 	}
 
 	// Generate certificates if they don't exist
@@ -299,9 +320,8 @@ func (s *Server) loadInitialMembers() error {
 // HandleNodeJoin processes a new node joining the cluster
 func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc.JoinResponse, error) {
 	s.logger.Infof("Handling join request from node: %s", req.Address)
-
-	s.Lock()
-	defer s.Unlock()
+	s.logger.Debugf("Join request details - NodeID: %s, BindIP: %s, BindPort: %s, Token provided: %v", 
+		req.NodeId, req.BindIp, req.BindPort, req.Token != "")
 
 	// Check if this is initial cluster creation
 	if len(s.memberList.Members) == 0 && req.Token == "" {
@@ -346,14 +366,19 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 		}, nil
 	}
 
-	// Validate cluster token for existing cluster
-	if req.Token != s.config.Pulse.ClusterToken {
+	// Validate cluster token for existing cluster 
+	s.logger.Debugf("Validating cluster token for join...")
+	clusterToken := s.config.Pulse.ClusterToken  // Direct read - config token shouldn't change during join
+	s.logger.Debugf("Expected token: %s, Received token: %s", clusterToken, req.Token)
+	
+	if req.Token != clusterToken {
 		s.logger.Warning("Invalid cluster join token received")
 		return &rpc.JoinResponse{
 			Success: false,
 			Message: "Invalid cluster token",
 		}, nil
 	}
+	s.logger.Debugf("Token validation passed")
 
 	// Node ID must be provided
 	if req.NodeId == "" {
@@ -366,6 +391,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	s.logger.Debugf("Using node_id: %s", nodeID)
 
 	// Add the node to the member list
+	s.logger.Debugf("Adding member %s to member list...", nodeID)
 	if err := s.memberList.AddMember(nodeID, req.Address, req.BindIp, req.BindPort); err != nil {
 		s.logger.WithError(err).Error("Failed to add member to member list")
 		return &rpc.JoinResponse{
@@ -373,14 +399,30 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 			Message: fmt.Sprintf("failed to add member: %v", err),
 		}, nil
 	}
+	s.logger.Debugf("Member %s added to member list successfully", nodeID)
 
-	// Save the config
+	// Add node to config (need to lock config access)
+	s.Lock()
+	if s.config.Nodes == nil {
+		s.config.Nodes = make(map[string]*config.Node)
+	}
+	s.config.Nodes[nodeID] = &config.Node{
+		Hostname: req.Address,
+		IP:       req.BindIp,
+		Port:     req.BindPort,
+		IPGroups: make(map[string][]string),
+	}
+	s.Unlock()
+
+	s.logger.Infof("Successfully joined node %s (ID: %s) to cluster", req.Address, nodeID)
+	
+	// Save the config synchronously to ensure it's available for health checks
+	s.logger.Debugf("Saving config with new member %s...", nodeID)
 	if err := s.config.Save(); err != nil {
-		s.logger.WithError(err).Error("Failed to save config")
-		return &rpc.JoinResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to save config: %v", err),
-		}, nil
+		s.logger.WithError(err).Error("Failed to save config after successful join")
+		// Still return success since member was added to memberList
+	} else {
+		s.logger.Debugf("Config saved successfully after node %s joined", req.Address)
 	}
 
 	return &rpc.JoinResponse{

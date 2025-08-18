@@ -82,10 +82,22 @@ func New() (*Client, error) {
 	cfg := config.New()
 	localNode, err := cfg.GetLocalNode()
 	if err != nil {
-		// If no local node is configured, use default connection
-		conn, err := grpc.Dial("localhost:8080", grpc.WithTransportCredentials(insecure.NewCredentials()))
+		// Check for environment variables first
+		bindIP := os.Getenv("PULSEHA_BIND_IP")
+		bindPort := os.Getenv("PULSEHA_BIND_PORT")
+		
+		// Default to localhost if no environment variables are set
+		if bindIP == "" {
+			bindIP = "localhost"
+		}
+		if bindPort == "" {
+			bindPort = "8080"
+		}
+		
+		address := fmt.Sprintf("%s:%s", bindIP, bindPort)
+		conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect: %v", err)
+			return nil, fmt.Errorf("failed to connect to %s: %v", address, err)
 		}
 		return &Client{
 			Connection: conn,
@@ -358,6 +370,11 @@ func (c *Client) JoinCluster(address, token, bindIP, bindPort string) error {
 	// Generate a unique node ID for this node
 	cfg := c.GetConfig()
 	nodeID := cfg.GenerateNodeID()
+
+	// Default bind port if not provided
+	if bindPort == "" {
+		bindPort = "8080"
+	}
 
 	// Create join request
 	joinReq := &rpc.JoinRequest{

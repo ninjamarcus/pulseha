@@ -196,6 +196,9 @@ func (m *MemberList) getActiveNode() *Member {
 
 // AddMember adds a new member to the member list
 func (m *MemberList) AddMember(nodeID, hostname, bindIP, bindPort string) error {
+	m.Lock()
+	defer m.Unlock()
+	
 	m.logger.Debugf("Starting AddMember process for ID: %s", nodeID)
 
 	// Check if member already exists

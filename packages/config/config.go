@@ -174,6 +174,31 @@ func (c *Config) GetLocalNodeUUID() (string, error) {
 	return c.Pulse.LocalNode, nil
 }
 
+// GetLocalNodeForBinding gets local node config for initial server binding, bypassing cluster check
+func (c *Config) GetLocalNodeForBinding() (Node, error) {
+	if c.Pulse.LocalNode == "" {
+		return Node{}, errors.New("no local node specified")
+	}
+	if node, ok := c.Nodes[c.Pulse.LocalNode]; ok {
+		// Create a deep copy of the node
+		nodeCopy := Node{
+			Hostname: node.Hostname,
+			IP:       node.IP,
+			Port:     node.Port,
+		}
+		// Deep copy the IPGroups map
+		if node.IPGroups != nil {
+			nodeCopy.IPGroups = make(map[string][]string)
+			for k, v := range node.IPGroups {
+				nodeCopy.IPGroups[k] = make([]string, len(v))
+				copy(nodeCopy.IPGroups[k], v)
+			}
+		}
+		return nodeCopy, nil
+	}
+	return Node{}, fmt.Errorf("local node '%s' not found in configuration", c.Pulse.LocalNode)
+}
+
 // GetLocalNode attempt to get local node definition in our config.
 func (c *Config) GetLocalNode() (Node, error) {
 	if !c.ClusterCheck() {
