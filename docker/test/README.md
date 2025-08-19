@@ -12,20 +12,10 @@ This directory contains a complete Docker-based test environment for PulseHA tha
 
 ## Quick Start
 
-1. **Build and start the cluster:**
+1. **Start the 3-node cluster:**
    ```bash
    cd docker/test
-   docker-compose up -d
-   ```
-
-2. **Setup the cluster:**
-   ```bash
-   ./setup-cluster.sh
-   ```
-
-3. **Test failover scenarios:**
-   ```bash
-   ./test-failover.sh
+   ./start-cluster.sh
    ```
 
 ## Architecture

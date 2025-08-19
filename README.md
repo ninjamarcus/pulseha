@@ -424,15 +424,9 @@ go test -v ./tests/integration/syslog_logging_test.go
 
 ### Docker Test Environment
 ```bash
-# Start Docker test environment
+# Start the local 3-node Docker test cluster
 cd docker/test
-docker compose up -d
-
-# Run automated QA tests
-./run-qa-tests.sh
-
-# Test specific scenarios
-./test-failover.sh
+./start-cluster.sh
 ```
 
 ### Production Testing
