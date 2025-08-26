@@ -63,6 +63,7 @@ message JoinResponse {
     bool success = 1;
     string message = 2;
     string node_id = 3;
+    bytes cluster_config = 4;  // Full cluster configuration for the joining node
 }
 
 // Leave Request/Response

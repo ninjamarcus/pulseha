@@ -255,6 +255,7 @@ type JoinResponse struct {
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	NodeId        string                 `protobuf:"bytes,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	ClusterConfig []byte                 `protobuf:"bytes,4,opt,name=cluster_config,json=clusterConfig,proto3" json:"cluster_config,omitempty"` // Full cluster configuration for the joining node
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -308,6 +309,13 @@ func (x *JoinResponse) GetNodeId() string {
 		return x.NodeId
 	}
 	return ""
+}
+
+func (x *JoinResponse) GetClusterConfig() []byte {
+	if x != nil {
+		return x.ClusterConfig
+	}
+	return nil
 }
 
 // Leave Request/Response
@@ -3464,11 +3472,12 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x17\n" +
 	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12\x17\n" +
 	"\abind_ip\x18\x04 \x01(\tR\x06bindIp\x12\x1b\n" +
-	"\tbind_port\x18\x05 \x01(\tR\bbindPort\"[\n" +
+	"\tbind_port\x18\x05 \x01(\tR\bbindPort\"\x82\x01\n" +
 	"\fJoinResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x17\n" +
-	"\anode_id\x18\x03 \x01(\tR\x06nodeId\"'\n" +
+	"\anode_id\x18\x03 \x01(\tR\x06nodeId\x12%\n" +
+	"\x0ecluster_config\x18\x04 \x01(\fR\rclusterConfig\"'\n" +
 	"\fLeaveRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"C\n" +
 	"\rLeaveResponse\x12\x18\n" +

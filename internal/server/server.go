@@ -425,10 +425,24 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 		s.logger.Debugf("Config saved successfully after node %s joined", req.Address)
 	}
 
+	// Marshal the complete cluster configuration to send to the joining node
+	configBytes, err := json.Marshal(s.config)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to marshal config for joining node")
+		// Still return success but without config - node can sync later
+		return &rpc.JoinResponse{
+			Success: true,
+			NodeId:  nodeID,
+			Message: "Successfully joined cluster (config sync pending)",
+		}, nil
+	}
+
+	s.logger.Debugf("Sending cluster configuration to joining node %s", req.Address)
 	return &rpc.JoinResponse{
-		Success: true,
-		NodeId:  nodeID,
-		Message: "Successfully joined cluster",
+		Success:       true,
+		NodeId:        nodeID,
+		Message:       "Successfully joined cluster",
+		ClusterConfig: configBytes,
 	}, nil
 }
 

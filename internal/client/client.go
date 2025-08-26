@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -394,20 +395,59 @@ func (c *Client) JoinCluster(address, token, bindIP, bindPort string) error {
 		return fmt.Errorf("join failed: %s", resp.Message)
 	}
 
-	// Update local config with the cluster information
-	cfg.Pulse.LocalNode = resp.NodeId
-	cfg.Pulse.ClusterToken = token
+	// If cluster configuration is provided, use it
+	if resp.ClusterConfig != nil && len(resp.ClusterConfig) > 0 {
+		// Unmarshal the cluster configuration
+		clusterConfig := &config.Config{}
+		if err := json.Unmarshal(resp.ClusterConfig, clusterConfig); err != nil {
+			log.Warnf("Failed to unmarshal cluster config: %v", err)
+			// Fall back to minimal config
+		} else {
+			// Preserve local-specific settings
+			localNode := resp.NodeId
+			loggingLevel := cfg.Pulse.LoggingLevel
+			logToFile := cfg.Pulse.LogToFile
+			logFileLocation := cfg.Pulse.LogFileLocation
+			
+			// Merge cluster config while preserving local settings
+			cfg.Nodes = clusterConfig.Nodes
+			cfg.Groups = clusterConfig.Groups
+			cfg.Pulse.ClusterToken = clusterConfig.Pulse.ClusterToken
+			cfg.Pulse.Mode = clusterConfig.Pulse.Mode
+			cfg.Pulse.QuorumEnabled = clusterConfig.Pulse.QuorumEnabled
+			cfg.Pulse.QuorumMinNodes = clusterConfig.Pulse.QuorumMinNodes
+			cfg.Pulse.HealthCheckInterval = clusterConfig.Pulse.HealthCheckInterval
+			cfg.Pulse.FailOverInterval = clusterConfig.Pulse.FailOverInterval
+			cfg.Pulse.FailOverLimit = clusterConfig.Pulse.FailOverLimit
+			cfg.Pulse.AutoFailback = clusterConfig.Pulse.AutoFailback
+			
+			// Restore local-specific settings
+			cfg.Pulse.LocalNode = localNode
+			cfg.Pulse.LoggingLevel = loggingLevel
+			cfg.Pulse.LogToFile = logToFile
+			cfg.Pulse.LogFileLocation = logFileLocation
+			
+			log.Info("Successfully received and merged cluster configuration")
+		}
+	} else {
+		// Fall back to minimal configuration if no cluster config provided
+		log.Warn("No cluster configuration received, using minimal config")
+		
+		// Update local config with the cluster information
+		cfg.Pulse.LocalNode = resp.NodeId
+		cfg.Pulse.ClusterToken = token
 
-	// Add this node to the nodes map
-	if cfg.Nodes == nil {
-		cfg.Nodes = make(map[string]*config.Node)
-	}
-	
-	cfg.Nodes[resp.NodeId] = &config.Node{
-		Hostname: hostname,
-		IP:       bindIP,
-		Port:     bindPort,
-		IPGroups: make(map[string][]string),
+		// Add this node to the nodes map
+		if cfg.Nodes == nil {
+			cfg.Nodes = make(map[string]*config.Node)
+		}
+		
+		cfg.Nodes[resp.NodeId] = &config.Node{
+			Hostname: hostname,
+			IP:       bindIP,
+			Port:     bindPort,
+			IPGroups: make(map[string][]string),
+		}
 	}
 
 	// Save the updated config
