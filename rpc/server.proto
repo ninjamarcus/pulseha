@@ -261,7 +261,7 @@ message RemoveIPFromGroupResponse {
 
 message AssignGroupRequest {
     string group_name = 1;
-    string hostname = 2;
+    string node_id = 2;   // canonical target identifier (UUID)
     string interface = 3;
 }
 
@@ -281,8 +281,9 @@ message GroupInfo {
 }
 
 message GroupAssignment {
-    string hostname = 1;
+    string hostname = 1;  // kept for backward compatibility
     string interface = 2;
+    string node_id = 3;   // preferred unique identifier (UUID)
 }
 
 message ListGroupsResponse {
@@ -295,8 +296,9 @@ message ListGroupsResponse {
 // Group Unassignment
 message UnassignGroupRequest {
     string group_name = 1;
-    string hostname = 2;
+    string hostname = 2; // deprecated, prefer node_id
     string interface = 3;
+    string node_id = 4;  // preferred unique identifier (UUID)
 }
 
 message UnassignGroupResponse {

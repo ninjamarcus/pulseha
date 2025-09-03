@@ -126,7 +126,7 @@ func newGroupRemoveIPCmd() *cobra.Command {
 func newGroupAssignCmd() *cobra.Command {
 	var (
 		group string
-		node  string
+		nodeID  string
 		iface string
 	)
 
@@ -140,7 +140,7 @@ func newGroupAssignCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if err := client.AssignGroupToNode(group, node, iface); err != nil {
+			if err := client.AssignGroupToNode(group, nodeID, iface); err != nil {
 				fmt.Printf("Failed to assign group to node: %v\n", err)
 				os.Exit(1)
 			}
@@ -150,10 +150,10 @@ func newGroupAssignCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&group, "group", "", "Name of the group to assign")
-	cmd.Flags().StringVar(&node, "node", "", "Hostname of the node to assign the group to")
+	cmd.Flags().StringVar(&nodeID, "node-id", "", "Node ID (UUID) of the node to assign the group to")
 	cmd.Flags().StringVar(&iface, "interface", "", "Network interface to assign the group to")
 	cmd.MarkFlagRequired("group")
-	cmd.MarkFlagRequired("node")
+	cmd.MarkFlagRequired("node-id")
 	cmd.MarkFlagRequired("interface")
 
 	return cmd
@@ -208,7 +208,7 @@ func newGroupListCmd() *cobra.Command {
 				if len(group.Assignments) > 0 {
 					fmt.Println("  Assigned to:")
 					for _, assignment := range group.Assignments {
-						fmt.Printf("    - Node: %s, Interface: %s\n", assignment.Hostname, assignment.Interface)
+						fmt.Printf("    - Node: %s (%s), Interface: %s\n", assignment.Hostname, assignment.NodeId, assignment.Interface)
 					}
 				} else {
 					fmt.Println("  Assigned to: None")
@@ -229,7 +229,7 @@ func newGroupListCmd() *cobra.Command {
 func newGroupUnassignCmd() *cobra.Command {
 	var (
 		group string
-		node  string
+		nodeID  string
 		iface string
 	)
 
@@ -243,7 +243,7 @@ func newGroupUnassignCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if err := client.UnassignGroupFromNode(group, node, iface); err != nil {
+			if err := client.UnassignGroupFromNode(group, nodeID, iface); err != nil {
 				fmt.Printf("Failed to unassign group from node: %v\n", err)
 				os.Exit(1)
 			}
@@ -253,10 +253,10 @@ func newGroupUnassignCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&group, "group", "", "Name of the group to unassign")
-	cmd.Flags().StringVar(&node, "node", "", "Hostname of the node to unassign the group from")
+	cmd.Flags().StringVar(&nodeID, "node-id", "", "Node ID (UUID) of the node to unassign the group from")
 	cmd.Flags().StringVar(&iface, "interface", "", "Network interface to unassign the group from")
 	cmd.MarkFlagRequired("group")
-	cmd.MarkFlagRequired("node")
+	cmd.MarkFlagRequired("node-id")
 	cmd.MarkFlagRequired("interface")
 
 	return cmd

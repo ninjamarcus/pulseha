@@ -670,12 +670,12 @@ func (c *Client) RemoveIPFromGroup(groupName, ip string) error {
 }
 
 // AssignGroupToNode assigns a group to a node's interface
-func (c *Client) AssignGroupToNode(groupName, hostname, iface string) error {
+func (c *Client) AssignGroupToNode(groupName, nodeID, iface string) error {
 	r, err := c.Send(
 		SendAssignGroupToNode,
 		&rpc.AssignGroupRequest{
 			GroupName: groupName,
-			Hostname:  hostname,
+			NodeId:    nodeID,
 			Interface: iface,
 		},
 	)
@@ -745,7 +745,7 @@ func (c *Client) callDeleteGroup(ctx context.Context, data interface{}) (interfa
 }
 
 // UnassignGroupFromNode removes a group assignment from a node's interface
-func (c *Client) UnassignGroupFromNode(groupName, nodeRef, iface string) error {
+func (c *Client) UnassignGroupFromNode(groupName, nodeID, iface string) error {
 	// For now, implement this by directly reading and modifying the config
 	// This is a temporary solution until RPC is properly implemented
 	cfg := c.GetConfig()
@@ -755,26 +755,12 @@ func (c *Client) UnassignGroupFromNode(groupName, nodeRef, iface string) error {
 		return fmt.Errorf("group %s does not exist", groupName)
 	}
 
-	// Resolve node by ID or hostname
-	var nodeFound bool
-	nodeID := nodeRef
-	if _, ok := cfg.Nodes[nodeID]; !ok {
-		for id, node := range cfg.Nodes {
-			if node.Hostname == nodeRef {
-				nodeFound = true
-				nodeID = id
-				break
-			}
-		}
-	} else {
-		nodeFound = true
+	// Resolve node by ID (canonical)
+	node, ok := cfg.Nodes[nodeID]
+	if !ok {
+		return fmt.Errorf("node_id %s not found", nodeID)
 	}
 
-	if !nodeFound {
-		return fmt.Errorf("node %s not found", nodeRef)
-	}
-
-	node := cfg.Nodes[nodeID]
 	if node.IPGroups == nil {
 		return fmt.Errorf("group %s is not assigned to interface %s on node %s", groupName, iface, nodeID)
 	}

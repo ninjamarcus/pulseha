@@ -1416,7 +1416,7 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 
 // AssignGroupToNode implements the CLI.AssignGroupToNode RPC method
 func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequest) (*rpc.AssignGroupResponse, error) {
-	s.logger.Infof("Received AssignGroupToNode request for group: %s, node: %s, interface: %s", req.GroupName, req.Hostname, req.Interface)
+	s.logger.Infof("Received AssignGroupToNode request for group: %s, node_id: %s, interface: %s", req.GroupName, req.NodeId, req.Interface)
 	s.Lock()
 	defer s.Unlock()
 
@@ -1428,21 +1428,12 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		}, nil
 	}
 
-	// Find node by hostname
-	var nodeFound bool
-	var node *config.Node
-	for _, n := range s.config.Nodes {
-		if n.Hostname == req.Hostname {
-			nodeFound = true
-			node = n
-			break
-		}
-	}
-
+	// Find node by node_id (canonical)
+	node, nodeFound := s.config.Nodes[req.NodeId]
 	if !nodeFound || node == nil {
 		return &rpc.AssignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("node %s not found", req.Hostname),
+			Message: fmt.Sprintf("node_id %s not found", req.NodeId),
 		}, nil
 	}
 
@@ -1456,7 +1447,7 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		if g == req.GroupName {
 			return &rpc.AssignGroupResponse{
 				Success: false,
-				Message: fmt.Sprintf("group %s is already assigned to interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
+				Message: fmt.Sprintf("group %s is already assigned to interface %s on node_id %s", req.GroupName, req.Interface, req.NodeId),
 			}, nil
 		}
 	}
@@ -1473,10 +1464,10 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		}, nil
 	}
 
-	s.logger.Infof("Successfully assigned group %s to interface %s on node %s", req.GroupName, req.Interface, req.Hostname)
+	s.logger.Infof("Successfully assigned group %s to interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId)
 	return &rpc.AssignGroupResponse{
 		Success: true,
-		Message: fmt.Sprintf("successfully assigned group %s to interface %s on node %s", req.GroupName, req.Interface, req.Hostname),
+		Message: fmt.Sprintf("successfully assigned group %s to interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId),
 	}, nil
 }
 
@@ -1505,7 +1496,7 @@ type DeleteGroupResponse struct {
 
 // UnassignGroupFromNode implements the CLI.UnassignGroupFromNode RPC method
 func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGroupRequest) (*rpc.UnassignGroupResponse, error) {
-	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node: %s, interface: %s", req.GroupName, req.Hostname, req.Interface)
+	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node_id: %s, interface: %s", req.GroupName, req.NodeId, req.Interface)
 	s.Lock()
 	defer s.Unlock()
 
@@ -1517,29 +1508,12 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 		}, nil
 	}
 
-	// Resolve node: treat Hostname field as either node ID or hostname
-	var (
-		node      *config.Node
-		nodeFound bool
-		nodeRef   = req.Hostname
-	)
-	if n, ok := s.config.Nodes[nodeRef]; ok {
-		node = n
-		nodeFound = true
-	} else {
-		for _, n := range s.config.Nodes {
-			if n.Hostname == nodeRef {
-				node = n
-				nodeFound = true
-				break
-			}
-		}
-	}
-
+	// Resolve node by node_id only (canonical)
+	node, nodeFound := s.config.Nodes[req.NodeId]
 	if !nodeFound || node == nil {
 		return &rpc.UnassignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("node %s not found", nodeRef),
+			Message: fmt.Sprintf("node_id %s not found", req.NodeId),
 		}, nil
 	}
 
@@ -1547,7 +1521,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	if node.IPGroups == nil {
 		return &rpc.UnassignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, nodeRef),
+			Message: fmt.Sprintf("group %s is not assigned to interface %s on node_id %s", req.GroupName, req.Interface, req.NodeId),
 		}, nil
 	}
 
@@ -1564,7 +1538,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	if groupIndex == -1 {
 		return &rpc.UnassignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, nodeRef),
+			Message: fmt.Sprintf("group %s is not assigned to interface %s on node_id %s", req.GroupName, req.Interface, req.NodeId),
 		}, nil
 	}
 
@@ -1585,10 +1559,10 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 		}, nil
 	}
 
-	s.logger.Infof("Successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, nodeRef)
+	s.logger.Infof("Successfully unassigned group %s from interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId)
 	return &rpc.UnassignGroupResponse{
 		Success: true,
-		Message: fmt.Sprintf("successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, nodeRef),
+		Message: fmt.Sprintf("successfully unassigned group %s from interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId),
 	}, nil
 }
 
@@ -1712,8 +1686,9 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 				for _, g := range assignedGroups {
 					if g == groupName {
 						group.Assignments = append(group.Assignments, &rpc.GroupAssignment{
-							Hostname:  id, // temporarily set into Hostname field until proto updated
+							Hostname:  node.Hostname,
 							Interface: iface,
+							NodeId:    id,
 						})
 					}
 				}
