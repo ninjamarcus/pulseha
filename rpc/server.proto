@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package rpc;
 
-option go_package = "./rpc";
+option go_package = "github.com/syleron/pulseha/rpc";
 
 // Log Level Enum
 enum LogLevel {
@@ -19,6 +19,10 @@ service CLI {
     rpc Status(StatusRequest) returns (StatusResponse) {}
     rpc Promote(PromoteRequest) returns (PromoteResponse) {}
     rpc SetMode(SetModeRequest) returns (SetModeResponse) {}
+    // Config updates
+    rpc UpdateConfig(UpdateConfigRequest) returns (UpdateConfigResponse) {}
+    // Network resync
+    rpc ResyncNetwork(ResyncNetworkRequest) returns (ResyncNetworkResponse) {}
     // New configuration management methods
     rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
     rpc AddIPToGroup(AddIPToGroupRequest) returns (AddIPToGroupResponse) {}
@@ -84,9 +88,17 @@ message StatusResponse {
     repeated GroupInfo groups = 2;  // Add group information to the response
 }
 
+// Member status enum provides explicit values on the wire
+enum MemberStatusEnum {
+    MEMBER_STATUS_UNKNOWN = 0;
+    MEMBER_STATUS_ACTIVE = 1;
+    MEMBER_STATUS_PASSIVE = 2;
+    MEMBER_STATUS_PARTIAL_ACTIVE = 3;
+}
+
 message Member {
     string hostname = 1;
-    string status = 2;
+    MemberStatusEnum status = 2;
     repeated string active_ips = 3;
     string last_response = 4;
     string latency = 5;
@@ -192,6 +204,27 @@ message SetModeResponse {
     string message = 2;
 }
 
+// Config Update Request/Response
+message UpdateConfigRequest {
+    string key = 1;    // e.g., "logging_level" or nested via json tag
+    string value = 2;  // string representation; server handles type conversion
+}
+
+message UpdateConfigResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+// Resync Network
+message ResyncNetworkRequest {
+    bool create_default_groups = 1; // if true, create default groups for new interfaces
+}
+
+message ResyncNetworkResponse {
+    bool success = 1;
+    string message = 2;
+}
+
 // New message types for configuration management
 
 // Group Management
@@ -288,6 +321,7 @@ message CreateClusterRequest {
     string bind_ip = 1;
     string bind_port = 2;
     string mode = 3;  // active-passive or active-active
+    string node_id = 4; // optional: custom node ID for first node
 }
 
 message CreateClusterResponse {

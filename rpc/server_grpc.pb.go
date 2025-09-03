@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.3
-// source: rpc/server.proto
+// source: server.proto
 
 package rpc
 
@@ -24,6 +24,8 @@ const (
 	CLI_Status_FullMethodName                  = "/rpc.CLI/Status"
 	CLI_Promote_FullMethodName                 = "/rpc.CLI/Promote"
 	CLI_SetMode_FullMethodName                 = "/rpc.CLI/SetMode"
+	CLI_UpdateConfig_FullMethodName            = "/rpc.CLI/UpdateConfig"
+	CLI_ResyncNetwork_FullMethodName           = "/rpc.CLI/ResyncNetwork"
 	CLI_CreateGroup_FullMethodName             = "/rpc.CLI/CreateGroup"
 	CLI_AddIPToGroup_FullMethodName            = "/rpc.CLI/AddIPToGroup"
 	CLI_RemoveIPFromGroup_FullMethodName       = "/rpc.CLI/RemoveIPFromGroup"
@@ -48,6 +50,10 @@ type CLIClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	Promote(ctx context.Context, in *PromoteRequest, opts ...grpc.CallOption) (*PromoteResponse, error)
 	SetMode(ctx context.Context, in *SetModeRequest, opts ...grpc.CallOption) (*SetModeResponse, error)
+	// Config updates
+	UpdateConfig(ctx context.Context, in *UpdateConfigRequest, opts ...grpc.CallOption) (*UpdateConfigResponse, error)
+	// Network resync
+	ResyncNetwork(ctx context.Context, in *ResyncNetworkRequest, opts ...grpc.CallOption) (*ResyncNetworkResponse, error)
 	// New configuration management methods
 	CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error)
 	AddIPToGroup(ctx context.Context, in *AddIPToGroupRequest, opts ...grpc.CallOption) (*AddIPToGroupResponse, error)
@@ -116,6 +122,26 @@ func (c *cLIClient) SetMode(ctx context.Context, in *SetModeRequest, opts ...grp
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetModeResponse)
 	err := c.cc.Invoke(ctx, CLI_SetMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cLIClient) UpdateConfig(ctx context.Context, in *UpdateConfigRequest, opts ...grpc.CallOption) (*UpdateConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateConfigResponse)
+	err := c.cc.Invoke(ctx, CLI_UpdateConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cLIClient) ResyncNetwork(ctx context.Context, in *ResyncNetworkRequest, opts ...grpc.CallOption) (*ResyncNetworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResyncNetworkResponse)
+	err := c.cc.Invoke(ctx, CLI_ResyncNetwork_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +269,10 @@ type CLIServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	Promote(context.Context, *PromoteRequest) (*PromoteResponse, error)
 	SetMode(context.Context, *SetModeRequest) (*SetModeResponse, error)
+	// Config updates
+	UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error)
+	// Network resync
+	ResyncNetwork(context.Context, *ResyncNetworkRequest) (*ResyncNetworkResponse, error)
 	// New configuration management methods
 	CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error)
 	AddIPToGroup(context.Context, *AddIPToGroupRequest) (*AddIPToGroupResponse, error)
@@ -281,6 +311,12 @@ func (UnimplementedCLIServer) Promote(context.Context, *PromoteRequest) (*Promot
 }
 func (UnimplementedCLIServer) SetMode(context.Context, *SetModeRequest) (*SetModeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetMode not implemented")
+}
+func (UnimplementedCLIServer) UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateConfig not implemented")
+}
+func (UnimplementedCLIServer) ResyncNetwork(context.Context, *ResyncNetworkRequest) (*ResyncNetworkResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResyncNetwork not implemented")
 }
 func (UnimplementedCLIServer) CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateGroup not implemented")
@@ -422,6 +458,42 @@ func _CLI_SetMode_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CLIServer).SetMode(ctx, req.(*SetModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CLI_UpdateConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).UpdateConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_UpdateConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).UpdateConfig(ctx, req.(*UpdateConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CLI_ResyncNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResyncNetworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).ResyncNetwork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_ResyncNetwork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).ResyncNetwork(ctx, req.(*ResyncNetworkRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -652,6 +724,14 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CLI_SetMode_Handler,
 		},
 		{
+			MethodName: "UpdateConfig",
+			Handler:    _CLI_UpdateConfig_Handler,
+		},
+		{
+			MethodName: "ResyncNetwork",
+			Handler:    _CLI_ResyncNetwork_Handler,
+		},
+		{
 			MethodName: "CreateGroup",
 			Handler:    _CLI_CreateGroup_Handler,
 		},
@@ -697,7 +777,7 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/server.proto",
+	Metadata: "server.proto",
 }
 
 const (
@@ -1147,5 +1227,5 @@ var Server_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "rpc/server.proto",
+	Metadata: "server.proto",
 }
