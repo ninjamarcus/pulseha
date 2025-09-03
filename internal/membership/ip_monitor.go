@@ -103,6 +103,11 @@ func (m *IPMonitor) ClearExpectedIPs(iface string) {
 	m.logger.Infof("Cleared all expected IPs for interface %s", iface)
 }
 
+// InitializeExpectedIPs initializes the expected IPs from the current member
+func (m *IPMonitor) InitializeExpectedIPs() error {
+	return m.initializeExpectedIPs()
+}
+
 // initializeExpectedIPs initializes the expected IPs from the current member
 func (m *IPMonitor) initializeExpectedIPs() error {
 	// Get the local member

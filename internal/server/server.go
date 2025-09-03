@@ -2075,7 +2075,7 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 	defer s.Unlock()
 
 	// Optionally create default groups for new interfaces
-	if req.GetCreateDefaultGroups() || s.config.Pulse.AutoCreateIfaceGroups {
+	if req.GetCreateDefaultGroups() {
 		interfaces, err := net.Interfaces()
 		if err != nil {
 			return &rpc.ResyncNetworkResponse{Success: false, Message: err.Error()}, nil
