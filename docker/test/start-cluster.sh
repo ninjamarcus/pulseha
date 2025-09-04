@@ -86,11 +86,8 @@ echo "----------------------------------------"
 
 echo ""
 echo "🔍 Testing status command..."
-docker exec pulseha-node1 /usr/local/bin/pulsectl status &
-STATUS_PID=$!
-sleep 10
-kill $STATUS_PID 2>/dev/null || true
-echo "⚠️  Status command completed (may have timed out)"
+# Run status with a timeout to avoid lingering
+docker exec pulseha-node1 timeout 5s /usr/local/bin/pulsectl status 2>/dev/null || echo "(status timed out)"
 
 echo ""
 echo "🔍 Checking what nodes are actually listening on:"

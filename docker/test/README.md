@@ -116,11 +116,27 @@ docker-compose up -d --build
 
 ## Configuration
 
-The containers use environment variables for configuration:
+This environment mirrors real-world usage:
 
-- `PULSEHA_NODE_ID`: Unique identifier for the node
-- `PULSEHA_BIND_IP`: IP address to bind the gRPC server
-- `PULSEHA_BIND_PORT`: Port for gRPC server (default: 8080)
+- The PulseHA daemon always starts a local CLI gRPC listener on `127.0.0.1:8080`.
+- Cluster gRPC listening on the node IP (e.g., `172.20.0.10:8080`) is enabled after you create/join a cluster via `pulsectl`.
+- The `start-cluster.sh` script uses `pulsectl cluster create` on node1 and `pulsectl cluster join` on other nodes to configure the cluster, without relying on environment variables.
+
+If you prefer to set up manually inside the containers:
+
+```bash
+# On node1 (inside container)
+pulsectl cluster create --bind-ip 172.20.0.10 --bind-port 8080
+
+# Get the cluster token
+pulsectl cluster token
+
+# On node2/node3
+pulsectl cluster join --address 172.20.0.10:8080 --token <TOKEN> \
+  --bind-ip 172.20.0.11 --bind-port 8080   # node2
+pulsectl cluster join --address 172.20.0.10:8080 --token <TOKEN> \
+  --bind-ip 172.20.0.12 --bind-port 8080   # node3
+```
 
 ## Limitations
 

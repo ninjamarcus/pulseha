@@ -92,7 +92,7 @@ func printClusterStatus(status *client.ClusterStatus) error {
 			if len(group.Assignments) > 0 {
 				fmt.Printf("  Assigned to:\n")
 				for _, assignment := range group.Assignments {
-					fmt.Printf("    - Node: %s, Interface: %s\n", assignment.Hostname, assignment.Interface)
+					fmt.Printf("    - Node: %s, Interface: %s\n", assignment.NodeID, assignment.Interface)
 				}
 			} else {
 				fmt.Printf("  Assigned to: None\n")

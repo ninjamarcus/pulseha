@@ -34,6 +34,14 @@ func (m *MemberList) SetIPMonitor(monitor *IPMonitor) {
 	m.ipMonitor = monitor
 }
 
+// UpdateConfig updates the config reference
+func (m *MemberList) UpdateConfig(cfg *config.Config) {
+	m.Lock()
+	defer m.Unlock()
+	m.config = cfg
+	m.logger.Debug("Updated member list config reference")
+}
+
 // RedistributeIPs handles redistribution of failed IPs to healthy nodes
 func (m *MemberList) RedistributeIPs(failedIPs []string) error {
 	m.Lock()

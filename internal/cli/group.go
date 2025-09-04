@@ -125,9 +125,9 @@ func newGroupRemoveIPCmd() *cobra.Command {
 
 func newGroupAssignCmd() *cobra.Command {
 	var (
-		group string
-		nodeID  string
-		iface string
+		group  string
+		nodeID string
+		iface  string
 	)
 
 	cmd := &cobra.Command{
@@ -228,9 +228,9 @@ func newGroupListCmd() *cobra.Command {
 
 func newGroupUnassignCmd() *cobra.Command {
 	var (
-		group string
-		nodeID  string
-		iface string
+		group  string
+		nodeID string
+		iface  string
 	)
 
 	cmd := &cobra.Command{

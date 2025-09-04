@@ -18,8 +18,6 @@ services:
       - node1-config:/home/pulseha/.pulseha
     environment:
       - PULSEHA_NODE_ID=node1
-      - PULSEHA_BIND_IP=172.20.0.10
-      - PULSEHA_BIND_PORT=8080
     command: ["/bin/bash", "-c", "mkdir -p /etc/pulseha && echo '{\"pulseha\":{\"logging_level\":\"debug\",\"log_to_file\":false}, \"nodes\":{}}' > /etc/pulseha/config.json && /usr/local/bin/pulseha"]
     ports:
       - "8081:8080"
@@ -41,8 +39,6 @@ services:
       - node2-config:/home/pulseha/.pulseha
     environment:
       - PULSEHA_NODE_ID=node2
-      - PULSEHA_BIND_IP=172.20.0.11
-      - PULSEHA_BIND_PORT=8080
     command: ["/bin/bash", "-c", "mkdir -p /etc/pulseha && echo '{\"pulseha\":{\"logging_level\":\"debug\",\"log_to_file\":false}, \"nodes\":{}}' > /etc/pulseha/config.json && sleep 5 && /usr/local/bin/pulseha"]
     ports:
       - "8082:8080"
@@ -64,8 +60,6 @@ services:
       - node3-config:/home/pulseha/.pulseha
     environment:
       - PULSEHA_NODE_ID=node3
-      - PULSEHA_BIND_IP=172.20.0.12
-      - PULSEHA_BIND_PORT=8080
     command: ["/bin/bash", "-c", "mkdir -p /etc/pulseha && echo '{\"pulseha\":{\"logging_level\":\"debug\",\"log_to_file\":false}, \"nodes\":{}}' > /etc/pulseha/config.json && sleep 10 && /usr/local/bin/pulseha"]
     ports:
       - "8083:8080"

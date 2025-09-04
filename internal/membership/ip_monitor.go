@@ -13,12 +13,12 @@ import (
 // IPMonitor monitors IP addresses on interfaces and ensures they match the expected configuration
 type IPMonitor struct {
 	sync.RWMutex
-	members        *MemberList
-	logger         *logrus.Logger
-	expectedIPs    map[string][]string // map[interface][]ips
-	stopChan       chan struct{}
-	stopOnce       sync.Once
-	done           chan struct{}
+	members     *MemberList
+	logger      *logrus.Logger
+	expectedIPs map[string][]string // map[interface][]ips
+	stopChan    chan struct{}
+	stopOnce    sync.Once
+	done        chan struct{}
 }
 
 // NewIPMonitor creates a new IP monitor

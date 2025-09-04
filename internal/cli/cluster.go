@@ -22,6 +22,7 @@ func NewClusterCmd() *cobra.Command {
 		newClusterLeaveCmd(),
 		newClusterTokenCmd(),
 		newClusterModeCmd(),
+		newNetworkCmd(),
 	)
 
 	return cmd
@@ -32,6 +33,7 @@ func newClusterCreateCmd() *cobra.Command {
 		bindIP   string
 		bindPort string
 		mode     string
+		nodeID   string
 	)
 
 	cmd := &cobra.Command{
@@ -43,6 +45,7 @@ func newClusterCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&bindIP, "bind-ip", "", "IP address to bind to")
 	cmd.Flags().StringVar(&bindPort, "bind-port", "8080", "Port to bind to")
 	cmd.Flags().StringVar(&mode, "mode", "active-passive", "Cluster mode (active-passive or active-active)")
+	cmd.Flags().StringVar(&nodeID, "node-id", "", "Custom node ID (UUID) for the first node")
 	cmd.MarkFlagRequired("bind-ip")
 
 	return cmd
@@ -54,6 +57,7 @@ func newClusterJoinCmd() *cobra.Command {
 		token    string
 		bindIP   string
 		bindPort string
+		nodeID   string
 	)
 
 	cmd := &cobra.Command{
@@ -65,7 +69,7 @@ func newClusterJoinCmd() *cobra.Command {
 				return err
 			}
 
-			return client.JoinCluster(address, token, bindIP, bindPort)
+			return client.JoinClusterWithNodeID(address, token, bindIP, bindPort, nodeID)
 		},
 	}
 
@@ -73,6 +77,7 @@ func newClusterJoinCmd() *cobra.Command {
 	cmd.Flags().StringVar(&token, "token", "", "Cluster join token")
 	cmd.Flags().StringVar(&bindIP, "bind-ip", "", "Local IP address to bind to (optional)")
 	cmd.Flags().StringVar(&bindPort, "bind-port", "", "Local port to bind to (optional)")
+	cmd.Flags().StringVar(&nodeID, "node-id", "", "Custom node ID (UUID) for this node")
 	cmd.MarkFlagRequired("address")
 	cmd.MarkFlagRequired("token")
 
@@ -98,7 +103,7 @@ func newClusterLeaveCmd() *cobra.Command {
 
 func newClusterTokenCmd() *cobra.Command {
 	var regenerate bool
-	
+
 	cmd := &cobra.Command{
 		Use:   "token",
 		Short: "Display or regenerate cluster join token",
@@ -135,7 +140,7 @@ and sync it across all cluster members.`,
 	}
 
 	cmd.Flags().BoolVar(&regenerate, "regenerate", false, "Generate a new cluster token and sync it to all nodes")
-	
+
 	return cmd
 }
 
@@ -179,12 +184,41 @@ func newClusterModeSetCmd() *cobra.Command {
 	return cmd
 }
 
+func newNetworkCmd() *cobra.Command {
+	netCmd := &cobra.Command{
+		Use:   "network",
+		Short: "Network utilities",
+	}
+	netCmd.AddCommand(newNetworkResyncCmd())
+	return netCmd
+}
+
+func newNetworkResyncCmd() *cobra.Command {
+	var createGroups bool
+	cmd := &cobra.Command{
+		Use:   "resync",
+		Short: "Resync network interfaces and optional default groups",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client.New()
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+			_, err = c.CLI().ResyncNetwork(context.Background(), &rpc.ResyncNetworkRequest{CreateDefaultGroups: createGroups})
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&createGroups, "create-default-groups", false, "Create default groups for new interfaces")
+	return cmd
+}
+
 // createCluster creates a new cluster
 func createCluster(cmd *cobra.Command, args []string) error {
 	// Get bind IP and port
 	bindIP, _ := cmd.Flags().GetString("bind-ip")
 	bindPort, _ := cmd.Flags().GetString("bind-port")
 	mode, _ := cmd.Flags().GetString("mode")
+	nodeID, _ := cmd.Flags().GetString("node-id")
 
 	// Validate mode
 	if mode != "active-passive" && mode != "active-active" {
@@ -199,11 +233,15 @@ func createCluster(cmd *cobra.Command, args []string) error {
 	defer c.Close()
 
 	// Send create cluster request
-	resp, err := c.CLI().CreateCluster(context.Background(), &rpc.CreateClusterRequest{
+	req := &rpc.CreateClusterRequest{
 		BindIp:   bindIP,
 		BindPort: bindPort,
 		Mode:     mode,
-	})
+	}
+	if nodeID != "" {
+		req.NodeId = nodeID
+	}
+	resp, err := c.CLI().CreateCluster(context.Background(), req)
 	if err != nil {
 		return err
 	}
