@@ -661,6 +661,9 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 			LastResponse:  health.LastResponse.String(),
 			Latency:       health.Latency,
 			PartialActive: health.PartialActive,
+			Ip:            member.IP,
+			Port:          member.Port,
+			NodeId:        member.ID,
 		})
 	}
 
