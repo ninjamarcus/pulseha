@@ -567,19 +567,238 @@ func (h *HealthChecker) checkNodeConnectivity(member *Member) bool {
 
 // checkMemberIPs checks all IPs assigned to a member
 func (h *HealthChecker) checkMemberIPs(member *Member) []string {
-	// Floating IP partial failure handling disabled
-	return nil
+	var failedIPs []string
+
+	// Create channels for concurrent health checks
+	results := make(chan HealthCheck, len(member.ActiveIPs))
+	var wg sync.WaitGroup
+
+	// Check each IP concurrently
+	for _, ip := range member.ActiveIPs {
+		wg.Add(1)
+		go func(ip string) {
+			defer wg.Done()
+			result := h.checkIP(ip)
+			results <- result
+		}(ip)
+	}
+
+	// Wait for all checks to complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	for result := range results {
+		if !result.Available {
+			failedIPs = append(failedIPs, result.IP)
+		}
+	}
+
+	return failedIPs
 }
 
 // checkIP performs health check on a single IP
 func (h *HealthChecker) checkIP(ip string) HealthCheck {
-	return HealthCheck{IP: ip, Available: true, Latency: 0, Error: nil}
+	start := time.Now()
+	h.logger.Debugf("Starting health check for IP: %s", ip)
+
+	// Try to ping the IP with retries
+	var lastErr error
+	// Reduce retries and timeout for testing
+	for i := 0; i < 1; i++ {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:80", ip), 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			latency := time.Since(start)
+			h.logger.Debugf("Health check successful for IP %s (latency: %v)", ip, latency)
+			return HealthCheck{
+				IP:        ip,
+				Available: true,
+				Latency:   latency,
+				Error:     nil,
+			}
+		}
+		lastErr = err
+		h.logger.Debugf("IP check attempt %d to %s failed: %v", i+1, ip, err)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	h.logger.Warnf("Health check failed for IP %s: %v", ip, lastErr)
+	return HealthCheck{
+		IP:        ip,
+		Available: false,
+		Latency:   0,
+		Error:     lastErr,
+	}
 }
 
 // handlePartialFailure manages the redistribution of failed IPs
 func (h *HealthChecker) handlePartialFailure(member *Member, failedIPs []string) {
-	// Floating IP partial failure handling disabled
-	return
+	h.logger.Infof("Handling partial failure for member %s with %d failed IPs", member.Hostname, len(failedIPs))
+
+	// Determine if we should use quorum based on cluster size
+	clusterSize := len(h.members.Members)
+	quorumEnabled := clusterSize >= 3
+
+	// Update member status based on mode
+	member.Lock()
+	switch h.members.config.Pulse.Mode {
+	case "active-passive":
+		if len(failedIPs) == len(member.ActiveIPs) {
+			// All IPs failed in active-passive mode - mark node as down
+			h.logger.Warnf("All IPs failed for active node %s, marking as unknown", member.Hostname)
+
+			// If quorum is enabled, we need to initiate a vote before changing status
+			if quorumEnabled {
+				h.logger.Info("Quorum voting is enabled, initiating vote for node status change")
+				member.Unlock() // Unlock before initiating vote
+
+				// Initiate vote through the server component
+				voteResult := h.initiateNodeStatusVote(member.ID, StatusUnknown)
+
+				if !voteResult {
+					h.logger.Warn("Quorum vote failed, not changing node status")
+					return
+				}
+
+				h.logger.Info("Quorum vote passed, proceeding with status change")
+				member.Lock() // Lock again to continue with status change
+			}
+
+			member.Status = StatusUnknown
+
+			// Find a passive node to promote
+			for _, otherMember := range h.members.Members {
+				if otherMember.ID != member.ID && otherMember.Status == StatusPassive {
+					h.logger.Infof("Promoting passive node %s to active", otherMember.Hostname)
+
+					// If quorum is enabled, we need to initiate a vote before promoting
+					if quorumEnabled {
+						member.Unlock() // Unlock before initiating vote
+
+						// Initiate vote for promotion
+						voteResult := h.initiateNodeStatusVote(otherMember.ID, StatusActive)
+
+						if !voteResult {
+							h.logger.Warn("Quorum vote failed, not promoting node")
+							return
+						}
+
+						h.logger.Info("Quorum vote passed, proceeding with promotion")
+						member.Lock() // Lock again to continue
+					}
+
+					if err := otherMember.MakeActive(member.ActiveIPs); err != nil {
+						h.logger.Errorf("Failed to promote passive node: %v", err)
+					}
+					break
+				}
+			}
+		}
+
+	case "active-active":
+		if len(failedIPs) == len(member.ActiveIPs) {
+			// All IPs failed in active-active mode - mark as unknown
+			h.logger.Warnf("All IPs failed for member %s, marking as unknown", member.Hostname)
+
+			// If quorum is enabled, we need to initiate a vote before changing status
+			if quorumEnabled {
+				h.logger.Info("Quorum voting is enabled, initiating vote for node status change")
+				member.Unlock() // Unlock before initiating vote
+
+				// Initiate vote through the server component
+				voteResult := h.initiateNodeStatusVote(member.ID, StatusUnknown)
+
+				if !voteResult {
+					h.logger.Warn("Quorum vote failed, not changing node status")
+					return
+				}
+
+				h.logger.Info("Quorum vote passed, proceeding with status change")
+				member.Lock() // Lock again to continue with status change
+			}
+
+			member.Status = StatusUnknown
+		} else {
+			// Partial failure - update status and load factor
+			h.logger.Infof("Partial IP failure for member %s, updating status", member.Hostname)
+
+			// If quorum is enabled, we need to initiate a vote before changing to partial active
+			if quorumEnabled && member.Status != StatusPartialActive {
+				h.logger.Info("Quorum voting is enabled, initiating vote for partial active status")
+				member.Unlock() // Unlock before initiating vote
+
+				// Initiate vote through the server component
+				voteResult := h.initiateNodeStatusVote(member.ID, StatusPartialActive)
+
+				if !voteResult {
+					h.logger.Warn("Quorum vote failed, not changing node status")
+					return
+				}
+
+				h.logger.Info("Quorum vote passed, proceeding with status change")
+				member.Lock() // Lock again to continue with status change
+			}
+
+			member.Status = StatusPartialActive
+			if member.Capacity > 0 {
+				member.LoadFactor = float64(len(member.ActiveIPs)-len(failedIPs)) / float64(member.Capacity)
+			}
+		}
+
+	default:
+		h.logger.Warnf("Unknown cluster mode %s, defaulting to active-passive behavior", h.members.config.Pulse.Mode)
+		if len(failedIPs) == len(member.ActiveIPs) {
+			// If quorum is enabled, we need to initiate a vote before changing status
+			if quorumEnabled {
+				h.logger.Info("Quorum voting is enabled, initiating vote for node status change")
+				member.Unlock() // Unlock before initiating vote
+
+				// Initiate vote through the server component
+				voteResult := h.initiateNodeStatusVote(member.ID, StatusUnknown)
+
+				if !voteResult {
+					h.logger.Warn("Quorum vote failed, not changing node status")
+					return
+				}
+
+				h.logger.Info("Quorum vote passed, proceeding with status change")
+				member.Lock() // Lock again to continue with status change
+			}
+
+			member.Status = StatusUnknown
+		}
+	}
+
+	// Remove failed IPs from member
+	h.logger.Debugf("Removing failed IPs from member %s: %v", member.Hostname, failedIPs)
+	member.RemoveIPs(failedIPs)
+	member.Unlock()
+
+	// If quorum is enabled, we need to initiate a vote before redistributing IPs
+	if quorumEnabled {
+		h.logger.Info("Quorum voting is enabled, initiating vote for IP redistribution")
+
+		// Initiate vote for IP redistribution
+		voteResult := h.initiateIPRedistributionVote(failedIPs)
+
+		if !voteResult {
+			h.logger.Warn("Quorum vote failed, not redistributing IPs")
+			return
+		}
+
+		h.logger.Info("Quorum vote passed, proceeding with IP redistribution")
+	}
+
+	// Trigger IP redistribution
+	h.logger.Info("Initiating IP redistribution for failed IPs")
+	if err := h.members.RedistributeIPs(failedIPs); err != nil {
+		h.logger.Errorf("Failed to redistribute IPs after partial failure: %v", err)
+	} else {
+		h.logger.Info("IP redistribution completed successfully")
+	}
 }
 
 // initiateNodeStatusVote initiates a quorum vote for a node status change
@@ -677,7 +896,91 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 // initiateIPRedistributionVote initiates a quorum vote for IP redistribution
 // Returns true if the vote passes or if quorum voting is not applicable
 func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
-	return true
+	h.logger.Infof("Initiating vote for redistribution of %d IPs", len(ips))
+
+	// Check cluster size to determine if voting is needed
+	clusterSize := len(h.members.Members)
+	if clusterSize < 3 {
+		h.logger.Debugf("Cluster has only %d nodes, voting not required for IP redistribution", clusterSize)
+		return true
+	}
+
+	// Get the server instance from the context
+	if h.server == nil {
+		h.logger.Warn("Server reference not available, cannot initiate vote")
+		return true // Default to allowing the change if we can't vote
+	}
+
+	// Get the quorum manager
+	quorumManager := h.server.GetQuorumManager()
+	if quorumManager == nil {
+		h.logger.Warn("Quorum manager not available, cannot initiate vote")
+		return true // Default to allowing the change if quorum manager is not available
+	}
+
+	// Create a descriptive subject and description for the vote
+	ipList := ""
+	if len(ips) <= 5 {
+		ipList = fmt.Sprintf("%v", ips)
+	} else {
+		ipList = fmt.Sprintf("%v and %d more", ips[:5], len(ips)-5)
+	}
+
+	subject := fmt.Sprintf("redistribute-%d-ips", len(ips))
+	description := fmt.Sprintf("Redistribute %d IPs: %s", len(ips), ipList)
+
+	// Initiate the vote through the quorum manager
+	sessionID, err := quorumManager.StartVotingSession(
+		quorum.VoteTypeIPRedistribution,
+		subject,
+		description,
+		30*time.Second, // 30 second timeout for votes
+	)
+
+	if err != nil {
+		h.logger.Errorf("Failed to start voting session: %v", err)
+		return true // Default to allowing the change if we can't start a vote
+	}
+
+	h.logger.Infof("Started voting session %s for IP redistribution", sessionID)
+
+	// Get our own node ID to cast our vote
+	localNodeID, err := h.members.config.GetLocalNodeUUID()
+	if err != nil {
+		h.logger.Errorf("Failed to get local node ID: %v", err)
+	} else {
+		// Cast our own vote (we initiated it, so we vote yes)
+		err = quorumManager.CastVote(sessionID, localNodeID, quorum.VoteDecisionYes)
+		if err != nil {
+			h.logger.Errorf("Failed to cast our own vote: %v", err)
+		}
+	}
+
+	// Wait for the vote to complete
+	// In a production implementation, this would be asynchronous with callbacks
+	// For simplicity, we'll use a polling approach here
+	for i := 0; i < 30; i++ { // Poll for up to 30 seconds
+		time.Sleep(1 * time.Second)
+
+		session, err := quorumManager.GetVotingSession(sessionID)
+		if err != nil {
+			h.logger.Errorf("Failed to get voting session: %v", err)
+			continue
+		}
+
+		// Check if the vote has completed
+		if session.Result != nil {
+			h.logger.Infof("Vote completed: passed=%v, quorum=%v, yes=%d, no=%d, total=%d",
+				session.Result.Passed, session.Result.QuorumMet,
+				session.Result.YesCount, session.Result.NoCount,
+				session.Result.TotalVotes)
+
+			return session.Result.Passed
+		}
+	}
+
+	h.logger.Warn("Vote timed out, defaulting to allowing the IP redistribution")
+	return true // Default to allowing the change if the vote times out
 }
 
 // Helper function to convert MemberStatus to string
