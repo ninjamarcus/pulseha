@@ -161,22 +161,20 @@ func (s *Server) Start() error {
 		s.logger.Warn("Quorum handler is nil, quorum RPC methods will not be available")
 	}
 
-	// Start the health checker
+	// Start the health checker (may no-op if already running)
 	s.startHealthChecker()
 
-	// Start the IP monitor
-	if err := s.ipMonitor.Start(); err != nil {
-		s.logger.Errorf("Failed to start IP monitor: %v", err)
-		// Continue anyway, as this is not critical
-	}
-
-	// If cluster is not yet configured, a watcher below will start it when ready
-
-	// Only start health checker if we have a configured cluster
+	// Only start IP monitor and ensure health checker when a cluster is configured
 	if s.config.ClusterCheck() {
+		// Ensure health checker is running with current config
 		s.startHealthChecker()
+		// Start IP monitor now that cluster information is available
+		if err := s.ipMonitor.Start(); err != nil {
+			s.logger.Errorf("Failed to start IP monitor: %v", err)
+			// Continue anyway, as this is not critical
+		}
 	} else {
-		s.logger.Debug("No cluster configured, health checker will start when cluster is created")
+		s.logger.Debug("No cluster configured; deferring IP monitor start until cluster creation")
 		// Start a configuration watcher to detect when we join a cluster and start the cluster RPC server
 		go s.watchForClusterJoin()
 	}
@@ -212,6 +210,13 @@ func (s *Server) watchForClusterJoin() {
 
 				// Start the health checker
 				s.startHealthChecker()
+
+				// Start IP monitor now that cluster configuration is present
+				if s.ipMonitor != nil {
+					if err := s.ipMonitor.Start(); err != nil {
+						s.logger.Errorf("Failed to start IP monitor after joining cluster: %v", err)
+					}
+				}
 
 				// Start cluster RPC server if not already started
 				if s.grpcServer == nil {
