@@ -28,6 +28,12 @@ import (
 	"time"
 )
 
+// Version information - can be overridden at build time
+var (
+	Version = "development"
+	Build   = "unknown"
+)
+
 /**
 Load a specific file and return byte code
  **/

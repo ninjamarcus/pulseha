@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/syleron/pulseha/internal/cli"
+	"github.com/syleron/pulseha/packages/utils"
 )
 
 func main() {
@@ -31,17 +32,32 @@ func main() {
 	}
 }
 
-var rootCmd = &cobra.Command{
-	Use:   "pulsectl",
-	Short: "PulseHA cluster management tool",
-	Long:  `PulseHA cluster management tool - Manage your high availability cluster`,
-}
+var (
+	versionFlag bool
+	rootCmd = &cobra.Command{
+		Use:   "pulsectl",
+		Short: "PulseHA cluster management tool",
+		Long:  `PulseHA cluster management tool - Manage your high availability cluster`,
+		Run: func(cmd *cobra.Command, args []string) {
+			if versionFlag {
+				fmt.Printf("PulseHA CLI Version: %s\n", utils.Version)
+				fmt.Printf("Build: %s\n", utils.Build)
+				os.Exit(0)
+			}
+			// If no flags or subcommands, show help
+			cmd.Help()
+		},
+	}
+)
 
 func init() {
+	rootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Show version information")
+	
 	rootCmd.AddCommand(
 		cli.NewClusterCmd(),
 		cli.NewNodeCmd(),
 		cli.NewGroupCmd(),
 		cli.NewStatusCmd(),
+		cli.NewConfigCmd(),  // Add config command
 	)
 }

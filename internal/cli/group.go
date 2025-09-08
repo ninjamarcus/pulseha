@@ -29,12 +29,13 @@ func NewGroupCmd() *cobra.Command {
 }
 
 func newGroupCreateCmd() *cobra.Command {
-	var name string
-
 	cmd := &cobra.Command{
-		Use:   "create",
+		Use:   "create <group-name>",
 		Short: "Create a new IP group",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			
 			client, err := client.New()
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
@@ -50,9 +51,6 @@ func newGroupCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&name, "name", "", "Name of the group to create")
-	cmd.MarkFlagRequired("name")
 
 	return cmd
 }
@@ -263,15 +261,15 @@ func newGroupUnassignCmd() *cobra.Command {
 }
 
 func newGroupDeleteCmd() *cobra.Command {
-	var (
-		name  string
-		force bool
-	)
+	var force bool
 
 	cmd := &cobra.Command{
-		Use:   "delete",
+		Use:   "delete <group-name>",
 		Short: "Delete an IP group",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			
 			client, err := client.New()
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
@@ -283,13 +281,12 @@ func newGroupDeleteCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			fmt.Printf("Successfully deleted group %s\n", name)
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Name of the group to delete")
 	cmd.Flags().BoolVar(&force, "force", false, "Force deletion even if assigned to nodes")
-	cmd.MarkFlagRequired("name")
 
 	return cmd
 }

@@ -112,7 +112,7 @@ func New() *Config {
 			FailOverLimit:       10000,
 			LoggingLevel:        "info",
 			AutoFailback:        true,
-			LogToFile:           true,
+			LogToFile:           false,  // Default to syslog only
 			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
 			LogToSyslog:         true,
 			SyslogNetwork:       "",
@@ -339,7 +339,7 @@ func (c *Config) SaveDefaultLocalConfig() error {
 			LocalNode:           hostname,
 			ClusterToken:        "",
 			LoggingLevel:        "info",
-			LogToFile:           true,
+			LogToFile:           false,  // Default to syslog only
 			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
 			LogToSyslog:         true,
 			SyslogNetwork:       "",
