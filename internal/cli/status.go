@@ -20,9 +20,17 @@ func NewStatusCmd() *cobra.Command {
 				return err
 			}
 
-			status, err := client.GetClusterStatus()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			resp, err := client.CLI().Status(ctx, &rpc.StatusRequest{})
 			if err != nil {
 				return err
+			}
+
+			// Translate RPC to client.ClusterStatus
+			status, convErr := translateStatusResponse(resp)
+			if convErr != nil {
+				return convErr
 			}
 
 			if jsonOutput {
@@ -42,6 +50,51 @@ func NewStatusCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	return cmd
+}
+
+func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, error) {
+	cfg := client.New().GetConfig()
+	status := &client.ClusterStatus{
+		Members: make([]client.Member, len(resp.Members)),
+		Groups:  make([]client.GroupInfo, 0),
+		Mode:    cfg.Pulse.Mode,
+	}
+	for i, m := range resp.Members {
+		s := "Unknown"
+		switch m.Status {
+		case rpc.MemberStatusEnum_MEMBER_STATUS_ACTIVE:
+			s = "Active"
+		case rpc.MemberStatusEnum_MEMBER_STATUS_PASSIVE:
+			s = "Passive"
+		case rpc.MemberStatusEnum_MEMBER_STATUS_PARTIAL_ACTIVE:
+			s = "PartialActive"
+		}
+		status.Members[i] = client.Member{
+			Hostname:      m.Hostname,
+			IP:            m.Ip,
+			Port:          m.Port,
+			Status:        s,
+			IPs:           m.ActiveIps,
+			ActiveIPs:     m.ActiveIps,
+			LastResponse:  m.LastResponse,
+			Latency:       m.Latency,
+			PartialActive: m.PartialActive,
+		}
+	}
+	for groupName, ips := range cfg.Groups {
+		gi := client.GroupInfo{Name: groupName, IPs: ips}
+		for id, node := range cfg.Nodes {
+			for iface, groups := range node.IPGroups {
+				for _, g := range groups {
+					if g == groupName {
+						gi.Assignments = append(gi.Assignments, client.GroupAssignment{NodeID: id, Interface: iface})
+					}
+				}
+			}
+		}
+		status.Groups = append(status.Groups, gi)
+	}
+	return status, nil
 }
 
 func printClusterStatus(status *client.ClusterStatus) error {
