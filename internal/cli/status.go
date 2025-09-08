@@ -1,12 +1,6 @@
 package cli
 
-import (
-	"encoding/json"
-	"fmt"
-
-	"github.com/spf13/cobra"
-	"github.com/syleron/pulseha/internal/client"
-)
+import (\n\t"encoding/json"\n\t"fmt"\n\t"context"\n\t"time"\n\n\t"github.com/spf13/cobra"\n\t"github.com/syleron/pulseha/internal/client"\n\trpc "github.com/syleron/pulseha/rpc"\n)
 
 func NewStatusCmd() *cobra.Command {
 	var jsonOutput bool
