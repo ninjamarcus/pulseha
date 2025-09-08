@@ -1834,13 +1834,23 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 		s.logger.Info("First node activated successfully")
 	}
 
-	// Reconfigure the server to apply changes
-	if err := s.Reconfigure(); err != nil {
-		s.logger.Errorf("Failed to reconfigure server: %v", err)
-		return &rpc.CreateClusterResponse{
-			Success: false,
-			Message: fmt.Sprintf("cluster created but failed to reconfigure server: %v", err),
-		}, nil
+	// Reconfigure the server to apply changes asynchronously to avoid self-deadlock
+	go func() {
+		if err := s.Reconfigure(); err != nil {
+			s.logger.Errorf("Failed to reconfigure server: %v", err)
+		}
+	}()
+
+	// After successfully creating the cluster, start the health checker
+	s.startHealthChecker()
+
+	s.logger.Info("Cluster created successfully")
+	return &rpc.CreateClusterResponse{
+		Success: true,
+		Message: "cluster created successfully",
+		Token:   clusterToken,
+		NodeId:  nodeID,
+	}, nil
 	}
 
 	// After successfully creating the cluster, start the health checker
