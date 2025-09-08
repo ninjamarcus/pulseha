@@ -1826,51 +1826,6 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 			Message: fmt.Sprintf("failed to add first node to member list: %v", err),
 		}, nil
 	}
-
-	// Make it active
-	member := s.memberList.GetMemberByID(nodeID)
-	if member != nil {
-		member.Status = membership.StatusActive
-		s.logger.Info("First node activated successfully")
-	}
-
-	// Reconfigure the server to apply changes asynchronously to avoid self-deadlock
-	go func() {
-		if err := s.Reconfigure(); err != nil {
-			s.logger.Errorf("Failed to reconfigure server: %v", err)
-		}
-	}()
-
-	// After successfully creating the cluster, start the health checker
-	s.startHealthChecker()
-
-	s.logger.Info("Cluster created successfully")
-	return &rpc.CreateClusterResponse{
-		Success: true,
-		Message: "cluster created successfully",
-		Token:   clusterToken,
-		NodeId:  nodeID,
-	}, nil
-	}
-
-	// After successfully creating the cluster, start the health checker
-	s.startHealthChecker()
-
-	s.logger.Info("Cluster created successfully")
-	return &rpc.CreateClusterResponse{
-		Success: true,
-		Message: "cluster created successfully",
-		Token:   clusterToken,
-		NodeId:  nodeID,
-	}, nil
-}
-
-// Token implements the CLI.Token RPC method
-func (s *Server) Token(ctx context.Context, req *rpc.TokenRequest) (*rpc.TokenResponse, error) {
-	s.logger.Infof("Received Token request with regenerate: %t", req.Regenerate)
-	s.Lock()
-	defer s.Unlock()
-
 	// Check if cluster is configured
 	if !s.config.ClusterCheck() {
 		return &rpc.TokenResponse{
