@@ -8,6 +8,7 @@ Type=simple
 User=root
 Group=root
 ExecStart=/usr/local/sbin/pulseha
+ExecStartPost=/usr/bin/systemd-run --unit=pulseha-post --property=Type=oneshot /usr/local/sbin/lbClearRestart pulseha
 ExecReload=/bin/kill -SIGUSR2 $MAINPID
 #RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 Restart=on-failure

@@ -462,6 +462,25 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
+#### Optional: Make post-start logic non-blocking
+
+If you need to run a post-start helper (for example `lbClearRestart`) but you do not want systemd to keep `pulseha.service` in `activating (start-post)` until it finishes, use an override drop-in to run it asynchronously via a transient oneshot unit:
+
+```bash
+sudo mkdir -p /etc/systemd/system/pulseha.service.d
+sudo tee /etc/systemd/system/pulseha.service.d/10-execstartpost-async.conf >/dev/null <<'EOF'
+[Service]
+# Clear any existing ExecStartPost, then run the script via systemd-run so it does not block service activation
+ExecStartPost=
+ExecStartPost=/usr/bin/systemd-run --unit=pulseha-post --property=Type=oneshot /usr/local/sbin/lbClearRestart pulseha
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl restart pulseha
+```
+
+This preserves the helper’s behavior while allowing `pulseha.service` to reach `active (running)` immediately.
+
 ### Docker Compose
 
 ```yaml
