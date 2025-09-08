@@ -119,7 +119,9 @@ and sync it across all cluster members.`,
 			defer client.Close()
 
 			// Call the Token RPC method
-			resp, err := client.Token(regenerate)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			resp, err := client.CLI().Token(ctx, &rpc.TokenRequest{Regenerate: regenerate})
 			if err != nil {
 				return fmt.Errorf("failed to get token: %v", err)
 			}
@@ -241,7 +243,9 @@ func createCluster(cmd *cobra.Command, args []string) error {
 	if nodeID != "" {
 		req.NodeId = nodeID
 	}
-	resp, err := c.CLI().CreateCluster(context.Background(), req)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	resp, err := c.CLI().CreateCluster(ctx, req)
 	if err != nil {
 		return err
 	}
