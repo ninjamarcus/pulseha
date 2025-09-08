@@ -1,6 +1,15 @@
 package cli
 
-import (\n\t"encoding/json"\n\t"fmt"\n\t"context"\n\t"time"\n\n\t"github.com/spf13/cobra"\n\t"github.com/syleron/pulseha/internal/client"\n\trpc "github.com/syleron/pulseha/rpc"\n)
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/spf13/cobra"
+	"github.com/syleron/pulseha/internal/client"
+	rpc "github.com/syleron/pulseha/rpc"
+)
 
 func NewStatusCmd() *cobra.Command {
 	var jsonOutput bool
@@ -47,7 +56,11 @@ func NewStatusCmd() *cobra.Command {
 }
 
 func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, error) {
-	cfg := client.New().GetConfig()
+	c, err := client.New()
+	if err != nil {
+		return nil, err
+	}
+	cfg := c.GetConfig()
 	status := &client.ClusterStatus{
 		Members: make([]client.Member, len(resp.Members)),
 		Groups:  make([]client.GroupInfo, 0),

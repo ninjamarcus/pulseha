@@ -1712,10 +1712,10 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterRequest) (*rpc.CreateClusterResponse, error) {
     s.logger.Infof("Received CreateCluster request with bindIP: %s, bindPort: %s, mode: %s", req.BindIp, req.BindPort, req.Mode)
     s.Lock()
-    defer s.Unlock()
 
     // Check if cluster is already configured
     if s.config.ClusterCheck() {
+        s.Unlock()
         return &rpc.CreateClusterResponse{
             Success: false,
             Message: "cluster is already configured",
@@ -1732,6 +1732,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
     hostname, err := os.Hostname()
     if err != nil {
         s.logger.Errorf("Failed to get hostname: %v", err)
+        s.Unlock()
         return &rpc.CreateClusterResponse{
             Success: false,
             Message: fmt.Sprintf("failed to get hostname: %v", err),
@@ -1809,6 +1810,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
     // Save config
     if err := s.config.Save(); err != nil {
         s.logger.Errorf("Failed to save config: %v", err)
+        s.Unlock()
         return &rpc.CreateClusterResponse{
             Success: false,
             Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1818,6 +1820,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
     // Add the first member to the member list
     if err := s.memberList.AddMember(nodeID, hostname, req.BindIp, bindPort); err != nil {
         s.logger.Errorf("Failed to add first node to member list: %v", err)
+        s.Unlock()
         return &rpc.CreateClusterResponse{
             Success: false,
             Message: fmt.Sprintf("failed to add first node to member list: %v", err),
@@ -1829,23 +1832,28 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
         member.Status = membership.StatusActive
     }
 
-    // Reconfigure asynchronously to avoid self-deadlock while holding s.Lock()
-    go func() {
-        if err := s.Reconfigure(); err != nil {
-            s.logger.Errorf("Failed to reconfigure server: %v", err)
-        }
-    }()
-
     // Start the health checker
     s.startHealthChecker()
 
     s.logger.Info("Cluster created successfully")
-    return &rpc.CreateClusterResponse{
+    
+    // Prepare response before releasing lock
+    response := &rpc.CreateClusterResponse{
         Success: true,
         Message: "cluster created successfully",
         Token:   clusterToken,
         NodeId:  nodeID,
-    }, nil
+    }
+    
+    // Release lock before reconfiguration to avoid deadlock
+    s.Unlock()
+    
+    // Reconfigure after releasing lock to avoid deadlock
+    if err := s.Reconfigure(); err != nil {
+        s.logger.Errorf("Failed to reconfigure server: %v", err)
+    }
+    
+    return response, nil
 }
 
 // Token implements the CLI.Token RPC method
