@@ -269,14 +269,7 @@ func (h *HealthChecker) performHealthChecks() {
 
 		member.Unlock()
 
-		// Check IPs if member has any
-		if len(member.ActiveIPs) > 0 {
-			failedIPs := h.checkMemberIPs(member)
-			if len(failedIPs) > 0 {
-				h.logger.Warnf("Member %s has %d failed IPs, initiating redistribution", member.Hostname, len(failedIPs))
-				h.handlePartialFailure(member, failedIPs)
-			}
-		}
+		// Floating IP health checks are disabled; failover decisions are based solely on node health
 	}
 
 	// Sort status for consistent comparison (status without latency)
