@@ -502,10 +502,14 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		return fmt.Errorf("successfully joined cluster but failed to save local config: %v", err)
 	}
 
-	// Trigger immediate resync/activation on the local daemon so status reflects changes instantly
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, _ = c.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
+	// Trigger immediate resync/activation on the LOCAL daemon so status reflects changes instantly
+	// The current client may be connected to the remote join target; create a fresh local client
+	if localClient, newErr := New(); newErr == nil {
+		defer localClient.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = localClient.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
+	}
 
 	// Post-join UX: quick connectivity hint if local cluster listener not reachable
 	// Try to connect to our own bind address quickly; if it fails, provide guidance
@@ -513,7 +517,7 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 	if selfErr == nil {
 		_ = selfConn.Close()
 	} else {
-		log.Warnf("Local cluster listener not reachable at %s:%s. If status does not update, run: 'pulsectl network resync'", bindIP, bindPort)
+		log.Warnf("Local cluster listener not reachable at %s:%s. If status does not update, run: 'pulsectl cluster network resync'", bindIP, bindPort)
 	}
 
 	fmt.Printf("Successfully joined cluster with node ID: %s\n", resp.NodeId)
