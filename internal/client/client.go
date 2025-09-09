@@ -258,6 +258,7 @@ type ClusterStatus struct {
 
 type Member struct {
 	Hostname      string   `json:"hostname"`
+	NodeID        string   `json:"node_id"`
 	IP            string   `json:"ip"`
 	Port          string   `json:"port"`
 	Status        string   `json:"status"`
@@ -524,6 +525,21 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		_ = selfConn.Close()
 	} else {
 		log.Warnf("Local cluster listener not reachable at %s:%s. If status does not update, run: 'pulsectl cluster network resync'", bindIP, bindPort)
+		// Brief retry loop: re-run local resync and probe again a couple of times
+		for i := 0; i < 3; i++ {
+			if localClient2, e := New(); e == nil {
+				ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+				_, _ = localClient2.CLI().ResyncNetwork(ctx2, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
+				cancel2()
+				localClient2.Close()
+			}
+			time.Sleep(400 * time.Millisecond)
+			probe, perr := net.DialTimeout("tcp", fmt.Sprintf("%s:%s", bindIP, bindPort), 300*time.Millisecond)
+			if perr == nil {
+				_ = probe.Close()
+				break
+			}
+		}
 	}
 
 	fmt.Printf("Successfully joined cluster with node ID: %s\n", resp.NodeId)

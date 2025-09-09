@@ -57,7 +57,7 @@ echo "✅ Cluster created successfully (deadlock issue is fixed!)"
 # Get the cluster token
 echo ""
 echo "🔑 Getting cluster token..."
-TOKEN=$(docker exec pulseha-node1 /usr/local/bin/pulsectl token | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+TOKEN=$(docker exec pulseha-node1 /usr/local/bin/pulsectl cluster token | head -1 | tr -d '\r\n')
 if [ -z "$TOKEN" ]; then
     echo "❌ Failed to get cluster token"
     exit 1
@@ -68,7 +68,7 @@ echo "🔑 Token: $TOKEN"
 echo ""
 echo "2️⃣  Joining node2 to cluster..."
 if docker exec pulseha-node2 /usr/local/bin/pulsectl cluster join \
-    --address 172.20.0.10 \
+    --address 172.20.0.10:8080 \
     --token "$TOKEN" \
     --bind-ip 172.20.0.11 \
     --bind-port 8080; then
@@ -80,7 +80,7 @@ fi
 echo ""
 echo "3️⃣  Joining node3 to cluster..."
 if docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join \
-    --address 172.20.0.10 \
+    --address 172.20.0.10:8080 \
     --token "$TOKEN" \
     --bind-ip 172.20.0.12 \
     --bind-port 8080; then
@@ -97,12 +97,42 @@ echo ""
 echo "📊 Checking cluster status..."
 docker exec pulseha-node1 /usr/local/bin/pulsectl status || true
 
+# Create a group, assign to node1 and node2, add an IP, and promote node1
+echo ""
+echo "4️⃣  Creating group and assigning..."
+docker exec pulseha-node1 /usr/local/bin/pulsectl group create G1 || true
+
+# Get node IDs
+NODE1_ID=$(docker exec pulseha-node1 sh -lc "sed -n 's/.*\"local_node\": \"\([a-f0-9-]\+\)\".*/\1/p' /etc/pulseha/config.json")
+NODE2_ID=$(docker exec pulseha-node2 sh -lc "sed -n 's/.*\"local_node\": \"\([a-f0-9-]\+\)\".*/\1/p' /etc/pulseha/config.json")
+echo "Node1 ID: $NODE1_ID"
+echo "Node2 ID: $NODE2_ID"
+
+docker exec pulseha-node1 /usr/local/bin/pulsectl group assign --group G1 --node-id "$NODE1_ID" --interface eth0 || true
+docker exec pulseha-node1 /usr/local/bin/pulsectl group assign --group G1 --node-id "$NODE2_ID" --interface eth0 || true
+
+echo ""
+echo "5️⃣  Adding IP 10.66.0.50/24 to group G1..."
+docker exec pulseha-node1 /usr/local/bin/pulsectl group add-ip --group G1 --ip 10.66.0.50/24 || true
+
+echo ""
+echo "6️⃣  Promoting node1 and verifying IP assignment..."
+docker exec pulseha-node1 /usr/local/bin/pulsectl node promote --node-id "$NODE1_ID" || true
+docker exec pulseha-node1 ip addr show dev eth0 | grep -E "10.66.0.50/24|inet " || true
+
+echo ""
+echo "7️⃣  Simulating failover: stopping node1 and promoting node2..."
+docker stop pulseha-node1 >/dev/null 2>&1 || true
+sleep 2
+docker exec pulseha-node2 /usr/local/bin/pulsectl node promote --node-id "$NODE2_ID" || true
+docker exec pulseha-node2 ip addr show dev eth0 | grep -E "10.66.0.50/24|inet " || true
+
 echo ""
 echo "📋 Cluster logs from node1:"
 docker logs pulseha-node1 | grep -E "(Cluster health|Created cluster|joined)" | tail -10 || true
 
 echo ""
-echo "🎉 Fresh cluster initialization test complete!"
+echo "🎉 Fresh cluster initialization and failover test complete!"
 echo ""
 echo "This test specifically exercises the code path that was causing the deadlock:"
 echo "  1. Starting with NO configuration (like a fresh install)"

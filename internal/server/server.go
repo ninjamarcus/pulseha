@@ -600,13 +600,22 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 		default:
 			st = rpc.MemberStatusEnum_MEMBER_STATUS_UNKNOWN
 		}
+
+		lastResp := ""
+		if !health.LastResponse.IsZero() {
+			lastResp = health.LastResponse.Format(time.RFC3339)
+		}
+
 		members = append(members, &rpc.Member{
 			Hostname:      health.Hostname,
 			Status:        st,
 			ActiveIps:     health.ActiveIPs,
-			LastResponse:  health.LastResponse.String(),
+			LastResponse:  lastResp,
 			Latency:       health.Latency,
 			PartialActive: health.PartialActive,
+			Ip:            member.IP,
+			Port:          member.Port,
+			NodeId:        member.ID,
 		})
 	}
 
@@ -2041,7 +2050,6 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 	}
 
 	s.Lock()
-	defer s.Unlock()
 
 	// Persist and update our configuration
 	if err := newConfig.Save(); err != nil {
@@ -2311,4 +2319,53 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 	}
 
 	return &rpc.ResyncNetworkResponse{Success: true, Message: "network resynced"}, nil
+}
+
+// BringUpIP implements the Server.BringUpIP RPC for remote IP assignment
+func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIpResponse, error) {
+	s.logger.Infof("RPC BringUpIP on iface %s for %d IP(s)", req.Iface, len(req.Ips))
+
+	for _, ip := range req.Ips {
+		if !utils.IsCIDR(ip) {
+			if utils.IsIPv4(ip) {
+				ip = ip + "/32"
+			} else if utils.IsIPv6(ip) {
+				ip = ip + "/128"
+			} else {
+				return &rpc.UpIpResponse{Success: false, Message: "invalid IP"}, nil
+			}
+		}
+
+		if err := network.BringIPup(req.Iface, ip); err != nil {
+			s.logger.Error("BringUpIP failed", "iface", req.Iface, "ip", ip, "error", err)
+			return &rpc.UpIpResponse{Success: false, Message: err.Error()}, nil
+		}
+		if err := network.SendGARP(req.Iface, ip); err != nil {
+			s.logger.Warn("SendGARP failed", "iface", req.Iface, "ip", ip, "error", err)
+		}
+	}
+	return &rpc.UpIpResponse{Success: true, Message: "IPs brought up"}, nil
+}
+
+// BringDownIP implements the Server.BringDownIP RPC for remote IP removal
+func (s *Server) BringDownIP(ctx context.Context, req *rpc.DownIpRequest) (*rpc.DownIpResponse, error) {
+	s.logger.Infof("RPC BringDownIP on iface %s for %d IP(s)", req.Iface, len(req.Ips))
+
+	for _, ip := range req.Ips {
+		if !utils.IsCIDR(ip) {
+			if utils.IsIPv4(ip) {
+				ip = ip + "/32"
+			} else if utils.IsIPv6(ip) {
+				ip = ip + "/128"
+			} else {
+				return &rpc.DownIpResponse{Success: false, Message: "invalid IP"}, nil
+			}
+		}
+
+		if err := network.BringIPdown(req.Iface, ip); err != nil {
+			s.logger.Error("BringDownIP failed", "iface", req.Iface, "ip", ip, "error", err)
+			return &rpc.DownIpResponse{Success: false, Message: err.Error()}, nil
+		}
+	}
+	return &rpc.DownIpResponse{Success: true, Message: "IPs brought down"}, nil
 }

@@ -13,7 +13,7 @@ services:
       - NET_RAW
     networks:
       pulseha-net:
-        ipv4_address: 172.20.0.10
+        ipv4_address: 10.66.0.10
     volumes:
       - node1-config:/home/pulseha/.pulseha
     environment:
@@ -35,7 +35,7 @@ services:
       - NET_RAW
     networks:
       pulseha-net:
-        ipv4_address: 172.20.0.11
+        ipv4_address: 10.66.0.11
     volumes:
       - node2-config:/home/pulseha/.pulseha
     environment:
@@ -57,7 +57,7 @@ services:
       - NET_RAW
     networks:
       pulseha-net:
-        ipv4_address: 172.20.0.12
+        ipv4_address: 10.66.0.12
     volumes:
       - node3-config:/home/pulseha/.pulseha
     environment:
@@ -72,8 +72,8 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.20.0.0/16
-          gateway: 172.20.0.1
+        - subnet: 10.66.0.0/24
+          gateway: 10.66.0.1
 
 volumes:
   node1-config:

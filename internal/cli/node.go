@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
 	"github.com/syleron/pulseha/internal/client"
+	rpc "github.com/syleron/pulseha/rpc"
 )
 
 func NewNodeCmd() *cobra.Command {
@@ -24,32 +26,39 @@ func NewNodeCmd() *cobra.Command {
 }
 
 func newNodePromoteCmd() *cobra.Command {
-	var hostname string
+	var nodeID string
 	var ips []string
 
 	cmd := &cobra.Command{
 		Use:   "promote",
 		Short: "Promote a node to active state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := client.New()
+			c, err := client.New()
 			if err != nil {
 				return err
 			}
+			defer c.Close()
 
-			return client.PromoteNode(hostname, ips)
+			if nodeID == "" {
+				return fmt.Errorf("--node-id is required")
+			}
+
+			_, err = c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
+				NodeId: nodeID,
+				Ips:    ips,
+			})
+			return err
 		},
 	}
 
-	cmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the node to promote")
+	cmd.Flags().StringVar(&nodeID, "node-id", "", "Node ID (UUID) of the node to promote")
 	cmd.Flags().StringSliceVar(&ips, "ips", []string{}, "IPs to assign in active-active mode")
-	cmd.MarkFlagRequired("hostname")
+	cmd.MarkFlagRequired("node-id")
 
 	return cmd
 }
 
 func newNodeDemoteCmd() *cobra.Command {
-	var hostname string
-
 	cmd := &cobra.Command{
 		Use:   "demote",
 		Short: "Demote a node to passive state",
@@ -58,16 +67,10 @@ func newNodeDemoteCmd() *cobra.Command {
 			return fmt.Errorf("node demotion not implemented yet")
 		},
 	}
-
-	cmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the node to demote")
-	cmd.MarkFlagRequired("hostname")
-
 	return cmd
 }
 
 func newNodeRemoveCmd() *cobra.Command {
-	var hostname string
-
 	cmd := &cobra.Command{
 		Use:   "remove",
 		Short: "Remove a node from the cluster",
@@ -76,9 +79,5 @@ func newNodeRemoveCmd() *cobra.Command {
 			return fmt.Errorf("node removal not implemented yet")
 		},
 	}
-
-	cmd.Flags().StringVar(&hostname, "hostname", "", "Hostname of the node to remove")
-	cmd.MarkFlagRequired("hostname")
-
 	return cmd
 }

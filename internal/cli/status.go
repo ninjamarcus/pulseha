@@ -76,8 +76,21 @@ func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, e
 		case rpc.MemberStatusEnum_MEMBER_STATUS_PARTIAL_ACTIVE:
 			s = "PartialActive"
 		}
+
+		// Derive NodeID if server didn't supply it (fallback by matching config)
+		nodeID := m.NodeId
+		if nodeID == "" {
+			for id, n := range cfg.Nodes {
+				if n.Hostname == m.Hostname || (n.IP == m.Ip && n.Port == m.Port) {
+					nodeID = id
+					break
+				}
+			}
+		}
+
 		status.Members[i] = client.Member{
 			Hostname:      m.Hostname,
+			NodeID:        nodeID,
 			IP:            m.Ip,
 			Port:          m.Port,
 			Status:        s,
@@ -114,6 +127,9 @@ func printClusterStatus(status *client.ClusterStatus) error {
 	fmt.Printf("------\n")
 	for _, member := range status.Members {
 		fmt.Printf("\nNode: %s\n", member.Hostname)
+		if member.NodeID != "" {
+			fmt.Printf("Node ID: %s\n", member.NodeID)
+		}
 		fmt.Printf("Address: %s:%s\n", member.IP, member.Port)
 		fmt.Printf("Status: %s\n", member.Status)
 		if len(member.ActiveIPs) > 0 {

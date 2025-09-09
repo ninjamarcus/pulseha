@@ -45,9 +45,8 @@ COPY --from=builder /app/pulsectl /usr/local/bin/pulsectl
 # Make binaries executable
 RUN chmod +x /usr/local/bin/pulseha /usr/local/bin/pulsectl
 
-# Switch to pulseha user
-USER pulseha
-WORKDIR /home/pulseha
+# For testing, run as root so netlink operations (addr add/del) succeed
+WORKDIR /root
 
 # Expose gRPC port
 EXPOSE 8080
