@@ -609,12 +609,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("validation failed: %v", err)
 	}
 
-	// Skip writing to disk in test mode
-	if os.Getenv("PULSEHA_TEST") == "true" {
-		log.Debug("Test mode: skipping writing config to disk")
-		return nil
-	}
-
+	// Always write to disk (tests may rely on persisted config)
 	data, err := json.MarshalIndent(c, "", "    ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %v", err)
