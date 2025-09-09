@@ -2147,9 +2147,8 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 	}
 
 	// Force immediate activation if cluster configuration exists
-	if err := s.config.Reload(); err != nil {
-		return &rpc.ResyncNetworkResponse{Success: false, Message: fmt.Sprintf("failed to reload config: %v", err)}, nil
-	}
+	// Create a fresh config instance to ensure we read the current on-disk config
+	s.config = config.New()
 
 	if s.config.ClusterCheck() {
 		// Sync member list with latest config and reload members
