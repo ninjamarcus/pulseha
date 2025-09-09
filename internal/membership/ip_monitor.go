@@ -13,12 +13,12 @@ import (
 // IPMonitor monitors IP addresses on interfaces and ensures they match the expected configuration
 type IPMonitor struct {
 	sync.RWMutex
-	members     *MemberList
-	logger      *logrus.Logger
-	expectedIPs map[string][]string // map[interface][]ips
-	stopChan    chan struct{}
-	stopOnce    sync.Once
-	done        chan struct{}
+	members        *MemberList
+	logger         *logrus.Logger
+	expectedIPs    map[string][]string // map[interface][]ips
+	stopChan       chan struct{}
+	stopOnce       sync.Once
+	done           chan struct{}
 }
 
 // NewIPMonitor creates a new IP monitor
@@ -101,11 +101,6 @@ func (m *IPMonitor) ClearExpectedIPs(iface string) {
 
 	delete(m.expectedIPs, iface)
 	m.logger.Infof("Cleared all expected IPs for interface %s", iface)
-}
-
-// InitializeExpectedIPs initializes the expected IPs from the current member
-func (m *IPMonitor) InitializeExpectedIPs() error {
-	return m.initializeExpectedIPs()
 }
 
 // initializeExpectedIPs initializes the expected IPs from the current member
