@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/packages/client"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/packages/network"
@@ -36,7 +36,7 @@ type Member struct {
 	Client         *client.Client
 	HCBusy         bool
 	config         *config.Config
-	logger         *logrus.Logger
+	logger         *log.Logger
 	memberList     *MemberList
 
 	// Active-Active support
@@ -47,9 +47,9 @@ type Member struct {
 }
 
 // NewMember creates a new member instance
-func NewMember(id string, hostname string, cfg *config.Config, logger *logrus.Logger) *Member {
+func NewMember(id string, hostname string, cfg *config.Config, logger *log.Logger) *Member {
 	if logger == nil {
-		logger = logrus.New()
+		logger = log.New(nil)
 	}
 
 	member := &Member{
@@ -60,7 +60,7 @@ func NewMember(id string, hostname string, cfg *config.Config, logger *logrus.Lo
 		logger:   logger,
 	}
 
-	logger.Debugf("Member instance created successfully for %s (ID: %s)", hostname, id)
+	logger.Debug(fmt.Sprintf("Member instance created successfully for %s (ID: %s)", hostname, id))
 	return member
 }
 
@@ -70,7 +70,7 @@ func (m *Member) initializeClient() error {
 		return nil
 	}
 
-	m.logger.Debugf("Initializing client connection for member %s", m.Hostname)
+	m.logger.Debug(fmt.Sprintf("Initializing client connection for member %s", m.Hostname))
 
 	// Get node config
 	node, ok := m.config.Nodes[m.Hostname]
@@ -90,7 +90,7 @@ func (m *Member) initializeClient() error {
 	}
 
 	m.Client = c
-	m.logger.Debugf("Client connection initialized for member %s", m.Hostname)
+	m.logger.Debug(fmt.Sprintf("Client connection initialized for member %s", m.Hostname))
 	return nil
 }
 
@@ -144,30 +144,34 @@ func (m *Member) MakePartialActive(ips []string) error {
 
 // BringUpIPs brings up the specified IPs on this member
 func (m *Member) BringUpIPs(ips []string) error {
-	// Get interface from config for these IPs
-	iface, err := m.config.GetGroupIface(m.Hostname, "")
+	// Resolve interface per IP using group assignments
+	ifaceToIPs, err := m.groupIPsByInterface(ips)
 	if err != nil {
-		return fmt.Errorf("failed to get interface: %v", err)
-	}
-
-	// Check if this is the local node
-	if m.IsLocal() {
-		// Bring up IPs locally
-		return m.bringUpIPsLocally(iface, ips)
-	} else {
-		// Send RPC to remote node
-		m.logger.Debugf("Sending request to bring up %d IPs on node %s", len(ips), m.Hostname)
-		_, err := m.Client.Send(client.ProtoFunction(client.SendBringUpIP), &rpc.UpIpRequest{
-			Iface: iface,
-			Ips:   ips,
-		})
 		return err
 	}
+
+	if m.IsLocal() {
+		for iface, ipList := range ifaceToIPs {
+			if err := m.bringUpIPsLocally(iface, ipList); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Remote: send one RPC per interface
+	for iface, ipList := range ifaceToIPs {
+		m.logger.Debug("Sending request to bring up IPs", "count", len(ipList), "hostname", m.Hostname, "iface", iface)
+		if _, err := m.Client.Send(client.ProtoFunction(client.SendBringUpIP), &rpc.UpIpRequest{Iface: iface, Ips: ipList}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // bringUpIPsLocally brings up IPs on the local node
 func (m *Member) bringUpIPsLocally(iface string, ips []string) error {
-	m.logger.Infof("Bringing up %d IPs on interface %s", len(ips), iface)
+	m.logger.Info("Bringing up IPs on interface", "count", len(ips), "iface", iface)
 
 	// Update the IP monitor if available
 	if m.memberList != nil && m.memberList.ipMonitor != nil {
@@ -175,7 +179,7 @@ func (m *Member) bringUpIPsLocally(iface string, ips []string) error {
 	}
 
 	for _, ip := range ips {
-		m.logger.Debugf("Bringing up IP %s on interface %s", ip, iface)
+		m.logger.Debug("Bringing up IP on interface", "ip", ip, "iface", iface)
 
 		// Check if IP is already up somewhere else
 		exists, existingIface, err := network.CheckIfIPExists(ip)
@@ -185,9 +189,9 @@ func (m *Member) bringUpIPsLocally(iface string, ips []string) error {
 
 		// If IP exists on another interface, bring it down first
 		if exists && existingIface != iface {
-			m.logger.Warnf("IP %s exists on interface %s, bringing it down first", ip, existingIface)
+			m.logger.Warn("IP exists on interface, bringing it down first", "ip", ip, "existingIface", existingIface)
 			if err := network.BringIPdown(existingIface, ip); err != nil {
-				m.logger.Errorf("Failed to bring down IP %s from interface %s: %v", ip, existingIface, err)
+				m.logger.Error("Failed to bring down IP from interface", "ip", ip, "iface", existingIface, "error", err)
 				// Continue anyway as the IP might have already been removed
 			}
 		}
@@ -199,14 +203,102 @@ func (m *Member) bringUpIPsLocally(iface string, ips []string) error {
 
 		// Send gratuitous ARP to update network
 		if err := network.SendGARP(iface, ip); err != nil {
-			m.logger.Warnf("Failed to send GARP for IP %s on interface %s: %v", ip, iface, err)
+			m.logger.Warn("Failed to send GARP", "ip", ip, "iface", iface, "error", err)
 			// Don't return error as the IP is still up
 		}
 
-		m.logger.Infof("Successfully brought up IP %s on interface %s", ip, iface)
+		m.logger.Info("Successfully brought up IP on interface", "ip", ip, "iface", iface)
 	}
 
 	return nil
+}
+
+// BringDownIPs brings down the specified IPs on this member based on configuration
+func (m *Member) BringDownIPs(ips []string) error {
+	ifaceToIPs, err := m.groupIPsByInterface(ips)
+	if err != nil {
+		return err
+	}
+
+	if m.IsLocal() {
+		for iface, ipList := range ifaceToIPs {
+			// Update the IP monitor if available
+			if m.memberList != nil && m.memberList.ipMonitor != nil {
+				m.memberList.ipMonitor.RemoveExpectedIPs(iface, ipList)
+			}
+
+			for _, ip := range ipList {
+				m.logger.Info("Bringing down IP on interface", "ip", ip, "iface", iface)
+				if err := network.BringIPdown(iface, ip); err != nil {
+					return fmt.Errorf("failed to bring down IP %s on interface %s: %v", ip, iface, err)
+				}
+			}
+		}
+		return nil
+	}
+
+	// Remote: send one RPC per interface
+	for iface, ipList := range ifaceToIPs {
+		m.logger.Debug("Sending request to bring down IPs", "count", len(ipList), "hostname", m.Hostname, "iface", iface)
+		if _, err := m.Client.Send(client.ProtoFunction(client.SendBringDownIP), &rpc.DownIpRequest{Iface: iface, Ips: ipList}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// groupIPsByInterface maps each IP to the correct interface based on group assignments
+func (m *Member) groupIPsByInterface(ips []string) (map[string][]string, error) {
+	ifaceToIPs := make(map[string][]string)
+
+	// Find node config by ID
+	var nodeCfg *config.Node
+	if n, ok := m.config.Nodes[m.ID]; ok {
+		nodeCfg = n
+	} else {
+		// Backward compatibility: resolve by hostname
+		if _, n2, err := m.config.GetNodeByHostname(m.Hostname); err == nil {
+			nodeCfg = n2
+		}
+	}
+	if nodeCfg == nil {
+		return nil, fmt.Errorf("node configuration not found for %s", m.ID)
+	}
+
+	// Build map group->iface for this node
+	groupToIface := make(map[string]string)
+	for iface, groups := range nodeCfg.IPGroups {
+		for _, g := range groups {
+			groupToIface[g] = iface
+		}
+	}
+
+	// For each IP, find its group in config and interface on this node
+	for _, ip := range ips {
+		var groupName string
+		matched := false
+		for g, ipList := range m.config.Groups {
+			for _, gip := range ipList {
+				if gip == ip {
+					groupName = g
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if !matched {
+			return nil, fmt.Errorf("no group found for IP %s", ip)
+		}
+		iface, ok := groupToIface[groupName]
+		if !ok || iface == "" {
+			return nil, fmt.Errorf("group %s not assigned to any interface on node %s", groupName, m.Hostname)
+		}
+		ifaceToIPs[iface] = append(ifaceToIPs[iface], ip)
+	}
+	return ifaceToIPs, nil
 }
 
 // IsLocal checks if this member is the local node
@@ -240,17 +332,9 @@ func (m *Member) RemoveIPs(ips []string) {
 	// Update active IPs
 	m.ActiveIPs = newActiveIPs
 
-	// Update IP monitor if this is the local node and we have a member list
-	if m.IsLocal() && m.memberList != nil && m.memberList.ipMonitor != nil {
-		// Get interface for these IPs
-		iface, err := m.config.GetGroupIface(m.Hostname, "")
-		if err != nil {
-			m.logger.Errorf("Failed to get interface for IP removal: %v", err)
-			return
-		}
-
-		// Update the IP monitor
-		m.memberList.ipMonitor.RemoveExpectedIPs(iface, ips)
+	// Bring them down according to configuration
+	if err := m.BringDownIPs(ips); err != nil {
+		m.logger.Error("Failed to bring down IPs", "error", err)
 	}
 }
 

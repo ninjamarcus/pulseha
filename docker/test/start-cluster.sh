@@ -33,10 +33,24 @@ done
 
 # Create cluster
 echo "1️⃣ Creating cluster on node1..."
-docker exec pulseha-node1 /usr/local/bin/pulsectl cluster create --bind-ip 172.20.0.10 --bind-port 8080 2>/dev/null &
-CREATE_PID=$!
-sleep 15
-kill $CREATE_PID 2>/dev/null || true
+if ! docker exec pulseha-node1 /usr/local/bin/pulsectl cluster create --bind-ip 172.20.0.10 --bind-port 8080; then
+    echo "❌ Create cluster failed"
+    exit 1
+fi
+
+# Wait for node1 cluster listener to be ready
+echo "⏳ Waiting for node1 to listen on 172.20.0.10:8080..."
+for i in {1..60}; do
+    if docker exec pulseha-node1 sh -lc "netstat -tln | grep -q '172.20.0.10:8080'"; then
+        echo "✅ node1 listener ready"
+        break
+    fi
+    if [ $i -eq 60 ]; then
+        echo "❌ node1 listener did not start in time"
+        exit 1
+    fi
+    sleep 1
+done
 
 # Extract token from logs - try multiple patterns
 echo "🔑 Getting cluster token from logs..."
@@ -63,18 +77,18 @@ echo "🔑 Using token: [$TOKEN]"
 
 # Add nodes to cluster
 echo "2️⃣ Adding node2 to cluster..."
-docker exec pulseha-node2 /usr/local/bin/pulsectl cluster join --address 172.20.0.10:8080 --token "$TOKEN" --bind-ip 172.20.0.11 --bind-port 8080 &
-JOIN2_PID=$!
-sleep 15
-kill $JOIN2_PID 2>/dev/null || true
-echo "Node2 join attempt completed"
+if ! docker exec pulseha-node2 /usr/local/bin/pulsectl cluster join --address 172.20.0.10:8080 --token "$TOKEN" --bind-ip 172.20.0.11 --bind-port 8080; then
+    echo "❌ Node2 join failed"
+else
+    echo "✅ Node2 joined"
+fi
 
 echo "3️⃣ Adding node3 to cluster..."
-docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join --address 172.20.0.10:8080 --token "$TOKEN" --bind-ip 172.20.0.12 --bind-port 8080 &
-JOIN3_PID=$!
-sleep 15  
-kill $JOIN3_PID 2>/dev/null || true
-echo "Node3 join attempt completed"
+if ! docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join --address 172.20.0.10:8080 --token "$TOKEN" --bind-ip 172.20.0.12 --bind-port 8080; then
+    echo "❌ Node3 join failed"
+else
+    echo "✅ Node3 joined"
+fi
 
 echo "4️⃣ Checking cluster status..."
 sleep 5

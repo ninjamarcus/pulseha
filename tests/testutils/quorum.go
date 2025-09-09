@@ -3,7 +3,7 @@ package testutils
 import (
 	"time"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/internal/quorum"
 	"github.com/syleron/pulseha/packages/config"
 )
@@ -13,11 +13,11 @@ type TestQuorumManager struct {
 	quorumManager *quorum.QuorumManager
 	nodeCount     int
 	config        *config.Config
-	logger        *logrus.Logger
+	logger        *log.Logger
 }
 
 // NewTestQuorumManager creates a new quorum manager for testing
-func NewTestQuorumManager(cfg *config.Config, logger *logrus.Logger) *TestQuorumManager {
+func NewTestQuorumManager(cfg *config.Config, logger *log.Logger) *TestQuorumManager {
 	return &TestQuorumManager{
 		quorumManager: quorum.NewQuorumManager(cfg, logger),
 		config:        cfg,

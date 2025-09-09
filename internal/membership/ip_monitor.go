@@ -6,23 +6,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/vishvananda/netlink"
 )
 
 // IPMonitor monitors IP addresses on interfaces and ensures they match the expected configuration
 type IPMonitor struct {
 	sync.RWMutex
-	members        *MemberList
-	logger         *logrus.Logger
-	expectedIPs    map[string][]string // map[interface][]ips
-	stopChan       chan struct{}
-	stopOnce       sync.Once
-	done           chan struct{}
+	members     *MemberList
+	logger      *log.Logger
+	expectedIPs map[string][]string // map[interface][]ips
+	stopChan    chan struct{}
+	stopOnce    sync.Once
+	done        chan struct{}
 }
 
 // NewIPMonitor creates a new IP monitor
-func NewIPMonitor(members *MemberList, logger *logrus.Logger) *IPMonitor {
+func NewIPMonitor(members *MemberList, logger *log.Logger) *IPMonitor {
 	return &IPMonitor{
 		members:     members,
 		logger:      logger,
@@ -67,7 +67,7 @@ func (m *IPMonitor) UpdateExpectedIPs(iface string, ips []string) {
 	copy(ipsCopy, ips)
 
 	m.expectedIPs[iface] = ipsCopy
-	m.logger.Infof("Updated expected IPs for interface %s: %v", iface, ips)
+	m.logger.Info("Updated expected IPs", "iface", iface, "ips", ips)
 }
 
 // RemoveExpectedIPs removes IPs from the expected list for an interface
@@ -91,7 +91,7 @@ func (m *IPMonitor) RemoveExpectedIPs(iface string, ips []string) {
 	}
 
 	m.expectedIPs[iface] = updated
-	m.logger.Infof("Removed IPs from interface %s, remaining: %v", iface, updated)
+	m.logger.Info("Removed IPs from interface", "iface", iface, "remaining", updated)
 }
 
 // ClearExpectedIPs removes all expected IPs for an interface
@@ -100,7 +100,7 @@ func (m *IPMonitor) ClearExpectedIPs(iface string) {
 	defer m.Unlock()
 
 	delete(m.expectedIPs, iface)
-	m.logger.Infof("Cleared all expected IPs for interface %s", iface)
+	m.logger.Info("Cleared all expected IPs", "iface", iface)
 }
 
 // initializeExpectedIPs initializes the expected IPs from the current member
@@ -127,7 +127,7 @@ func (m *IPMonitor) initializeExpectedIPs() error {
 		// Get the interface for this IP
 		iface, err := m.members.config.GetGroupIface(localMember.Hostname, "")
 		if err != nil {
-			m.logger.Warnf("Failed to get interface for IP %s: %v", ip, err)
+			m.logger.Warn("Failed to get interface for IP", "ip", ip, "error", err)
 			continue
 		}
 
@@ -147,29 +147,29 @@ func (m *IPMonitor) monitorLoop() {
 
 // restoreIP attempts to restore an IP that was unexpectedly removed
 func (m *IPMonitor) restoreIP(iface string, ip string) {
-	m.logger.Infof("Attempting to restore IP %s on interface %s", ip, iface)
+	m.logger.Info("Attempting to restore IP", "ip", ip, "iface", iface)
 
 	// Get the link
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
-		m.logger.Errorf("Failed to get link for interface %s: %v", iface, err)
+		m.logger.Error("Failed to get link for interface", "iface", iface, "error", err)
 		return
 	}
 
 	// Parse the IP
 	addr, err := netlink.ParseAddr(ip + "/32") // Assuming /32 for simplicity
 	if err != nil {
-		m.logger.Errorf("Failed to parse IP %s: %v", ip, err)
+		m.logger.Error("Failed to parse IP", "ip", ip, "error", err)
 		return
 	}
 
 	// Add the IP to the interface
 	if err := netlink.AddrAdd(link, addr); err != nil {
-		m.logger.Errorf("Failed to add IP %s to interface %s: %v", ip, iface, err)
+		m.logger.Error("Failed to add IP to interface", "ip", ip, "iface", iface, "error", err)
 		return
 	}
 
-	m.logger.Infof("Successfully restored IP %s on interface %s", ip, iface)
+	m.logger.Info("Successfully restored IP on interface", "ip", ip, "iface", iface)
 }
 
 // periodicVerification periodically verifies that all expected IPs are present
@@ -203,7 +203,7 @@ func (m *IPMonitor) verifyAllIPs() {
 		// Get the actual IPs on this interface
 		actualIPs, err := m.getInterfaceIPs(iface)
 		if err != nil {
-			m.logger.Errorf("Failed to get IPs for interface %s: %v", iface, err)
+			m.logger.Error("Failed to get IPs for interface", "iface", iface, "error", err)
 			continue
 		}
 
@@ -218,7 +218,7 @@ func (m *IPMonitor) verifyAllIPs() {
 			}
 
 			if !found {
-				m.logger.Warnf("Expected IP %s not found on interface %s", expectedIP, iface)
+				m.logger.Warn("Expected IP not found on interface", "ip", expectedIP, "iface", iface)
 				// Restore the IP
 				m.restoreIP(iface, expectedIP)
 			}

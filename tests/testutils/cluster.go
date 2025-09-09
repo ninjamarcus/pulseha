@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/charmbracelet/log"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/internal/client"
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/server"
@@ -34,7 +34,7 @@ type TestNode struct {
 	Port     string
 	Server   *server.Server
 	Config   *config.Config
-	Logger   *logrus.Logger
+	Logger   *log.Logger
 	Status   membership.MemberStatus
 	Cluster  *TestCluster
 }
@@ -74,11 +74,9 @@ func (c *TestCluster) AddNode(hostname string) (*TestNode, error) {
 	}
 
 	// Initialize logger
-	logger := logrus.New()
-	logger.SetFormatter(&logrus.TextFormatter{
-		FullTimestamp: true,
-	})
-	logger.SetLevel(logrus.DebugLevel)
+	logger := log.New(os.Stdout)
+	logger.SetFormatter(log.TextFormatter)
+	logger.SetLevel(log.DebugLevel)
 
 	// Create new node
 	node := &TestNode{

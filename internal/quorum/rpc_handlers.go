@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/rpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -15,11 +15,11 @@ type RPCHandler struct {
 	rpc.UnimplementedServerServer
 	rpc.UnimplementedCLIServer
 	quorumManager *QuorumManager
-	logger        *logrus.Logger
+	logger        *log.Logger
 }
 
 // NewRPCHandler creates a new RPC handler for quorum-related methods
-func NewRPCHandler(quorumManager *QuorumManager, logger *logrus.Logger) *RPCHandler {
+func NewRPCHandler(quorumManager *QuorumManager, logger *log.Logger) *RPCHandler {
 	return &RPCHandler{
 		quorumManager: quorumManager,
 		logger:        logger,
@@ -28,7 +28,7 @@ func NewRPCHandler(quorumManager *QuorumManager, logger *logrus.Logger) *RPCHand
 
 // StartVotingSession handles RPC requests to start a new voting session
 func (h *RPCHandler) StartVotingSession(ctx context.Context, req *rpc.StartVotingSessionRequest) (*rpc.StartVotingSessionResponse, error) {
-	h.logger.Debugf("Received StartVotingSession request: %v", req)
+	h.logger.Debug("Received StartVotingSession request", "req", req)
 
 	// Convert VoteType from RPC to internal type
 	var voteType VoteType
@@ -70,7 +70,7 @@ func (h *RPCHandler) StartVotingSession(ctx context.Context, req *rpc.StartVotin
 
 // CastVote handles RPC requests to cast a vote in a voting session
 func (h *RPCHandler) CastVote(ctx context.Context, req *rpc.CastVoteRequest) (*rpc.CastVoteResponse, error) {
-	h.logger.Debugf("Received CastVote request: %v", req)
+	h.logger.Debug("Received CastVote request", "req", req)
 
 	// Convert VoteDecision from RPC to internal type
 	var decision VoteDecision
@@ -105,7 +105,7 @@ func (h *RPCHandler) CastVote(ctx context.Context, req *rpc.CastVoteRequest) (*r
 
 // GetVotingResult handles RPC requests to get the result of a voting session
 func (h *RPCHandler) GetVotingResult(ctx context.Context, req *rpc.GetVotingResultRequest) (*rpc.GetVotingResultResponse, error) {
-	h.logger.Debugf("Received GetVotingResult request: %v", req)
+	h.logger.Debug("Received GetVotingResult request", "req", req)
 
 	// Get the voting session
 	session, err := h.quorumManager.GetVotingSession(req.SessionId)
@@ -143,7 +143,7 @@ func (h *RPCHandler) GetVotingResult(ctx context.Context, req *rpc.GetVotingResu
 
 // GetVotingSessions handles RPC requests to list voting sessions
 func (h *RPCHandler) GetVotingSessions(ctx context.Context, req *rpc.GetVotingSessionsRequest) (*rpc.GetVotingSessionsResponse, error) {
-	h.logger.Debugf("Received GetVotingSessions request: %v", req)
+	h.logger.Debug("Received GetVotingSessions request", "req", req)
 
 	// Get active sessions
 	activeSessions := h.quorumManager.GetActiveVotingSessions()
@@ -197,7 +197,7 @@ func (h *RPCHandler) GetVotingSessions(ctx context.Context, req *rpc.GetVotingSe
 
 // GetVotingSessionDetails handles RPC requests to get detailed information about a voting session
 func (h *RPCHandler) GetVotingSessionDetails(ctx context.Context, req *rpc.GetVotingSessionDetailsRequest) (*rpc.GetVotingSessionDetailsResponse, error) {
-	h.logger.Debugf("Received GetVotingSessionDetails request: %v", req)
+	h.logger.Debug("Received GetVotingSessionDetails request", "req", req)
 
 	// Get the voting session
 	session, err := h.quorumManager.GetVotingSession(req.SessionId)

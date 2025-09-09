@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/charmbracelet/log"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/internal/client"
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/quorum"
@@ -26,7 +26,7 @@ import (
 type Server struct {
 	sync.RWMutex
 	config        *config.Config
-	logger        *logrus.Logger
+	logger        *log.Logger
 	memberList    *membership.MemberList
 	healthCheck   *membership.HealthChecker
 	ipMonitor     *membership.IPMonitor
@@ -39,7 +39,7 @@ type Server struct {
 }
 
 // NewServer creates a new PulseHA server instance
-func NewServer(cfg *config.Config, logger *logrus.Logger, memberList *membership.MemberList, healthCheck *membership.HealthChecker) *Server {
+func NewServer(cfg *config.Config, logger *log.Logger, memberList *membership.MemberList, healthCheck *membership.HealthChecker) *Server {
 	// Create the quorum manager
 	quorumMgr := quorum.NewQuorumManager(cfg, logger)
 
@@ -74,11 +74,6 @@ func (s *Server) Start() error {
 	s.Lock()
 	defer s.Unlock()
 
-	// Set log level to debug temporarily during startup
-	previousLevel := s.logger.GetLevel()
-	s.logger.SetLevel(logrus.DebugLevel)
-	defer s.logger.SetLevel(previousLevel)
-
 	// Verify config is loaded
 	s.logger.Debug("Verifying server configuration...")
 	if s.config == nil {
@@ -105,7 +100,7 @@ func (s *Server) Start() error {
 	go func() {
 		s.logger.Debug("Serving CLI gRPC on 127.0.0.1:8080")
 		if err := s.cliServer.Serve(cliListener); err != nil {
-			s.logger.WithError(err).Error("CLI server failed")
+			s.logger.Error("CLI server failed", "error", err)
 		}
 	}()
 
@@ -126,8 +121,12 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to get hostname: %v", err)
 	}
-	if err := security.GenerateCertificates(hostname); err != nil {
-		s.logger.WithError(err).Warn("Failed to generate certificates, continuing without TLS")
+	if os.Getenv("PULSEHA_TEST") != "true" {
+		if err := security.GenerateCertificates(hostname); err != nil {
+			s.logger.Warn("Failed to generate certificates, continuing without TLS", "error", err)
+		}
+	} else {
+		s.logger.Debug("PULSEHA_TEST=true: skipping certificate generation")
 	}
 
 	// Set server reference in health checker
@@ -150,13 +149,9 @@ func (s *Server) Start() error {
 		s.logger.Warn("Quorum manager is nil, quorum voting will not be available")
 	}
 
-	// Quorum RPC handlers are registered via Server methods implementation
-
 	// Register quorum RPC handlers if available
 	if s.quorumHandler != nil {
 		s.logger.Debug("Registering quorum RPC handlers...")
-		// We need to delegate the quorum-related RPC methods to our quorum handler
-		// This will be done by implementing the RPC methods in the Server struct
 	} else {
 		s.logger.Warn("Quorum handler is nil, quorum RPC methods will not be available")
 	}
@@ -166,7 +161,7 @@ func (s *Server) Start() error {
 
 	// Start the IP monitor
 	if err := s.ipMonitor.Start(); err != nil {
-		s.logger.Errorf("Failed to start IP monitor: %v", err)
+		s.logger.Error("Failed to start IP monitor", "error", err)
 		// Continue anyway, as this is not critical
 	}
 
@@ -179,9 +174,6 @@ func (s *Server) Start() error {
 
 	return nil
 }
-
-// watchForClusterJoin periodically checks if this node has joined a cluster
-// watchForClusterJoin removed; activation occurs via explicit resync.
 
 // startClusterListener starts the gRPC server that handles inter-node RPC on the configured bind address
 func (s *Server) startClusterListener(localNode config.Node) error {
@@ -204,7 +196,7 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 	go func() {
 		s.logger.Debug("Serving cluster gRPC on ", address)
 		if err := s.grpcServer.Serve(listener); err != nil {
-			s.logger.WithError(err).Error("Cluster gRPC server failed")
+			s.logger.Error("Cluster gRPC server failed", "error", err)
 		}
 	}()
 
@@ -304,7 +296,7 @@ func (s *Server) loadInitialMembers() error {
 		}
 
 		if err := s.memberList.AddMember(id, node.Hostname, node.IP, node.Port); err != nil {
-			s.logger.Errorf("FATAL: Failed to add member %s: %v", id, err)
+			s.logger.Error("FATAL: Failed to add member", "id", id, "error", err)
 			return fmt.Errorf("failed to add member %s: %v", id, err)
 		}
 		s.logger.Infof("Successfully added member: %s", id)
@@ -388,7 +380,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 
 		// Add the node to the member list
 		if err := s.memberList.AddMember(nodeID, req.Address, req.BindIp, req.BindPort); err != nil {
-			s.logger.WithError(err).Error("Failed to add member to member list")
+			s.logger.Error("Failed to add member to member list", "error", err)
 			return &rpc.JoinResponse{
 				Success: false,
 				Message: fmt.Sprintf("failed to add member: %v", err),
@@ -401,7 +393,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 
 		// Save the config
 		if err := s.config.Save(); err != nil {
-			s.logger.WithError(err).Error("Failed to save config")
+			s.logger.Error("Failed to save config", "error", err)
 			return &rpc.JoinResponse{
 				Success: false,
 				Message: fmt.Sprintf("failed to save config: %v", err),
@@ -421,7 +413,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	s.logger.Debugf("Expected token: %s, Received token: %s", clusterToken, req.Token)
 
 	if req.Token != clusterToken {
-		s.logger.Warning("Invalid cluster join token received")
+		s.logger.Warn("Invalid cluster join token received")
 		return &rpc.JoinResponse{
 			Success: false,
 			Message: "Invalid cluster token",
@@ -442,7 +434,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	// Add the node to the member list
 	s.logger.Debugf("Adding member %s to member list...", nodeID)
 	if err := s.memberList.AddMember(nodeID, req.Address, req.BindIp, req.BindPort); err != nil {
-		s.logger.WithError(err).Error("Failed to add member to member list")
+		s.logger.Error("Failed to add member to member list", "error", err)
 		return &rpc.JoinResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to add member: %v", err),
@@ -473,7 +465,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	// Save the config synchronously to ensure it's available for health checks
 	s.logger.Debugf("Saving config with new member %s...", nodeID)
 	if err := s.config.Save(); err != nil {
-		s.logger.WithError(err).Error("Failed to save config after successful join")
+		s.logger.Error("Failed to save config after successful join", "error", err)
 		// Still return success since member was added to memberList
 	} else {
 		s.logger.Debugf("Config saved successfully after node %s joined", req.Address)
@@ -500,7 +492,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 
 	configBytes, err := json.Marshal(enhancedConfig)
 	if err != nil {
-		s.logger.WithError(err).Error("Failed to marshal config for joining node")
+		s.logger.Error("Failed to marshal config for joining node", "error", err)
 		// Still return success but without config - node can sync later
 		return &rpc.JoinResponse{
 			Success: true,
@@ -570,7 +562,7 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 
 	// Remove the node from our member list
 	if err := s.memberList.RemoveMember(nodeID); err != nil {
-		s.logger.Errorf("Failed to remove member: %v", err)
+		s.logger.Error("Failed to remove member", "error", err)
 		return &rpc.LeaveResponse{
 			Success: false,
 			Message: "Failed to remove member: " + err.Error(),
@@ -658,7 +650,7 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 
 	// Promote the member
 	if err := member.MakeActive(req.Ips); err != nil {
-		s.logger.Errorf("Failed to promote node: %v", err)
+		s.logger.Error("Failed to promote node", "error", err)
 		return &rpc.PromoteResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to promote node: %v", err),
@@ -673,28 +665,20 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 
 // Join handles the CLI Join RPC call
 func (s *Server) Join(ctx context.Context, req *rpc.JoinRequest) (*rpc.JoinResponse, error) {
-	s.logger.WithFields(logrus.Fields{
-		"address": req.Address,
-		"token":   req.Token != "",
-	}).Info("Received CLI Join request")
+	s.logger.Info("Received CLI Join request", "address", req.Address, "tokenProvided", req.Token != "")
 
 	resp, err := s.HandleNodeJoin(ctx, req)
 	if err != nil {
-		s.logger.WithError(err).Error("CLI Join request failed")
+		s.logger.Error("CLI Join request failed", "error", err)
 	} else {
-		s.logger.WithFields(logrus.Fields{
-			"success": resp.Success,
-			"message": resp.Message,
-		}).Info("CLI Join request completed")
+		s.logger.Info("CLI Join request completed", "success", resp.Success, "message", resp.Message)
 	}
 	return resp, err
 }
 
 // Leave handles the CLI Leave RPC call
 func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveResponse, error) {
-	s.logger.WithFields(logrus.Fields{
-		"node_id": req.NodeId,
-	}).Info("Received CLI Leave request")
+	s.logger.Info("Received CLI Leave request", "node_id", req.NodeId)
 
 	if req.NodeId == "" {
 		return &rpc.LeaveResponse{
@@ -732,12 +716,12 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			}
 			remoteClient, err := client.New()
 			if err != nil {
-				s.logger.WithError(err).Warnf("Failed to create client for peer %s (%s:%s)", id, node.IP, node.Port)
+				s.logger.Warn("Failed to create client for peer", "peer", id, "error", err)
 				continue
 			}
 			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
 				remoteClient.Close()
-				s.logger.WithError(err).Warnf("Failed to connect to peer %s (%s:%s)", id, node.IP, node.Port)
+				s.logger.Warn("Failed to connect to peer", "peer", id, "error", err)
 				continue
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -745,7 +729,7 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			cancel()
 			remoteClient.Close()
 			if err != nil {
-				s.logger.WithError(err).Warnf("Failed to propagate removal to peer %s", id)
+				s.logger.Warn("Failed to propagate removal to peer", "peer", id, "error", err)
 			}
 		}
 
@@ -762,7 +746,7 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 
 	// Remove the node from our member list
 	if err := s.memberList.RemoveMember(member.ID); err != nil {
-		s.logger.Errorf("Failed to remove member: %v", err)
+		s.logger.Error("Failed to remove member", "error", err)
 		return &rpc.LeaveResponse{
 			Success: false,
 			Message: "Failed to remove member: " + err.Error(),
@@ -801,7 +785,7 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 
 	// Promote the member
 	if err := member.MakeActive(req.Ips); err != nil {
-		s.logger.Errorf("Failed to promote member: %v", err)
+		s.logger.Error("Failed to promote member", "error", err)
 		return &rpc.PromoteResponse{
 			Success: false,
 			Message: "Failed to promote member: " + err.Error(),
@@ -907,7 +891,7 @@ func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.Remov
 
 	// Remove the node from our member list
 	if err := s.memberList.RemoveMember(member.ID); err != nil {
-		s.logger.Errorf("Failed to remove member: %v", err)
+		s.logger.Error("Failed to remove member", "error", err)
 		return &rpc.RemoveResponse{
 			Success: false,
 			Message: "Failed to remove member: " + err.Error(),
@@ -919,7 +903,7 @@ func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.Remov
 
 	// Persist the updated configuration
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config after removing node: %v", err)
+		s.logger.Error("Failed to save config after removing node", "error", err)
 		return &rpc.RemoveResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1030,7 +1014,7 @@ func (s *Server) SetMode(ctx context.Context, req *rpc.SetModeRequest) (*rpc.Set
 		}
 
 		if err := s.memberList.RedistributeIPs(allIPs); err != nil {
-			s.logger.Errorf("Failed to redistribute IPs: %v", err)
+			s.logger.Error("Failed to redistribute IPs", "error", err)
 			// Continue anyway as the mode change is already saved
 		}
 	}
@@ -1087,7 +1071,7 @@ func (s *Server) CreateGroup(ctx context.Context, req *rpc.CreateGroupRequest) (
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.CreateGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1240,7 +1224,7 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.AddIPToGroupResponse{
 			Success:  false,
 			Message:  fmt.Sprintf("failed to save config: %v", err),
@@ -1383,7 +1367,7 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.RemoveIPFromGroupResponse{
 			Success:  false,
 			Message:  fmt.Sprintf("failed to save config: %v", err),
@@ -1453,7 +1437,7 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.AssignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1565,7 +1549,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.UnassignGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1639,7 +1623,7 @@ func (s *Server) DeleteGroup(ctx context.Context, req *rpc.DeleteGroupRequest) (
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.DeleteGroupResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1672,7 +1656,7 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 	if req.JsonOutput {
 		jsonData, err := json.MarshalIndent(s.config.Groups, "", "  ")
 		if err != nil {
-			s.logger.Errorf("Failed to marshal groups: %v", err)
+			s.logger.Error("Failed to marshal groups", "error", err)
 			return &rpc.ListGroupsResponse{
 				Success: false,
 				Message: fmt.Sprintf("failed to marshal groups: %v", err),
@@ -1721,8 +1705,7 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 // CreateCluster implements the CLI.CreateCluster RPC method
 func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterRequest) (*rpc.CreateClusterResponse, error) {
 	s.logger.Infof("Received CreateCluster request with bindIP: %s, bindPort: %s, mode: %s", req.BindIp, req.BindPort, req.Mode)
-	s.Lock()
-	defer s.Unlock()
+
 
 	// Check if cluster is already configured
 	if s.config.ClusterCheck() {
@@ -1741,7 +1724,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	// Get hostname for certificates
 	hostname, err := os.Hostname()
 	if err != nil {
-		s.logger.Errorf("Failed to get hostname: %v", err)
+		s.logger.Error("Failed to get hostname", "error", err)
 		return &rpc.CreateClusterResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to get hostname: %v", err),
@@ -1749,9 +1732,13 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	}
 
 	// Generate certificates for mTLS
-	if err := security.GenerateCertificates(hostname); err != nil {
-		s.logger.Warnf("Failed to generate certificates: %v", err)
-		// Continue without TLS for now
+	if os.Getenv("PULSEHA_TEST") != "true" {
+		if err := security.GenerateCertificates(hostname); err != nil {
+			s.logger.Warn("Failed to generate certificates", "error", err)
+			// Continue without TLS for now
+		}
+	} else {
+		s.logger.Debug("PULSEHA_TEST=true: skipping certificate generation in CreateCluster")
 	}
 
 	// Generate a unique node ID
@@ -1785,7 +1772,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 	// Create default IP groups for each network interface
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		s.logger.Warnf("Failed to get network interfaces: %v", err)
+		s.logger.Warn("Failed to get network interfaces", "error", err)
 	} else {
 		for _, iface := range interfaces {
 			// Skip loopback, down interfaces, and interfaces without addresses
@@ -1795,7 +1782,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 
 			addrs, err := iface.Addrs()
 			if err != nil {
-				s.logger.Warnf("Failed to get addresses for interface %s: %v", iface.Name, err)
+				s.logger.Warn("Failed to get addresses for interface %s", "interface", iface.Name, "error", err)
 				continue
 			}
 
@@ -1823,7 +1810,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 
 	// Save config
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save config: %v", err)
+		s.logger.Error("Failed to save config", "error", err)
 		return &rpc.CreateClusterResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save config: %v", err),
@@ -1832,7 +1819,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 
 	// Add the first member to the member list
 	if err := s.memberList.AddMember(nodeID, hostname, req.BindIp, bindPort); err != nil {
-		s.logger.Errorf("Failed to add first node to member list: %v", err)
+		s.logger.Error("Failed to add first node to member list", "error", err)
 		return &rpc.CreateClusterResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to add first node to member list: %v", err),
@@ -1848,7 +1835,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 
 	// Reconfigure the server to apply changes
 	if err := s.Reconfigure(); err != nil {
-		s.logger.Errorf("Failed to reconfigure server: %v", err)
+		s.logger.Error("Failed to reconfigure server", "error", err)
 		return &rpc.CreateClusterResponse{
 			Success: false,
 			Message: fmt.Sprintf("cluster created but failed to reconfigure server: %v", err),
@@ -1857,6 +1844,19 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 
 	// After successfully creating the cluster, start the health checker
 	s.startHealthChecker()
+
+	// Best-effort: wait briefly for the cluster listener to be ready to accept connections
+	// This improves UX by ensuring the service is reachable immediately after successful creation
+	address := fmt.Sprintf("%s:%s", req.BindIp, bindPort)
+	readyDeadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(readyDeadline) {
+		conn, err := net.DialTimeout("tcp", address, 300*time.Millisecond)
+		if err == nil {
+			_ = conn.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	s.logger.Info("Cluster created successfully")
 	return &rpc.CreateClusterResponse{
@@ -1916,7 +1916,7 @@ func (s *Server) Token(ctx context.Context, req *rpc.TokenRequest) (*rpc.TokenRe
 
 	// Save the configuration
 	if err := s.config.Save(); err != nil {
-		s.logger.Errorf("Failed to save configuration with new token: %v", err)
+		s.logger.Error("Failed to save configuration with new token", "error", err)
 		return &rpc.TokenResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to save new token: %v", err),
@@ -2032,7 +2032,7 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 
 	// Unmarshal the received configuration
 	if err := json.Unmarshal(req.Config, newConfig); err != nil {
-		s.logger.Errorf("Failed to unmarshal configuration: %v", err)
+		s.logger.Error("Failed to unmarshal configuration", "error", err)
 		return &rpc.ConfigSyncResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -2047,7 +2047,7 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 
 	// Reconfigure the server with the new configuration
 	if err := s.Reconfigure(); err != nil {
-		s.logger.Errorf("Failed to reconfigure server: %v", err)
+		s.logger.Error("Failed to reconfigure server", "error", err)
 		return &rpc.ConfigSyncResponse{
 			Success: false,
 			Message: fmt.Sprintf("failed to reconfigure server: %v", err),
@@ -2096,7 +2096,7 @@ func (s *Server) UpdateConfig(ctx context.Context, req *rpc.UpdateConfigRequest)
 
 	// Apply runtime changes for known keys
 	if req.Key == "logging_level" {
-		if level, err := logrus.ParseLevel(req.Value); err == nil {
+		if level, err := log.ParseLevel(req.Value); err == nil {
 			s.logger.SetLevel(level)
 		}
 	}
@@ -2177,12 +2177,12 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 				}
 				remoteClient, err := client.New()
 				if err != nil {
-					s.logger.WithError(err).Warnf("Resync: failed to create client for peer %s (%s:%s)", id, node.IP, node.Port)
+					s.logger.Warn("Resync: failed to create client for peer", "peer", id, "error", err)
 					continue
 				}
 				if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
 					remoteClient.Close()
-					s.logger.WithError(err).Warnf("Resync: failed to connect to peer %s (%s:%s)", id, node.IP, node.Port)
+					s.logger.Warn("Resync: failed to connect to peer", "peer", id, "error", err)
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -2190,7 +2190,7 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 				cancel()
 				remoteClient.Close()
 				if err != nil || resp == nil {
-					s.logger.WithError(err).Warnf("Resync: failed to get status from peer %s", id)
+					s.logger.Warn("Resync: failed to get status from peer", "peer", id, "error", err)
 					continue
 				}
 
@@ -2229,7 +2229,7 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 					description := fmt.Sprintf("Remove node %s due to absence from majority and unknown status", id)
 					sessionID, err := s.quorumManager.StartVotingSession(quorum.VoteTypeConfigChange, subject, description, 30*time.Second)
 					if err != nil {
-						s.logger.WithError(err).Warnf("Resync: failed to start removal vote for %s", id)
+						s.logger.Warn("Resync: failed to start removal vote", "id", id, "error", err)
 						continue
 					}
 
@@ -2239,7 +2239,7 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 						time.Sleep(1 * time.Second)
 						session, err := s.quorumManager.GetVotingSession(sessionID)
 						if err != nil {
-							s.logger.WithError(err).Warnf("Resync: failed to get voting session %s", sessionID)
+							s.logger.Warn("Resync: failed to get voting session", "sessionID", sessionID, "error", err)
 							break
 						}
 						if session != nil && session.Result != nil {

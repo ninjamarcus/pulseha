@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/packages/config"
 )
 
@@ -13,12 +13,12 @@ type MemberList struct {
 	sync.RWMutex
 	Members   map[string]*Member
 	config    *config.Config
-	logger    *logrus.Logger
+	logger    *log.Logger
 	ipMonitor *IPMonitor
 }
 
 // NewMemberList creates a new member list
-func NewMemberList(cfg *config.Config, logger *logrus.Logger) *MemberList {
+func NewMemberList(cfg *config.Config, logger *log.Logger) *MemberList {
 	ml := &MemberList{
 		Members: make(map[string]*Member),
 		config:  cfg,
@@ -83,7 +83,7 @@ func (m *MemberList) RedistributeIPs(failedIPs []string) error {
 			}
 
 			if err := node.MakePartialActive(ips); err != nil {
-				m.logger.Errorf("Failed to assign IPs to node %s: %v", node.Hostname, err)
+				m.logger.Error("Failed to assign IPs to node", "hostname", node.Hostname, "error", err)
 				// Continue with other nodes even if one fails
 				continue
 			}
@@ -170,7 +170,7 @@ func (m *MemberList) calculateIPDistribution(ips []string, nodes []*Member) map[
 			}
 
 			if targetNode == nil {
-				m.logger.Warn("No nodes with available capacity for IP: ", ip)
+				m.logger.Warn("No nodes with available capacity for IP", "ip", ip)
 				continue
 			}
 
@@ -206,17 +206,17 @@ func (m *MemberList) getActiveNode() *Member {
 func (m *MemberList) AddMember(nodeID, hostname, bindIP, bindPort string) error {
 	m.Lock()
 	defer m.Unlock()
-	
-	m.logger.Debugf("Starting AddMember process for ID: %s", nodeID)
+
+	m.logger.Debug("Starting AddMember process", "id", nodeID)
 
 	// Check if member already exists
 	if _, exists := m.Members[nodeID]; exists {
-		m.logger.Warningf("Member with ID %s already exists in member list", nodeID)
+		m.logger.Warn("Member already exists in member list", "id", nodeID)
 		return nil
 	}
 
 	// Create new member instance
-	m.logger.Debugf("Creating new member instance for %s (ID: %s)", hostname, nodeID)
+	m.logger.Debug("Creating new member instance", "hostname", hostname, "id", nodeID)
 	member := &Member{
 		ID:       nodeID,
 		Hostname: hostname,
@@ -227,12 +227,15 @@ func (m *MemberList) AddMember(nodeID, hostname, bindIP, bindPort string) error 
 		logger:   m.logger,
 	}
 
-	m.logger.Debugf("Member instance created successfully for %s (ID: %s)", hostname, nodeID)
+	// Set back-reference so member methods can access the list (e.g., during MakeActive)
+	member.memberList = m
+
+	m.logger.Debug("Member instance created successfully", "hostname", hostname, "id", nodeID)
 
 	// Add member to list
 	m.Members[nodeID] = member
 
-	m.logger.Infof("Successfully added member %s (ID: %s) to member list", hostname, nodeID)
+	m.logger.Info("Successfully added member to member list", "hostname", hostname, "id", nodeID)
 	return nil
 }
 
@@ -241,7 +244,7 @@ func (m *MemberList) AddMemberQuiet(id string) error {
 	// Get node config
 	node, ok := m.config.Nodes[id]
 	if !ok {
-		m.logger.Errorf("No configuration found for member ID %s", id)
+		m.logger.Error("No configuration found for member ID", "id", id)
 		return fmt.Errorf("no configuration found for member ID %s", id)
 	}
 
@@ -277,11 +280,11 @@ func (m *MemberList) RemoveMember(id string) error {
 	// First try to find by node ID
 	if member, exists := m.Members[id]; exists {
 		// Found by node ID
-		m.logger.Debugf("Removing member with ID: %s", id)
+		m.logger.Debug("Removing member", "id", id)
 		// Redistribute IPs if member was active
 		if len(member.ActiveIPs) > 0 {
 			if err := m.RedistributeIPs(member.ActiveIPs); err != nil {
-				m.logger.Errorf("Failed to redistribute IPs for removed member %s: %v", member.Hostname, err)
+				m.logger.Error("Failed to redistribute IPs for removed member", "hostname", member.Hostname, "error", err)
 			}
 		}
 
@@ -294,11 +297,11 @@ func (m *MemberList) RemoveMember(id string) error {
 	for _, member := range m.Members {
 		if member.Hostname == id {
 			// Found by hostname
-			m.logger.Debugf("Removing member with hostname: %s (ID: %s)", id, member.ID)
+			m.logger.Debug("Removing member by hostname", "hostname", id, "id", member.ID)
 			// Redistribute IPs if member was active
 			if len(member.ActiveIPs) > 0 {
 				if err := m.RedistributeIPs(member.ActiveIPs); err != nil {
-					m.logger.Errorf("Failed to redistribute IPs for removed member %s: %v", member.Hostname, err)
+					m.logger.Error("Failed to redistribute IPs for removed member", "hostname", member.Hostname, "error", err)
 				}
 			}
 

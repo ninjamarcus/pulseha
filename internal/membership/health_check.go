@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/internal/quorum"
 )
 
@@ -30,22 +30,22 @@ type HealthCheck struct {
 // HealthChecker handles health checking for nodes and IPs
 type HealthChecker struct {
 	sync.RWMutex
-	members     *MemberList
-	checkTicker *time.Ticker
-	stopChan    chan struct{}
-	stopOnce    sync.Once // Ensure we only close stopChan once
-	logger      *logrus.Logger
-	ready       bool
-	stopped     bool // Track if we're stopped
-	server      ServerReference
-	lastClusterState string // Track last cluster state to only log changes
-	checksWithoutChange int // Counter for periodic status logs
+	members             *MemberList
+	checkTicker         *time.Ticker
+	stopChan            chan struct{}
+	stopOnce            sync.Once // Ensure we only close stopChan once
+	logger              *log.Logger
+	ready               bool
+	stopped             bool // Track if we're stopped
+	server              ServerReference
+	lastClusterState    string // Track last cluster state to only log changes
+	checksWithoutChange int    // Counter for periodic status logs
 }
 
 // NewHealthChecker creates a new health checker
-func NewHealthChecker(members *MemberList, logger *logrus.Logger) *HealthChecker {
+func NewHealthChecker(members *MemberList, logger *log.Logger) *HealthChecker {
 	if logger == nil {
-		logger = logrus.New()
+		logger = log.New(nil)
 	}
 	return &HealthChecker{
 		members:  members,
@@ -183,11 +183,11 @@ func (h *HealthChecker) performHealthChecks() {
 			member.Latency = "0ms"
 			member.Unlock()
 			// Add to display status (local node)
-			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(local/%s)", 
+			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(local/%s)",
 				member.Hostname, StatusToString(member.Status)))
-			
+
 			// Add to comparison status (without latency for change detection)
-			clusterStatusForComparison = append(clusterStatusForComparison, fmt.Sprintf("%s(%s)", 
+			clusterStatusForComparison = append(clusterStatusForComparison, fmt.Sprintf("%s(%s)",
 				member.Hostname, StatusToString(member.Status)))
 			continue
 		}
@@ -211,16 +211,16 @@ func (h *HealthChecker) performHealthChecks() {
 			member.Status = StatusUnknown
 			member.Latency = "N/A"
 			member.Unlock()
-			
+
 			// Log status change if node went from reachable to unreachable
 			if previousStatus != StatusUnknown {
-				statusChanges = append(statusChanges, fmt.Sprintf("%s became unreachable (was %s)", 
+				statusChanges = append(statusChanges, fmt.Sprintf("%s became unreachable (was %s)",
 					member.Hostname, StatusToString(previousStatus)))
 			}
-			
-			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(unreachable/%s)", 
+
+			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(unreachable/%s)",
 				member.Hostname, StatusToString(member.Status)))
-			clusterStatusForComparison = append(clusterStatusForComparison, fmt.Sprintf("%s(%s)", 
+			clusterStatusForComparison = append(clusterStatusForComparison, fmt.Sprintf("%s(%s)",
 				member.Hostname, StatusToString(member.Status)))
 			failedMembers = append(failedMembers, member.Hostname)
 			continue
@@ -260,11 +260,11 @@ func (h *HealthChecker) performHealthChecks() {
 		}
 
 		// Add to display status (with latency for display)
-		clusterStatus = append(clusterStatus, fmt.Sprintf("%s(%s/%s)", 
+		clusterStatus = append(clusterStatus, fmt.Sprintf("%s(%s/%s)",
 			member.Hostname, member.Latency, StatusToString(member.Status)))
-		
+
 		// Add to comparison status (without latency for change detection)
-		clusterStatusForComparison = append(clusterStatusForComparison, fmt.Sprintf("%s(%s)", 
+		clusterStatusForComparison = append(clusterStatusForComparison, fmt.Sprintf("%s(%s)",
 			member.Hostname, StatusToString(member.Status)))
 
 		member.Unlock()
@@ -275,11 +275,11 @@ func (h *HealthChecker) performHealthChecks() {
 	// Sort status for consistent comparison (status without latency)
 	sort.Strings(clusterStatusForComparison)
 	currentClusterStateForComparison := strings.Join(clusterStatusForComparison, ", ")
-	
+
 	// Sort display status for consistent ordering
 	sort.Strings(clusterStatus)
 	currentClusterDisplayState := strings.Join(clusterStatus, ", ")
-	
+
 	// Only log if the cluster state has changed (ignoring latency variations)
 	if currentClusterStateForComparison != h.lastClusterState {
 		h.logger.Infof("Cluster health: %s", currentClusterDisplayState)
@@ -288,7 +288,7 @@ func (h *HealthChecker) performHealthChecks() {
 	} else {
 		// Increment counter for unchanged state
 		h.checksWithoutChange++
-		
+
 		// Log periodic summary every 60 checks (roughly every minute with 1s interval)
 		if h.checksWithoutChange >= 60 {
 			h.logger.Infof("Cluster stable for 60 checks: %s", currentClusterDisplayState)
@@ -297,12 +297,12 @@ func (h *HealthChecker) performHealthChecks() {
 			// Don't log unchanged state - only status/membership changes matter
 		}
 	}
-	
+
 	// Log any status changes
 	for _, change := range statusChanges {
 		h.logger.Infof("Status change: %s", change)
 	}
-	
+
 	// Log any failed members (already captured in status change, so skip if unchanged)
 	// The cluster state change will already indicate when nodes become unreachable
 
@@ -321,7 +321,7 @@ func (h *HealthChecker) performHealthChecks() {
 // checkForActiveNodeFailure checks if the active node has failed and initiates failover
 func (h *HealthChecker) checkForActiveNodeFailure() {
 	h.logger.Debug("Checking for active node failure...")
-	
+
 	// Find the active node
 	var activeMember *Member
 	for _, member := range h.members.Members {
@@ -337,14 +337,14 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 		h.electNewActiveNode()
 		return
 	}
-	
+
 	h.logger.Debugf("Active node found: %s", activeMember.Hostname)
 
 	// Check if the active node has been unreachable for too long
 	member := activeMember
 	member.Lock()
 	timeSinceLastResponse := time.Since(member.LastHCResponse)
-	isUnreachable := member.Status == StatusUnknown || 
+	isUnreachable := member.Status == StatusUnknown ||
 		timeSinceLastResponse > time.Duration(h.members.config.Pulse.FailOverLimit)*time.Millisecond
 	hostname := member.Hostname
 	activeIPs := member.ActiveIPs
@@ -352,7 +352,7 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 
 	h.logger.Debugf("Active node %s - timeSinceLastResponse: %v, FailOverLimit: %dms, isUnreachable: %v",
 		hostname, timeSinceLastResponse, h.members.config.Pulse.FailOverLimit, isUnreachable)
-	
+
 	if isUnreachable {
 		h.logger.Warnf("Active node %s has been unreachable for %v (limit: %dms), initiating failover",
 			hostname, timeSinceLastResponse, h.members.config.Pulse.FailOverLimit)
@@ -384,10 +384,10 @@ func (h *HealthChecker) electNewActiveNode() {
 	// 1. Local node (if passive/unknown)
 	// 2. Node with best latency
 	// 3. Node that was last known to be active (for faster recovery)
-	
+
 	var bestCandidate *Member
 	var bestScore float64 = -1 // Higher score is better
-	
+
 	// Also track the last known active node's timestamp for tie-breaking
 	var lastActiveTime time.Time
 
@@ -406,12 +406,12 @@ func (h *HealthChecker) electNewActiveNode() {
 
 		// Calculate a score for this candidate
 		score := float64(0)
-		
+
 		// Local node gets highest priority (score +100)
 		if isLocal && (status == StatusPassive || status == StatusUnknown) {
 			score += 100
 		}
-		
+
 		// Passive nodes get priority over unknown (score +50)
 		if status == StatusPassive {
 			score += 50
@@ -420,16 +420,16 @@ func (h *HealthChecker) electNewActiveNode() {
 		} else {
 			continue // Skip non-eligible nodes
 		}
-		
+
 		// Better latency increases score (max +10 for 0ms, decreases with latency)
 		if latencyStr != "N/A" && latencyStr != "" {
 			if lat, err := time.ParseDuration(strings.TrimSuffix(latencyStr, "ms") + "ms"); err == nil {
 				// Score based on latency (10 points for 0ms, decreasing to 0 for 1000ms+)
-				latencyScore := math.Max(0, 10 - (float64(lat.Milliseconds())/100))
+				latencyScore := math.Max(0, 10-(float64(lat.Milliseconds())/100))
 				score += latencyScore
 			}
 		}
-		
+
 		// Recent response time adds small bonus (for tie-breaking)
 		if !lastResponse.IsZero() {
 			recency := time.Since(lastResponse)
@@ -437,10 +437,10 @@ func (h *HealthChecker) electNewActiveNode() {
 				score += 5
 			}
 		}
-		
-		h.logger.Debugf("Candidate %s: score=%.2f, status=%s, latency=%s, local=%v", 
+
+		h.logger.Debugf("Candidate %s: score=%.2f, status=%s, latency=%s, local=%v",
 			member.Hostname, score, StatusToString(status), latencyStr, isLocal)
-		
+
 		if score > bestScore {
 			bestCandidate = member
 			bestScore = score
@@ -459,17 +459,17 @@ func (h *HealthChecker) electNewActiveNode() {
 		return
 	}
 
-	h.logger.Infof("Selected %s as best candidate for promotion (score: %.2f)", 
+	h.logger.Infof("Selected %s as best candidate for promotion (score: %.2f)",
 		bestCandidate.Hostname, bestScore)
 
 	// Determine if we should use voting based on cluster size
 	clusterSize := len(h.members.Members)
 	h.logger.Debugf("Cluster size: %d nodes", clusterSize)
-	
+
 	if clusterSize >= 3 {
 		// 3+ nodes: Use quorum voting for decisions
 		h.logger.Info("Cluster has 3+ nodes, using quorum voting for leader election")
-		
+
 		// Check if quorum manager is available
 		if h.server != nil && h.server.GetQuorumManager() != nil {
 			voteResult := h.initiateNodeStatusVote(bestCandidate.ID, StatusActive)
@@ -485,7 +485,7 @@ func (h *HealthChecker) electNewActiveNode() {
 	} else if clusterSize == 2 {
 		// 2 nodes: Use time-based tiebreaker to prevent split-brain
 		h.logger.Info("2-node cluster detected, using time-based election to prevent split-brain")
-		
+
 		// In a 2-node cluster, we need to ensure only one node promotes itself
 		// Use a deterministic method: the node with the lower ID wins
 		localNodeID, err := h.members.config.GetLocalNodeUUID()
@@ -493,7 +493,7 @@ func (h *HealthChecker) electNewActiveNode() {
 			h.logger.Errorf("Failed to get local node ID: %v", err)
 			return
 		}
-		
+
 		// Find the other node
 		var otherNodeID string
 		for _, member := range h.members.Members {
@@ -502,14 +502,14 @@ func (h *HealthChecker) electNewActiveNode() {
 				break
 			}
 		}
-		
+
 		// Only proceed if we're the node with the lower ID (deterministic winner)
 		if localNodeID > otherNodeID {
-			h.logger.Infof("This node (%s) has higher ID than other node (%s), deferring promotion", 
+			h.logger.Infof("This node (%s) has higher ID than other node (%s), deferring promotion",
 				localNodeID, otherNodeID)
 			// Wait a bit to see if the other node takes over
 			time.Sleep(2 * time.Second)
-			
+
 			// Check if the other node has become active
 			for _, member := range h.members.Members {
 				if member.ID == otherNodeID && member.Status == StatusActive {
@@ -517,11 +517,11 @@ func (h *HealthChecker) electNewActiveNode() {
 					return
 				}
 			}
-			
+
 			// If we get here, the other node didn't take over, so we should
 			h.logger.Info("Other node did not become active, proceeding with promotion")
 		} else {
-			h.logger.Infof("This node (%s) has lower ID than other node (%s), proceeding with promotion", 
+			h.logger.Infof("This node (%s) has lower ID than other node (%s), proceeding with promotion",
 				localNodeID, otherNodeID)
 		}
 	}
@@ -529,7 +529,7 @@ func (h *HealthChecker) electNewActiveNode() {
 
 	// Promote the best candidate to active
 	h.logger.Infof("Promoting node %s to active", bestCandidate.Hostname)
-	
+
 	bestCandidate.Lock()
 	bestCandidate.Status = StatusActive
 	bestCandidate.Unlock()

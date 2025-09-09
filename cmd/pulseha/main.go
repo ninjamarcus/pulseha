@@ -26,12 +26,10 @@ import (
 	"syscall"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/server"
 	"github.com/syleron/pulseha/packages/config"
-	"github.com/syleron/pulseha/packages/logging"
 )
 
 var (
@@ -56,10 +54,8 @@ func main() {
 `, Version, buildStr)
 
 	// Initialize logger
-	logger := log.New()
-	logger.SetFormatter(&log.TextFormatter{
-		FullTimestamp: true,
-	})
+	logger := log.New(os.Stdout)
+	logger.SetFormatter(log.TextFormatter)
 
 	// Set default logging level to debug during development
 	logger.SetLevel(log.DebugLevel)
@@ -75,7 +71,7 @@ func main() {
 		if level, err := log.ParseLevel(cfg.Pulse.LoggingLevel); err == nil {
 			logger.SetLevel(level)
 		} else {
-			logger.Warnf("Invalid logging level in config: %s, using debug", cfg.Pulse.LoggingLevel)
+			logger.Warn("Invalid logging level in config, using debug", "level", cfg.Pulse.LoggingLevel)
 		}
 	}
 
@@ -93,7 +89,7 @@ func main() {
 	// Create and start server
 	srv := server.NewServer(cfg, logger, memberList, healthChecker)
 	if err := srv.Start(); err != nil {
-		logger.Fatalf("Failed to start server: %v", err)
+		logger.Fatal("Failed to start server", "error", err)
 	}
 
 	// Handle graceful shutdown
@@ -113,7 +109,7 @@ func main() {
 			// Reload configuration
 			logger.Info("Reloading configuration...")
 			if err := cfg.Reload(); err != nil {
-				logger.Errorf("Failed to reload config: %v", err)
+				logger.Error("Failed to reload config", "error", err)
 				continue
 			}
 			// Restart server with new config
@@ -156,7 +152,7 @@ func main() {
 				logger.Info("Graceful shutdown completed")
 				os.Exit(0)
 			case err := <-errChan:
-				logger.Errorf("Error during shutdown: %v", err)
+				logger.Error("Error during shutdown", "error", err)
 				os.Exit(1)
 			case <-time.After(10 * time.Second):
 				logger.Error("Shutdown timed out, forcing exit")
@@ -166,20 +162,19 @@ func main() {
 	}
 }
 
-
 func setupLogging(cfg *config.Config, logger *log.Logger) error {
 	var writers []io.Writer
-	
+
 	// Always include stdout for container/systemd compatibility
 	writers = append(writers, os.Stdout)
-	
+
 	// Setup syslog logging if enabled (default to true if not explicitly set)
 	logToSyslog := cfg.Pulse.LogToSyslog
 	if cfg.Pulse.SyslogTag == "" {
 		// Old config or missing syslog config - use defaults
 		logToSyslog = true
 	}
-	
+
 	if logToSyslog {
 		// Convert facility string to syslog priority
 		facility := syslog.LOG_INFO
@@ -215,17 +210,23 @@ func setupLogging(cfg *config.Config, logger *log.Logger) error {
 		if syslogTag == "" {
 			syslogTag = "pulseha"
 		}
-		
-		hook, err := logrus_syslog.NewSyslogHook(cfg.Pulse.SyslogNetwork, cfg.Pulse.SyslogAddress, facility, syslogTag)
+
+		var sysw *syslog.Writer
+		var err error
+		if cfg.Pulse.SyslogNetwork != "" || cfg.Pulse.SyslogAddress != "" {
+			sysw, err = syslog.Dial(cfg.Pulse.SyslogNetwork, cfg.Pulse.SyslogAddress, facility, syslogTag)
+		} else {
+			sysw, err = syslog.New(facility, syslogTag)
+		}
 		if err != nil {
 			// If syslog is not available (e.g., in containers), log warning but continue
-			logger.Warnf("Failed to create syslog hook, continuing without syslog: %v", err)
+			logger.Warn("Failed to connect to syslog, continuing without syslog", "error", err)
 		} else {
-			logger.AddHook(hook)
+			writers = append(writers, sysw)
 			logger.Info("Syslog logging enabled")
 		}
 	}
-	
+
 	// Setup file logging if enabled
 	if cfg.Pulse.LogToFile {
 		// Restrict permissions so that only the owner can modify the log and
@@ -236,16 +237,7 @@ func setupLogging(cfg *config.Config, logger *log.Logger) error {
 			return fmt.Errorf("failed to open log file: %v", err)
 		}
 		writers = append(writers, logFile)
-		logger.Infof("File logging enabled: %s", cfg.Pulse.LogFileLocation)
-	}
-
-	// Create distributed logger
-	pulseLogger, err := logging.NewLogger(nil) // We'll need to implement broadcast later
-	if err != nil {
-		logger.Warnf("Failed to create distributed logger: %v", err)
-	} else {
-		// Add hooks
-		logger.AddHook(pulseLogger)
+		logger.Info("File logging enabled", "path", cfg.Pulse.LogFileLocation)
 	}
 
 	// Set multi-writer output (stdout + file if enabled)

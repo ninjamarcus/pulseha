@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/charmbracelet/log"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/packages/config"
 )
 
@@ -67,14 +67,14 @@ type VotingSessionResult struct {
 type QuorumManager struct {
 	sync.RWMutex
 	config         *config.Config
-	logger         *logrus.Logger
+	logger         *log.Logger
 	activeSessions map[string]*VotingSession
 	sessionHistory map[string]*VotingSession
 	nodeCount      int // Total number of nodes in the cluster
 }
 
 // NewQuorumManager creates a new quorum manager instance
-func NewQuorumManager(cfg *config.Config, logger *logrus.Logger) *QuorumManager {
+func NewQuorumManager(cfg *config.Config, logger *log.Logger) *QuorumManager {
 	return &QuorumManager{
 		config:         cfg,
 		logger:         logger,
