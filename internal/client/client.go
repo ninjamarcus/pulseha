@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"net"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/packages/security"
@@ -355,6 +357,51 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		bindPort = "8080"
 	}
 
+	// Validate bind IP exists locally; if empty, try to auto-detect primary IP
+	if bindIP == "" {
+		// Auto-detect a non-loopback IPv4 address
+		ifaces, _ := net.Interfaces()
+		for _, iface := range ifaces {
+			if (iface.Flags&net.FlagLoopback) != 0 || (iface.Flags&net.FlagUp) == 0 {
+				continue
+			}
+			addrs, _ := iface.Addrs()
+			for _, a := range addrs {
+				if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP.To4() != nil {
+					bindIP = ipNet.IP.String()
+					break
+				}
+			}
+			if bindIP != "" {
+				break
+			}
+		}
+	}
+	if bindIP == "" {
+		return fmt.Errorf("could not determine a valid local bind IP; please specify --bind-ip")
+	}
+
+	// If user provided a bind IP, ensure it exists on this host
+	isLocalIP := false
+	ifaces, _ := net.Interfaces()
+	for _, iface := range ifaces {
+		addrs, _ := iface.Addrs()
+		for _, a := range addrs {
+			if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP.To4() != nil {
+				if ipNet.IP.String() == bindIP {
+					isLocalIP = true
+					break
+				}
+			}
+		}
+		if isLocalIP {
+			break
+		}
+	}
+	if !isLocalIP {
+		return fmt.Errorf("bind-ip %s is not assigned to any local interface", bindIP)
+	}
+
 	// Create join request
 	joinReq := &rpc.JoinRequest{
 		Address:  hostname,
@@ -455,6 +502,20 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		return fmt.Errorf("successfully joined cluster but failed to save local config: %v", err)
 	}
 
+	// Trigger immediate resync/activation on the local daemon so status reflects changes instantly
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, _ = c.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
+
+	// Post-join UX: quick connectivity hint if local cluster listener not reachable
+	// Try to connect to our own bind address quickly; if it fails, provide guidance
+	selfConn, selfErr := net.DialTimeout("tcp", fmt.Sprintf("%s:%s", bindIP, bindPort), 500*time.Millisecond)
+	if selfErr == nil {
+		_ = selfConn.Close()
+	} else {
+		log.Warnf("Local cluster listener not reachable at %s:%s. If status does not update, run: 'pulsectl network resync'", bindIP, bindPort)
+	}
+
 	fmt.Printf("Successfully joined cluster with node ID: %s\n", resp.NodeId)
 	return nil
 }
@@ -471,7 +532,17 @@ func (c *Client) LeaveCluster() error {
 	_, err = c.CLI().Leave(context.Background(), &rpc.LeaveRequest{
 		NodeId: localNodeID,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Best-effort resync: if the daemon is still running (e.g., leaving a remote member in the future),
+	// trigger immediate status/config refresh. If we just left ourselves, the daemon will be stopping.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, _ = c.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
+
+	return nil
 }
 
 // GetClusterStatus returns the current cluster status

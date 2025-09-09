@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 // PulseHA - HA Cluster Daemon
 // Copyright (C) 2017-2021  Andrew Zak <andrew@linux.com>
 //

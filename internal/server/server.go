@@ -161,80 +161,27 @@ func (s *Server) Start() error {
 		s.logger.Warn("Quorum handler is nil, quorum RPC methods will not be available")
 	}
 
-	// Start the health checker (may no-op if already running)
+	// Start the health checker
 	s.startHealthChecker()
 
-	// Only start IP monitor and ensure health checker when a cluster is configured
+	// Start the IP monitor
+	if err := s.ipMonitor.Start(); err != nil {
+		s.logger.Errorf("Failed to start IP monitor: %v", err)
+		// Continue anyway, as this is not critical
+	}
+
+	// Only start health checker if we have a configured cluster
 	if s.config.ClusterCheck() {
-		// Ensure health checker is running with current config
 		s.startHealthChecker()
-		// Start IP monitor now that cluster information is available
-		if err := s.ipMonitor.Start(); err != nil {
-			s.logger.Errorf("Failed to start IP monitor: %v", err)
-			// Continue anyway, as this is not critical
-		}
 	} else {
-		s.logger.Debug("No cluster configured; deferring IP monitor start until cluster creation")
-		// Start a configuration watcher to detect when we join a cluster and start the cluster RPC server
-		go s.watchForClusterJoin()
+		s.logger.Debug("No cluster configured; waiting for explicit resync after join")
 	}
 
 	return nil
 }
 
 // watchForClusterJoin periodically checks if this node has joined a cluster
-func (s *Server) watchForClusterJoin() {
-	s.logger.Debug("Starting cluster join watcher")
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Reload config from disk to see if we've been joined to a cluster
-			newConfig := config.New()
-			if newConfig.ClusterCheck() {
-				s.logger.Info("Detected cluster configuration, loading members and starting health checker")
-
-				// Update our config
-				s.config = newConfig
-
-				// Update the member list's config reference
-				s.memberList.UpdateConfig(newConfig)
-
-				// Reload members from the new configuration
-				if err := s.loadInitialMembers(); err != nil {
-					s.logger.Errorf("Failed to load members after joining cluster: %v", err)
-					continue
-				}
-
-				// Start the health checker
-				s.startHealthChecker()
-
-				// Start IP monitor now that cluster configuration is present
-				if s.ipMonitor != nil {
-					if err := s.ipMonitor.Start(); err != nil {
-						s.logger.Errorf("Failed to start IP monitor after joining cluster: %v", err)
-					}
-				}
-
-				// Start cluster RPC server if not already started
-				if s.grpcServer == nil {
-					localNode, err := s.config.GetLocalNodeForBinding()
-					if err == nil {
-						if err := s.startClusterListener(localNode); err != nil {
-							s.logger.Errorf("Failed to start cluster RPC server after join: %v", err)
-						}
-					}
-				}
-
-				// Stop watching once we've joined
-				s.logger.Info("Successfully activated health checker after joining cluster")
-				return
-			}
-		}
-	}
-}
+// watchForClusterJoin removed; activation occurs via explicit resync.
 
 // startClusterListener starts the gRPC server that handles inter-node RPC on the configured bind address
 func (s *Server) startClusterListener(localNode config.Node) error {
@@ -666,9 +613,6 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 			LastResponse:  health.LastResponse.String(),
 			Latency:       health.Latency,
 			PartialActive: health.PartialActive,
-			Ip:            member.IP,
-			Port:          member.Port,
-			NodeId:        member.ID,
 		})
 	}
 
@@ -780,7 +724,36 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 	// If this is the local node, we need to stop the server
 	if member.ID == localNodeID {
 		s.logger.Info("Leaving cluster as local node")
-		s.Stop() // Assuming Stop() method exists
+
+		// Broadcast removal of this node to all other peers before stopping
+		for id, node := range s.config.Nodes {
+			if id == localNodeID {
+				continue
+			}
+			remoteClient, err := client.New()
+			if err != nil {
+				s.logger.WithError(err).Warnf("Failed to create client for peer %s (%s:%s)", id, node.IP, node.Port)
+				continue
+			}
+			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+				remoteClient.Close()
+				s.logger.WithError(err).Warnf("Failed to connect to peer %s (%s:%s)", id, node.IP, node.Port)
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_, err = remoteClient.Server().Remove(ctx, &rpc.RemoveRequest{NodeId: localNodeID})
+			cancel()
+			remoteClient.Close()
+			if err != nil {
+				s.logger.WithError(err).Warnf("Failed to propagate removal to peer %s", id)
+			}
+		}
+
+		// Stop the server asynchronously to allow RPC response to complete
+		go func() {
+			time.Sleep(1 * time.Second)
+			s.Stop()
+		}()
 		return &rpc.LeaveResponse{
 			Success: true,
 			Message: "Successfully left the cluster",
@@ -943,6 +916,15 @@ func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.Remov
 
 	// Update our config to remove the node
 	delete(s.config.Nodes, member.ID)
+
+	// Persist the updated configuration
+	if err := s.config.Save(); err != nil {
+		s.logger.Errorf("Failed to save config after removing node: %v", err)
+		return &rpc.RemoveResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save config: %v", err),
+		}, nil
+	}
 
 	// Success
 	return &rpc.RemoveResponse{
@@ -1436,8 +1418,14 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		}, nil
 	}
 
-	// Find node by node_id (canonical)
-	node, nodeFound := s.config.Nodes[req.NodeId]
+	// Find node by node ID
+	var nodeFound bool
+	var node *config.Node
+	if n, ok := s.config.Nodes[req.NodeId]; ok {
+		nodeFound = true
+		node = n
+	}
+
 	if !nodeFound || node == nil {
 		return &rpc.AssignGroupResponse{
 			Success: false,
@@ -1455,7 +1443,7 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		if g == req.GroupName {
 			return &rpc.AssignGroupResponse{
 				Success: false,
-				Message: fmt.Sprintf("group %s is already assigned to interface %s on node_id %s", req.GroupName, req.Interface, req.NodeId),
+				Message: fmt.Sprintf("group %s is already assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId),
 			}, nil
 		}
 	}
@@ -1472,10 +1460,10 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		}, nil
 	}
 
-	s.logger.Infof("Successfully assigned group %s to interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId)
+	s.logger.Infof("Successfully assigned group %s to interface %s on node %s", req.GroupName, req.Interface, req.NodeId)
 	return &rpc.AssignGroupResponse{
 		Success: true,
-		Message: fmt.Sprintf("successfully assigned group %s to interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId),
+		Message: fmt.Sprintf("successfully assigned group %s to interface %s on node %s", req.GroupName, req.Interface, req.NodeId),
 	}, nil
 }
 
@@ -1504,7 +1492,7 @@ type DeleteGroupResponse struct {
 
 // UnassignGroupFromNode implements the CLI.UnassignGroupFromNode RPC method
 func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGroupRequest) (*rpc.UnassignGroupResponse, error) {
-	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node_id: %s, interface: %s", req.GroupName, req.NodeId, req.Interface)
+	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node: %s, interface: %s", req.GroupName, req.Hostname, req.Interface)
 	s.Lock()
 	defer s.Unlock()
 
@@ -1516,12 +1504,29 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 		}, nil
 	}
 
-	// Resolve node by node_id only (canonical)
-	node, nodeFound := s.config.Nodes[req.NodeId]
+	// Resolve node: treat Hostname field as either node ID or hostname
+	var (
+		node      *config.Node
+		nodeFound bool
+		nodeRef   = req.Hostname
+	)
+	if n, ok := s.config.Nodes[nodeRef]; ok {
+		node = n
+		nodeFound = true
+	} else {
+		for _, n := range s.config.Nodes {
+			if n.Hostname == nodeRef {
+				node = n
+				nodeFound = true
+				break
+			}
+		}
+	}
+
 	if !nodeFound || node == nil {
 		return &rpc.UnassignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("node_id %s not found", req.NodeId),
+			Message: fmt.Sprintf("node %s not found", nodeRef),
 		}, nil
 	}
 
@@ -1529,7 +1534,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	if node.IPGroups == nil {
 		return &rpc.UnassignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("group %s is not assigned to interface %s on node_id %s", req.GroupName, req.Interface, req.NodeId),
+			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, nodeRef),
 		}, nil
 	}
 
@@ -1546,7 +1551,7 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	if groupIndex == -1 {
 		return &rpc.UnassignGroupResponse{
 			Success: false,
-			Message: fmt.Sprintf("group %s is not assigned to interface %s on node_id %s", req.GroupName, req.Interface, req.NodeId),
+			Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, nodeRef),
 		}, nil
 	}
 
@@ -1567,10 +1572,10 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 		}, nil
 	}
 
-	s.logger.Infof("Successfully unassigned group %s from interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId)
+	s.logger.Infof("Successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, nodeRef)
 	return &rpc.UnassignGroupResponse{
 		Success: true,
-		Message: fmt.Sprintf("successfully unassigned group %s from interface %s on node %s (%s)", req.GroupName, req.Interface, node.Hostname, req.NodeId),
+		Message: fmt.Sprintf("successfully unassigned group %s from interface %s on node %s", req.GroupName, req.Interface, nodeRef),
 	}, nil
 }
 
@@ -1694,9 +1699,8 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 				for _, g := range assignedGroups {
 					if g == groupName {
 						group.Assignments = append(group.Assignments, &rpc.GroupAssignment{
-							Hostname:  node.Hostname,
+							Hostname:  id, // temporarily set into Hostname field until proto updated
 							Interface: iface,
-							NodeId:    id,
 						})
 					}
 				}
@@ -1715,213 +1719,239 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 }
 
 // CreateCluster implements the CLI.CreateCluster RPC method
-
-// CreateCluster implements the CLI.CreateCluster RPC method
 func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterRequest) (*rpc.CreateClusterResponse, error) {
-    s.logger.Infof("Received CreateCluster request with bindIP: %s, bindPort: %s, mode: %s", req.BindIp, req.BindPort, req.Mode)
-    s.Lock()
+	s.logger.Infof("Received CreateCluster request with bindIP: %s, bindPort: %s, mode: %s", req.BindIp, req.BindPort, req.Mode)
+	s.Lock()
+	defer s.Unlock()
 
-    // Check if cluster is already configured
-    if s.config.ClusterCheck() {
-        s.Unlock()
-        return &rpc.CreateClusterResponse{
-            Success: false,
-            Message: "cluster is already configured",
-        }, nil
-    }
+	// Check if cluster is already configured
+	if s.config.ClusterCheck() {
+		return &rpc.CreateClusterResponse{
+			Success: false,
+			Message: "cluster is already configured",
+		}, nil
+	}
 
-    // Set up initial node
-    bindPort := req.BindPort
-    if bindPort == "" {
-        bindPort = "8080"
-    }
+	// Set up initial node
+	bindPort := req.BindPort
+	if bindPort == "" {
+		bindPort = "8080"
+	}
 
-    // Get hostname for certificates
-    hostname, err := os.Hostname()
-    if err != nil {
-        s.logger.Errorf("Failed to get hostname: %v", err)
-        s.Unlock()
-        return &rpc.CreateClusterResponse{
-            Success: false,
-            Message: fmt.Sprintf("failed to get hostname: %v", err),
-        }, nil
-    }
+	// Get hostname for certificates
+	hostname, err := os.Hostname()
+	if err != nil {
+		s.logger.Errorf("Failed to get hostname: %v", err)
+		return &rpc.CreateClusterResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to get hostname: %v", err),
+		}, nil
+	}
 
-    // Generate certificates for mTLS (best-effort)
-    if err := security.GenerateCertificates(hostname); err != nil {
-        s.logger.Warnf("Failed to generate certificates: %v", err)
-    }
+	// Generate certificates for mTLS
+	if err := security.GenerateCertificates(hostname); err != nil {
+		s.logger.Warnf("Failed to generate certificates: %v", err)
+		// Continue without TLS for now
+	}
 
-    // Generate a unique node ID
-    nodeID := req.NodeId
-    if nodeID == "" {
-        nodeID = s.config.GenerateNodeID()
-        s.logger.Infof("Generated node ID: %s", nodeID)
-    } else {
-        s.logger.Infof("Using provided node ID: %s", nodeID)
-    }
+	// Generate a unique node ID
+	nodeID := req.NodeId
+	if nodeID == "" {
+		nodeID = s.config.GenerateNodeID()
+		s.logger.Infof("Generated node ID: %s", nodeID)
+	} else {
+		s.logger.Infof("Using provided node ID: %s", nodeID)
+	}
 
-    // Generate a cluster token for other nodes to join
-    clusterToken := uuid.New().String()
-    s.config.Pulse.ClusterToken = clusterToken
+	// Generate a cluster token for other nodes to join
+	clusterToken := uuid.New().String()
+	s.config.Pulse.ClusterToken = clusterToken
+	s.logger.Infof("Generated cluster token: %s", clusterToken)
 
-    // Add the node to config using generated ID
-    s.config.Nodes[nodeID] = &config.Node{
-        Hostname: hostname,
-        IP:       req.BindIp,
-        Port:     bindPort,
-        IPGroups: make(map[string][]string),
-    }
+	// Add the node to config using generated ID
+	s.config.Nodes[nodeID] = &config.Node{
+		Hostname: hostname,
+		IP:       req.BindIp,
+		Port:     bindPort,
+		IPGroups: make(map[string][]string),
+	}
 
-    // Set local node to the generated ID
-    s.config.Pulse.LocalNode = nodeID
+	// Set local node to the generated ID
+	s.config.Pulse.LocalNode = nodeID
 
-    // Set the cluster mode
-    s.config.Pulse.Mode = req.Mode
+	// Set the cluster mode
+	s.config.Pulse.Mode = req.Mode
 
-    // Create default IP groups for each network interface
-    interfaces, err := net.Interfaces()
-    if err != nil {
-        s.logger.Warnf("Failed to get network interfaces: %v", err)
-    } else {
-        for _, iface := range interfaces {
-            // Skip loopback, down interfaces, and interfaces without addresses
-            if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-                continue
-            }
+	// Create default IP groups for each network interface
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		s.logger.Warnf("Failed to get network interfaces: %v", err)
+	} else {
+		for _, iface := range interfaces {
+			// Skip loopback, down interfaces, and interfaces without addresses
+			if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+				continue
+			}
 
-            addrs, err := iface.Addrs()
-            if err != nil {
-                s.logger.Warnf("Failed to get addresses for interface %s: %v", iface.Name, err)
-                continue
-            }
+			addrs, err := iface.Addrs()
+			if err != nil {
+				s.logger.Warnf("Failed to get addresses for interface %s: %v", iface.Name, err)
+				continue
+			}
 
-            if len(addrs) == 0 {
-                continue
-            }
+			if len(addrs) == 0 {
+				continue
+			}
 
-            // Create a group for this interface
-            groupName := fmt.Sprintf("default-%s", iface.Name)
+			// Create a group for this interface
+			groupName := fmt.Sprintf("default-%s", iface.Name)
 
-            // Initialize the group if it doesn't exist
-            if _, exists := s.config.Groups[groupName]; !exists {
-                s.config.Groups[groupName] = []string{}
-                // Assign this group to the node's interface
-                if s.config.Nodes[nodeID].IPGroups == nil {
-                    s.config.Nodes[nodeID].IPGroups = make(map[string][]string)
-                }
-                s.config.Nodes[nodeID].IPGroups[iface.Name] = append(s.config.Nodes[nodeID].IPGroups[iface.Name], groupName)
-            }
-        }
-    }
+			// Initialize the group if it doesn't exist
+			if _, exists := s.config.Groups[groupName]; !exists {
+				s.config.Groups[groupName] = []string{}
+				s.logger.Infof("Created default IP group for interface %s", iface.Name)
 
-    // Save config
-    if err := s.config.Save(); err != nil {
-        s.logger.Errorf("Failed to save config: %v", err)
-        s.Unlock()
-        return &rpc.CreateClusterResponse{
-            Success: false,
-            Message: fmt.Sprintf("failed to save config: %v", err),
-        }, nil
-    }
+				// Assign this group to the node's interface
+				if s.config.Nodes[nodeID].IPGroups == nil {
+					s.config.Nodes[nodeID].IPGroups = make(map[string][]string)
+				}
+				s.config.Nodes[nodeID].IPGroups[iface.Name] = append(s.config.Nodes[nodeID].IPGroups[iface.Name], groupName)
+				s.logger.Infof("Assigned default IP group %s to interface %s on node %s", groupName, iface.Name, hostname)
+			}
+		}
+	}
 
-    // Add the first member to the member list
-    if err := s.memberList.AddMember(nodeID, hostname, req.BindIp, bindPort); err != nil {
-        s.logger.Errorf("Failed to add first node to member list: %v", err)
-        s.Unlock()
-        return &rpc.CreateClusterResponse{
-            Success: false,
-            Message: fmt.Sprintf("failed to add first node to member list: %v", err),
-        }, nil
-    }
+	// Save config
+	if err := s.config.Save(); err != nil {
+		s.logger.Errorf("Failed to save config: %v", err)
+		return &rpc.CreateClusterResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save config: %v", err),
+		}, nil
+	}
 
-    // Make it active
-    if member := s.memberList.GetMemberByID(nodeID); member != nil {
-        member.Status = membership.StatusActive
-    }
+	// Add the first member to the member list
+	if err := s.memberList.AddMember(nodeID, hostname, req.BindIp, bindPort); err != nil {
+		s.logger.Errorf("Failed to add first node to member list: %v", err)
+		return &rpc.CreateClusterResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to add first node to member list: %v", err),
+		}, nil
+	}
 
-    // Start the health checker
-    s.startHealthChecker()
+	// Make it active
+	member := s.memberList.GetMemberByID(nodeID)
+	if member != nil {
+		member.Status = membership.StatusActive
+		s.logger.Info("First node activated successfully")
+	}
 
-    s.logger.Info("Cluster created successfully")
-    
-    // Prepare response before releasing lock
-    response := &rpc.CreateClusterResponse{
-        Success: true,
-        Message: "cluster created successfully",
-        Token:   clusterToken,
-        NodeId:  nodeID,
-    }
-    
-    // Release lock before reconfiguration to avoid deadlock
-    s.Unlock()
-    
-    // Reconfigure after releasing lock to avoid deadlock
-    if err := s.Reconfigure(); err != nil {
-        s.logger.Errorf("Failed to reconfigure server: %v", err)
-    }
-    
-    return response, nil
+	// Reconfigure the server to apply changes
+	if err := s.Reconfigure(); err != nil {
+		s.logger.Errorf("Failed to reconfigure server: %v", err)
+		return &rpc.CreateClusterResponse{
+			Success: false,
+			Message: fmt.Sprintf("cluster created but failed to reconfigure server: %v", err),
+		}, nil
+	}
+
+	// After successfully creating the cluster, start the health checker
+	s.startHealthChecker()
+
+	s.logger.Info("Cluster created successfully")
+	return &rpc.CreateClusterResponse{
+		Success: true,
+		Message: "cluster created successfully",
+		Token:   clusterToken,
+		NodeId:  nodeID,
+	}, nil
 }
 
 // Token implements the CLI.Token RPC method
 func (s *Server) Token(ctx context.Context, req *rpc.TokenRequest) (*rpc.TokenResponse, error) {
-    s.logger.Infof("Received Token request with regenerate: %t", req.Regenerate)
-    s.Lock()
-    defer s.Unlock()
+	s.logger.Infof("Received Token request with regenerate: %t", req.Regenerate)
+	s.Lock()
+	defer s.Unlock()
 
-    // Check if cluster is configured
-    if !s.config.ClusterCheck() {
-        return &rpc.TokenResponse{
-            Success: false,
-            Message: "no cluster configured",
-        }, nil
-    }
+	// Check if cluster is configured
+	if !s.config.ClusterCheck() {
+		return &rpc.TokenResponse{
+			Success: false,
+			Message: "no cluster configured",
+		}, nil
+	}
 
-    currentToken := s.config.Pulse.ClusterToken
+	currentToken := s.config.Pulse.ClusterToken
 
-    // If regenerate is false, just return the current token
-    if !req.Regenerate {
-        if currentToken == "" {
-            return &rpc.TokenResponse{
-                Success: false,
-                Message: "no cluster token available",
-            }, nil
-        }
-        return &rpc.TokenResponse{
-            Success: true,
-            Message: "current cluster token",
-            Token:   currentToken,
-        }, nil
-    }
+	// If regenerate is false, just return the current token
+	if !req.Regenerate {
+		if currentToken == "" {
+			return &rpc.TokenResponse{
+				Success: false,
+				Message: "no cluster token available",
+			}, nil
+		}
+		return &rpc.TokenResponse{
+			Success: true,
+			Message: "current cluster token",
+			Token:   currentToken,
+		}, nil
+	}
 
-    // Generate new token
-    newToken := uuid.New().String()
-    if newToken == "" {
-        return &rpc.TokenResponse{
-            Success: false,
-            Message: "failed to generate new token",
-        }, nil
-    }
+	// Generate new token
+	newToken := uuid.New().String()
+	if newToken == "" {
+		return &rpc.TokenResponse{
+			Success: false,
+			Message: "failed to generate new token",
+		}, nil
+	}
 
-    // Update the config
-    s.config.Pulse.ClusterToken = newToken
+	// Update the config
+	s.config.Pulse.ClusterToken = newToken
 
-    // Save the configuration
-    if err := s.config.Save(); err != nil {
-        s.logger.Errorf("Failed to save configuration with new token: %v", err)
-        return &rpc.TokenResponse{
-            Success: false,
-            Message: fmt.Sprintf("failed to save new token: %v", err),
-        }, nil
-    }
+	// TODO: Implement cluster-wide config synchronization
+	// For now, the token will be updated on this node only
+	// Future enhancement: sync with all cluster members
 
-    s.logger.Infof("Successfully generated new cluster token")
-    return &rpc.TokenResponse{
-        Success: true,
-        Message: "new cluster token generated",
-        Token:   newToken,
-    }, nil
+	// Save the configuration
+	if err := s.config.Save(); err != nil {
+		s.logger.Errorf("Failed to save configuration with new token: %v", err)
+		return &rpc.TokenResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save new token: %v", err),
+		}, nil
+	}
+
+	// Best-effort: broadcast updated token via ConfigSync to all peers
+	configBytes, err := json.Marshal(s.config)
+	if err == nil {
+		localID, _ := s.config.GetLocalNodeUUID()
+		for id, node := range s.config.Nodes {
+			if id == localID {
+				continue
+			}
+			remoteClient, err := client.New()
+			if err != nil {
+				continue
+			}
+			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+				remoteClient.Close()
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
+			cancel()
+			remoteClient.Close()
+		}
+	}
+
+	s.logger.Infof("Successfully generated new cluster token")
+	return &rpc.TokenResponse{
+		Success: true,
+		Message: "new cluster token generated",
+		Token:   newToken,
+	}, nil
 }
 
 // Quorum-related RPC method implementations that delegate to the quorum handler
@@ -2108,11 +2138,153 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 		_ = s.config.Save()
 	}
 
-	// Refresh IP monitor expected IPs
-	if s.ipMonitor != nil {
-		if err := s.ipMonitor.InitializeExpectedIPs(); err != nil {
-			s.logger.Warnf("Resync initialized with warnings: %v", err)
+	// Force immediate activation if cluster configuration exists
+	if err := s.config.Reload(); err != nil {
+		return &rpc.ResyncNetworkResponse{Success: false, Message: fmt.Sprintf("failed to reload config: %v", err)}, nil
+	}
+
+	if s.config.ClusterCheck() {
+		// Sync member list with latest config and reload members
+		s.memberList.UpdateConfig(s.config)
+		if err := s.loadInitialMembers(); err != nil {
+			s.logger.Errorf("Failed to load members during resync: %v", err)
+			return &rpc.ResyncNetworkResponse{Success: false, Message: fmt.Sprintf("failed to load members: %v", err)}, nil
 		}
+
+		// Ensure cluster listener is bound and health checker running
+		if err := s.Reconfigure(); err != nil {
+			s.logger.Errorf("Failed to reconfigure server during resync: %v", err)
+			return &rpc.ResyncNetworkResponse{Success: false, Message: fmt.Sprintf("failed to reconfigure server: %v", err)}, nil
+		}
+
+		s.startHealthChecker()
+
+		// Membership reconciliation with quorum (clusters >=3)
+		clusterSize := len(s.config.Nodes)
+		if clusterSize >= 3 {
+			// Build presence counts for each known node based on peer snapshots
+			presenceCount := make(map[string]int)
+			for id := range s.config.Nodes {
+				presenceCount[id] = 0
+			}
+
+			// Query each peer for its status snapshot
+			for id, node := range s.config.Nodes {
+				// Skip local node
+				localID, _ := s.config.GetLocalNodeUUID()
+				if id == localID {
+					continue
+				}
+				remoteClient, err := client.New()
+				if err != nil {
+					s.logger.WithError(err).Warnf("Resync: failed to create client for peer %s (%s:%s)", id, node.IP, node.Port)
+					continue
+				}
+				if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+					remoteClient.Close()
+					s.logger.WithError(err).Warnf("Resync: failed to connect to peer %s (%s:%s)", id, node.IP, node.Port)
+					continue
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				resp, err := remoteClient.CLI().Status(ctx, &rpc.StatusRequest{})
+				cancel()
+				remoteClient.Close()
+				if err != nil || resp == nil {
+					s.logger.WithError(err).Warnf("Resync: failed to get status from peer %s", id)
+					continue
+				}
+
+				// Mark nodes present in this peer's view by hostname
+				for knownID, knownNode := range s.config.Nodes {
+					for _, m := range resp.Members {
+						if m.Hostname == knownNode.Hostname {
+							presenceCount[knownID]++
+							break
+						}
+					}
+				}
+			}
+
+			// Determine majority threshold
+			majority := (clusterSize / 2) + 1
+
+			// For any node missing from majority and currently Unknown locally, propose removal vote
+			for id := range s.config.Nodes {
+				// Skip local node
+				localID, _ := s.config.GetLocalNodeUUID()
+				if id == localID {
+					continue
+				}
+				member := s.memberList.GetMemberByID(id)
+				if member == nil {
+					continue
+				}
+				if presenceCount[id] < majority && member.Status == membership.StatusUnknown {
+					// Start a quorum vote to remove this member
+					if s.quorumManager == nil || !s.config.Pulse.QuorumEnabled {
+						s.logger.Infof("Resync: member %s missing from majority but quorum disabled; skipping automatic removal", id)
+						continue
+					}
+					subject := id
+					description := fmt.Sprintf("Remove node %s due to absence from majority and unknown status", id)
+					sessionID, err := s.quorumManager.StartVotingSession(quorum.VoteTypeConfigChange, subject, description, 30*time.Second)
+					if err != nil {
+						s.logger.WithError(err).Warnf("Resync: failed to start removal vote for %s", id)
+						continue
+					}
+
+					// Poll for result (short window)
+					passed := false
+					for i := 0; i < 30; i++ {
+						time.Sleep(1 * time.Second)
+						session, err := s.quorumManager.GetVotingSession(sessionID)
+						if err != nil {
+							s.logger.WithError(err).Warnf("Resync: failed to get voting session %s", sessionID)
+							break
+						}
+						if session != nil && session.Result != nil {
+							passed = session.Result.Passed && session.Result.QuorumMet
+							break
+						}
+					}
+
+					if passed {
+						// Apply removal locally
+						_ = s.memberList.RemoveMember(id)
+						delete(s.config.Nodes, id)
+						_ = s.config.Save()
+
+						// Broadcast updated config to peers (best-effort)
+						configBytes, err := json.Marshal(s.config)
+						if err == nil {
+							for peerID, node := range s.config.Nodes {
+								if peerID == localID {
+									continue
+								}
+								remoteClient, err := client.New()
+								if err != nil {
+									continue
+								}
+								if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+									remoteClient.Close()
+									continue
+								}
+								ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+								_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
+								cancel()
+								remoteClient.Close()
+							}
+						}
+					}
+				}
+			}
+
+			return &rpc.ResyncNetworkResponse{Success: true, Message: "network resynced and cluster activated"}, nil
+		}
+
+		// For clusters <3 nodes, only log; manual cleanup required
+		s.logger.Info("Resync: cluster size <3; membership reconciliation requires manual removal. No automatic changes applied.")
+		return &rpc.ResyncNetworkResponse{Success: true, Message: "network resynced and activated (manual membership management)"}, nil
 	}
 
 	return &rpc.ResyncNetworkResponse{Success: true, Message: "network resynced"}, nil
