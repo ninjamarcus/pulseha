@@ -506,6 +506,12 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 	// The current client may be connected to the remote join target; create a fresh local client
 	if localClient, newErr := New(); newErr == nil {
 		defer localClient.Close()
+		// Best-effort: push full config directly to the local daemon to avoid any path mismatch
+		if cfgBytes, mErr := json.Marshal(cfg); mErr == nil {
+			ctxCfg, cancelCfg := context.WithTimeout(context.Background(), 3*time.Second)
+			_, _ = localClient.Server().ConfigSync(ctxCfg, &rpc.ConfigSyncRequest{Config: cfgBytes})
+			cancelCfg()
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, _ = localClient.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
