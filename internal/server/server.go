@@ -92,6 +92,8 @@ func (s *Server) Start() error {
 	// Start CLI server on localhost unconditionally
 	s.logger.Debug("Starting CLI gRPC server on 127.0.0.1:8080...")
 	s.cliServer = grpc.NewServer()
+	// Register both CLI and Server services on the local listener so local operations (e.g., ConfigSync) work pre-cluster
+	rpc.RegisterServerServer(s.cliServer, s)
 	rpc.RegisterCLIServer(s.cliServer, s)
 	cliListener, err := net.Listen("tcp", "127.0.0.1:8080")
 	if err != nil {
