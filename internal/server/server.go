@@ -2041,7 +2041,14 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 	s.Lock()
 	defer s.Unlock()
 
-	// Update our configuration
+	// Persist and update our configuration
+	if err := newConfig.Save(); err != nil {
+		s.logger.Error("Failed to save synchronized configuration", "error", err)
+		return &rpc.ConfigSyncResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save synchronized configuration: %v", err),
+		}, nil
+	}
 	s.config = newConfig
 
 	// Reconfigure the server with the new configuration
