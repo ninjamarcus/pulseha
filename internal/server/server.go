@@ -1706,7 +1706,6 @@ func (s *Server) ListGroups(ctx context.Context, req *rpc.ListGroupsRequest) (*r
 func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterRequest) (*rpc.CreateClusterResponse, error) {
 	s.logger.Infof("Received CreateCluster request with bindIP: %s, bindPort: %s, mode: %s", req.BindIp, req.BindPort, req.Mode)
 
-
 	// Check if cluster is already configured
 	if s.config.ClusterCheck() {
 		return &rpc.CreateClusterResponse{
@@ -2106,8 +2105,8 @@ func (s *Server) UpdateConfig(ctx context.Context, req *rpc.UpdateConfigRequest)
 
 // ResyncNetwork implements CLI.ResyncNetwork RPC
 func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkRequest) (*rpc.ResyncNetworkResponse, error) {
-	s.Lock()
-	defer s.Unlock()
+	// Avoid holding the server lock while calling Reconfigure to prevent deadlocks,
+	// since Reconfigure acquires the same lock internally.
 
 	// Optionally create default groups for new interfaces
 	if req.GetCreateDefaultGroups() {
@@ -2158,6 +2157,20 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 		}
 
 		s.startHealthChecker()
+
+		// Wait briefly for the cluster listener to become ready after resync
+		if localNode, err := s.config.GetLocalNode(); err == nil {
+			address := fmt.Sprintf("%s:%s", localNode.IP, localNode.Port)
+			readyDeadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(readyDeadline) {
+				conn, err := net.DialTimeout("tcp", address, 300*time.Millisecond)
+				if err == nil {
+					_ = conn.Close()
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
 
 		// Membership reconciliation with quorum (clusters >=3)
 		clusterSize := len(s.config.Nodes)
