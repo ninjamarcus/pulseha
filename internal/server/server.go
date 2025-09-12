@@ -816,6 +816,10 @@ func (s *Server) Join(ctx context.Context, req *rpc.JoinRequest) (*rpc.JoinRespo
 func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveResponse, error) {
 	s.logger.Info("Received CLI Leave request", "node_id", req.NodeId)
 
+	if !s.config.ClusterCheck() {
+		return &rpc.LeaveResponse{Success: false, Message: "no cluster configured; nothing to leave"}, nil
+	}
+
 	// If no node_id provided, default to local node
 	if req.NodeId == "" {
 		if id, err := s.config.GetLocalNodeUUID(); err == nil {
@@ -904,6 +908,10 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 // Promote handles the CLI Promote RPC call
 func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error) {
 	s.logger.Infof("Received promote request for node ID: %s", req.NodeId)
+
+	if !s.config.ClusterCheck() {
+		return &rpc.PromoteResponse{Success: false, Message: "no cluster configured"}, nil
+	}
 
 	if req.NodeId == "" {
 		return &rpc.PromoteResponse{
@@ -1308,6 +1316,10 @@ func (s *Server) CreateGroup(ctx context.Context, req *rpc.CreateGroupRequest) (
 	s.Lock()
 	defer s.Unlock()
 
+	if !s.config.ClusterCheck() {
+		return &rpc.CreateGroupResponse{Success: false, Message: "no cluster configured"}, nil
+	}
+
 	// Check if group already exists
 	if _, exists := s.config.Groups[req.Name]; exists {
 		return &rpc.CreateGroupResponse{
@@ -1345,6 +1357,10 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 	s.logger.Infof("Received AddIPToGroup request for group: %s, IP: %s", req.GroupName, req.Ip)
 	s.Lock()
 	defer s.Unlock()
+
+	if !s.config.ClusterCheck() {
+		return &rpc.AddIPToGroupResponse{Success: false, Message: "no cluster configured"}, nil
+	}
 
 	// Check if group exists
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
@@ -1505,6 +1521,10 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 	s.Lock()
 	defer s.Unlock()
 
+	if !s.config.ClusterCheck() {
+		return &rpc.RemoveIPFromGroupResponse{Success: false, Message: "no cluster configured"}, nil
+	}
+
 	// Check if group exists
 	group, exists := s.config.Groups[req.GroupName]
 	if !exists {
@@ -1652,16 +1672,17 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 
 // AssignGroupToNode implements the CLI.AssignGroupToNode RPC method
 func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequest) (*rpc.AssignGroupResponse, error) {
-	s.logger.Infof("Received AssignGroupToNode request for group: %s, node_id: %s, interface: %s", req.GroupName, req.NodeId, req.Interface)
+	s.logger.Infof("Received AssignGroupToNode request for group: %s", req.GroupName)
 	s.Lock()
 	defer s.Unlock()
 
-	// Check if group exists
+	if !s.config.ClusterCheck() {
+		return &rpc.AssignGroupResponse{Success: false, Message: "no cluster configured"}, nil
+	}
+
+	// Validate group
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
-		return &rpc.AssignGroupResponse{
-			Success: false,
-			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
-		}, nil
+		return &rpc.AssignGroupResponse{Success: false, Message: fmt.Sprintf("group %s does not exist", req.GroupName)}, nil
 	}
 
 	// Find node by node ID
@@ -1758,16 +1779,17 @@ type DeleteGroupResponse struct {
 
 // UnassignGroupFromNode implements the CLI.UnassignGroupFromNode RPC method
 func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGroupRequest) (*rpc.UnassignGroupResponse, error) {
-	s.logger.Infof("Received UnassignGroupFromNode request for group: %s, node_id: %s, interface: %s", req.GroupName, req.NodeId, req.Interface)
+	s.logger.Infof("Received UnassignGroupFromNode request for group: %s", req.GroupName)
 	s.Lock()
 	defer s.Unlock()
 
-	// Check if group exists
+	if !s.config.ClusterCheck() {
+		return &rpc.UnassignGroupResponse{Success: false, Message: "no cluster configured"}, nil
+	}
+
+	// Validate group
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
-		return &rpc.UnassignGroupResponse{
-			Success: false,
-			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
-		}, nil
+		return &rpc.UnassignGroupResponse{Success: false, Message: fmt.Sprintf("group %s does not exist", req.GroupName)}, nil
 	}
 
 	// Enforce node_id-only lookup
@@ -1844,18 +1866,17 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 
 // DeleteGroup implements the CLI.DeleteGroup RPC method
 func (s *Server) DeleteGroup(ctx context.Context, req *rpc.DeleteGroupRequest) (*rpc.DeleteGroupResponse, error) {
-	s.logger.Infof("Received DeleteGroup request for group: %s, force: %v", req.GroupName, req.Force)
+	s.logger.Infof("Received DeleteGroup request for group: %s", req.GroupName)
 	s.Lock()
 	defer s.Unlock()
 
-	var warnings []string
+	if !s.config.ClusterCheck() {
+		return &rpc.DeleteGroupResponse{Success: false, Message: "no cluster configured"}, nil
+	}
 
-	// Check if group exists
+	// Validate group exists
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
-		return &rpc.DeleteGroupResponse{
-			Success: false,
-			Message: fmt.Sprintf("group %s does not exist", req.GroupName),
-		}, nil
+		return &rpc.DeleteGroupResponse{Success: false, Message: fmt.Sprintf("group %s does not exist", req.GroupName)}, nil
 	}
 
 	// Check if group is assigned to any nodes (unless force is true)
@@ -1878,6 +1899,7 @@ func (s *Server) DeleteGroup(ctx context.Context, req *rpc.DeleteGroupRequest) (
 	}
 
 	// If force is true and group is assigned, remove assignments and add warnings
+	var warnings []string
 	if len(assignedNodes) > 0 && req.Force {
 		for _, node := range s.config.Nodes {
 			for iface := range node.IPGroups {

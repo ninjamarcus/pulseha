@@ -101,7 +101,7 @@ func newClusterLeaveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
+			defer client.Close()
 			return client.LeaveCluster()
 		},
 	}

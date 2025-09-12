@@ -42,10 +42,6 @@ func newGroupCreateCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
-			}
-
 			if err := client.CreateGroup(name); err != nil {
 				fmt.Printf("Failed to create group: %v\n", err)
 				os.Exit(1)
@@ -73,10 +69,6 @@ func newGroupAddIPCmd() *cobra.Command {
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
 				os.Exit(1)
-			}
-
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
 			}
 
 			if err := client.AddIPToGroup(group, ip); err != nil {
@@ -110,10 +102,6 @@ func newGroupRemoveIPCmd() *cobra.Command {
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
 				os.Exit(1)
-			}
-
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
 			}
 
 			if err := client.RemoveIPFromGroup(group, ip); err != nil {
@@ -150,10 +138,6 @@ func newGroupAssignCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
-			}
-
 			if err := client.AssignGroupToNode(group, nodeID, iface); err != nil {
 				fmt.Printf("Failed to assign group to node: %v\n", err)
 				os.Exit(1)
@@ -184,10 +168,6 @@ func newGroupListCmd() *cobra.Command {
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
 				os.Exit(1)
-			}
-
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
 			}
 
 			jsonData, groups, err := client.ListGroups(jsonOutput)
@@ -261,10 +241,6 @@ func newGroupUnassignCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
-			}
-
 			if err := client.UnassignGroupFromNode(group, nodeID, iface); err != nil {
 				fmt.Printf("Failed to unassign group from node: %v\n", err)
 				os.Exit(1)
@@ -298,10 +274,6 @@ func newGroupDeleteCmd() *cobra.Command {
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
 				os.Exit(1)
-			}
-
-			if !client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; create or join a cluster first")
 			}
 
 			if err := client.DeleteGroup(name, force); err != nil {
