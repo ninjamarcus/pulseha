@@ -2317,33 +2317,13 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		}, nil
 	}
 
-	// Create a new config instance to hold incoming cluster-wide configuration
-	newConfig := &config.Config{}
-
-	// Unmarshal the received configuration
-	if err := json.Unmarshal(req.Config, newConfig); err != nil {
-		s.logger.Error("Failed to unmarshal configuration", "error", err)
-		return &rpc.ConfigSyncResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to unmarshal configuration: %v", err),
-		}, nil
-	}
-
-	// Preserve the local node identity from our existing configuration to avoid adopting remote LocalNode
-	prevLocalID := s.config.Pulse.LocalNode
-	if prevLocalID != "" && newConfig.Pulse.LocalNode != prevLocalID {
-		s.logger.Debugf("ConfigSync: preserving local node identity: %s (incoming had %s)", prevLocalID, newConfig.Pulse.LocalNode)
-		newConfig.Pulse.LocalNode = prevLocalID
-		// Ensure the node entry exists in incoming config
-		if newConfig.Nodes == nil {
-			newConfig.Nodes = map[string]*config.Node{}
-		}
-		if _, ok := newConfig.Nodes[prevLocalID]; !ok {
-			if existing := s.config.Nodes[prevLocalID]; existing != nil {
-				// Shallow copy to avoid aliasing
-				copied := *existing
-				newConfig.Nodes[prevLocalID] = &copied
-			}
+	// Detect whether the incoming payload contains a full config (has "pulseha" root) or is an envelope
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(req.Config, &raw)
+	isFullConfig := false
+	if raw != nil {
+		if _, ok := raw["pulseha"]; ok {
+			isFullConfig = true
 		}
 	}
 
@@ -2375,29 +2355,96 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		}
 	}
 
-	s.Lock()
-	defer s.Unlock()
+	if isFullConfig {
+		// Create a new config instance to hold incoming cluster-wide configuration
+		newConfig := &config.Config{}
 
-	// Persist and update our configuration
-	if err := newConfig.Save(); err != nil {
-		s.logger.Error("Failed to save synchronized configuration", "error", err)
-		return &rpc.ConfigSyncResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to save synchronized configuration: %v", err),
-		}, nil
-	}
-	s.config = newConfig
+		// Unmarshal the received configuration
+		if err := json.Unmarshal(req.Config, newConfig); err != nil {
+			s.logger.Error("Failed to unmarshal configuration", "error", err)
+			return &rpc.ConfigSyncResponse{
+				Success: false,
+				Message: fmt.Sprintf("failed to unmarshal configuration: %v", err),
+			}, nil
+		}
 
-	// Update convergence metadata if newer
-	if incomingEpoch > s.clusterEpoch {
-		s.clusterEpoch = incomingEpoch
-		s.leaderID = incomingLeaderID
-	}
+		// Preserve the local node identity from our existing configuration to avoid adopting remote LocalNode
+		prevLocalID := s.config.Pulse.LocalNode
+		if prevLocalID != "" && newConfig.Pulse.LocalNode != prevLocalID {
+			s.logger.Debugf("ConfigSync: preserving local node identity: %s (incoming had %s)", prevLocalID, newConfig.Pulse.LocalNode)
+			newConfig.Pulse.LocalNode = prevLocalID
+			// Ensure the node entry exists in incoming config
+			if newConfig.Nodes == nil {
+				newConfig.Nodes = map[string]*config.Node{}
+			}
+			if _, ok := newConfig.Nodes[prevLocalID]; !ok {
+				if existing := s.config.Nodes[prevLocalID]; existing != nil {
+					// Shallow copy to avoid aliasing
+					copied := *existing
+					newConfig.Nodes[prevLocalID] = &copied
+				}
+			}
+		}
 
-	// Immediately refresh member list from new configuration so peers become visible
-	s.memberList.UpdateConfig(s.config)
-	if err := s.loadInitialMembers(); err != nil {
-		s.logger.Warn("ConfigSync: failed to load members after sync", "error", err)
+		// Preserve local-specific settings before applying cluster config
+		// These should not be overwritten by a remote ConfigSync
+		localIDPreserve := s.config.Pulse.LocalNode
+		loggingLevelPreserve := s.config.Pulse.LoggingLevel
+		logToFilePreserve := s.config.Pulse.LogToFile
+		logFileLocationPreserve := s.config.Pulse.LogFileLocation
+		logToSyslogPreserve := s.config.Pulse.LogToSyslog
+		syslogNetworkPreserve := s.config.Pulse.SyslogNetwork
+		syslogAddressPreserve := s.config.Pulse.SyslogAddress
+		syslogFacilityPreserve := s.config.Pulse.SyslogFacility
+		syslogTagPreserve := s.config.Pulse.SyslogTag
+
+		s.Lock()
+
+		// Apply preserved local-specific settings onto the incoming config
+		newConfig.Pulse.LocalNode = localIDPreserve
+		newConfig.Pulse.LoggingLevel = loggingLevelPreserve
+		newConfig.Pulse.LogToFile = logToFilePreserve
+		newConfig.Pulse.LogFileLocation = logFileLocationPreserve
+		newConfig.Pulse.LogToSyslog = logToSyslogPreserve
+		newConfig.Pulse.SyslogNetwork = syslogNetworkPreserve
+		newConfig.Pulse.SyslogAddress = syslogAddressPreserve
+		newConfig.Pulse.SyslogFacility = syslogFacilityPreserve
+		newConfig.Pulse.SyslogTag = syslogTagPreserve
+
+		// Persist and update our configuration
+		if err := newConfig.Save(); err != nil {
+			s.logger.Error("Failed to save synchronized configuration", "error", err)
+			s.Unlock()
+			return &rpc.ConfigSyncResponse{
+				Success: false,
+				Message: fmt.Sprintf("failed to save synchronized configuration: %v", err),
+			}, nil
+		}
+		s.config = newConfig
+		s.Unlock()
+
+		// Update convergence metadata if newer
+		if incomingEpoch > s.clusterEpoch {
+			s.clusterEpoch = incomingEpoch
+			s.leaderID = incomingLeaderID
+		}
+
+		// Immediately refresh member list from new configuration so peers become visible
+		s.memberList.UpdateConfig(s.config)
+		if err := s.loadInitialMembers(); err != nil {
+			s.logger.Warn("ConfigSync: failed to load members after sync", "error", err)
+		}
+	} else {
+		// Envelope-only update: do NOT overwrite config; just apply incoming states and metadata
+		if incomingEpoch > s.clusterEpoch {
+			s.clusterEpoch = incomingEpoch
+			s.leaderID = incomingLeaderID
+		}
+		// Ensure member list is aligned with current config
+		s.memberList.UpdateConfig(s.config)
+		if err := s.loadInitialMembers(); err != nil {
+			s.logger.Warn("ConfigSync: failed to load members after envelope sync", "error", err)
+		}
 	}
 
 	// Apply incoming member states if provided
