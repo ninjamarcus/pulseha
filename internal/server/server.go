@@ -2837,6 +2837,11 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 		return &rpc.InitiateJoinResponse{Success: false, Message: "target_host is required"}, nil
 	}
 
+	// Prevent joining if this node is already part of a cluster
+	if s.config != nil && s.config.ClusterCheck() {
+		return &rpc.InitiateJoinResponse{Success: false, Message: "node is already part of a cluster; leave first"}, nil
+	}
+
 	targetPort := req.TargetPort
 	if targetPort == "" {
 		targetPort = "8080"
@@ -2903,13 +2908,13 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 // preflightBind verifies that we can bind a TCP listener on the given ip:port
 // It opens a short-lived listener and closes it immediately.
 func (s *Server) preflightBind(ip, port string) error {
-    addr := net.JoinHostPort(ip, port)
-    ln, err := net.Listen("tcp", addr)
-    if err != nil {
-        return err
-    }
-    _ = ln.Close()
-    return nil
+	addr := net.JoinHostPort(ip, port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	_ = ln.Close()
+	return nil
 }
 
 // OrchestrateIPFailover moves a set of floating IPs from an old active node to a new active node.
