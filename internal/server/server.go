@@ -2861,6 +2861,13 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 		bindPort = "8080"
 	}
 
+	// Preflight: if a bind IP is provided, verify we can bind to bind_ip:bind_port locally
+	if req.BindIp != "" {
+		if err := s.preflightBind(req.BindIp, bindPort); err != nil {
+			return &rpc.InitiateJoinResponse{Success: false, Message: "bind preflight failed: " + err.Error()}, nil
+		}
+	}
+
 	joinReq := &rpc.JoinRequest{
 		Hostname: hostname,
 		Token:    req.Token,
@@ -2891,6 +2898,18 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 	}
 
 	return &rpc.InitiateJoinResponse{Success: true, Message: "join initiated"}, nil
+}
+
+// preflightBind verifies that we can bind a TCP listener on the given ip:port
+// It opens a short-lived listener and closes it immediately.
+func (s *Server) preflightBind(ip, port string) error {
+    addr := net.JoinHostPort(ip, port)
+    ln, err := net.Listen("tcp", addr)
+    if err != nil {
+        return err
+    }
+    _ = ln.Close()
+    return nil
 }
 
 // OrchestrateIPFailover moves a set of floating IPs from an old active node to a new active node.
