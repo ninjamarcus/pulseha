@@ -4133,9 +4133,10 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\x06Status\x12\x12.rpc.StatusRequest\x1a\x13.rpc.StatusResponse\"\x00\x126\n" +
 	"\aPromote\x12\x13.rpc.PromoteRequest\x1a\x14.rpc.PromoteResponse\"\x00\x126\n" +
 	"\aSetMode\x12\x13.rpc.SetModeRequest\x1a\x14.rpc.SetModeResponse\"\x00\x12E\n" +
-	"\fInitiateJoin\x12\x18.rpc.InitiateJoinRequest\x1a\x19.rpc.InitiateJoinResponse\"\x00\x12E\n" +
 	"\fUpdateConfig\x12\x18.rpc.UpdateConfigRequest\x1a\x19.rpc.UpdateConfigResponse\"\x00\x12H\n" +
-	"\rResyncNetwork\x12\x19.rpc.ResyncNetworkRequest\x1a\x1a.rpc.ResyncNetworkResponse\"\x00\x12B\n" +
+	"\rResyncNetwork\x12\x19.rpc.ResyncNetworkRequest\x1a\x1a.rpc.ResyncNetworkResponse\"\x00\x12H\n" +
+	"\rCreateCluster\x12\x19.rpc.CreateClusterRequest\x1a\x1a.rpc.CreateClusterResponse\"\x00\x120\n" +
+	"\x05Token\x12\x11.rpc.TokenRequest\x1a\x12.rpc.TokenResponse\"\x00\x12B\n" +
 	"\vCreateGroup\x12\x17.rpc.CreateGroupRequest\x1a\x18.rpc.CreateGroupResponse\"\x00\x12E\n" +
 	"\fAddIPToGroup\x12\x18.rpc.AddIPToGroupRequest\x1a\x19.rpc.AddIPToGroupResponse\"\x00\x12T\n" +
 	"\x11RemoveIPFromGroup\x12\x1d.rpc.RemoveIPFromGroupRequest\x1a\x1e.rpc.RemoveIPFromGroupResponse\"\x00\x12H\n" +
@@ -4143,9 +4144,8 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\x15UnassignGroupFromNode\x12\x19.rpc.UnassignGroupRequest\x1a\x1a.rpc.UnassignGroupResponse\"\x00\x12B\n" +
 	"\vDeleteGroup\x12\x17.rpc.DeleteGroupRequest\x1a\x18.rpc.DeleteGroupResponse\"\x00\x12?\n" +
 	"\n" +
-	"ListGroups\x12\x16.rpc.ListGroupsRequest\x1a\x17.rpc.ListGroupsResponse\"\x00\x12H\n" +
-	"\rCreateCluster\x12\x19.rpc.CreateClusterRequest\x1a\x1a.rpc.CreateClusterResponse\"\x00\x120\n" +
-	"\x05Token\x12\x11.rpc.TokenRequest\x1a\x12.rpc.TokenResponse\"\x00\x12T\n" +
+	"ListGroups\x12\x16.rpc.ListGroupsRequest\x1a\x17.rpc.ListGroupsResponse\"\x00\x12E\n" +
+	"\fInitiateJoin\x12\x18.rpc.InitiateJoinRequest\x1a\x19.rpc.InitiateJoinResponse\"\x00\x12T\n" +
 	"\x11GetVotingSessions\x12\x1d.rpc.GetVotingSessionsRequest\x1a\x1e.rpc.GetVotingSessionsResponse\"\x00\x12f\n" +
 	"\x17GetVotingSessionDetails\x12#.rpc.GetVotingSessionDetailsRequest\x1a$.rpc.GetVotingSessionDetailsResponse\"\x002\x87\x05\n" +
 	"\x06Server\x12?\n" +
@@ -4269,18 +4269,18 @@ var file_rpc_server_proto_depIdxs = []int32{
 	8,  // 19: rpc.CLI.Status:input_type -> rpc.StatusRequest
 	11, // 20: rpc.CLI.Promote:input_type -> rpc.PromoteRequest
 	27, // 21: rpc.CLI.SetMode:input_type -> rpc.SetModeRequest
-	66, // 22: rpc.CLI.InitiateJoin:input_type -> rpc.InitiateJoinRequest
-	29, // 23: rpc.CLI.UpdateConfig:input_type -> rpc.UpdateConfigRequest
-	31, // 24: rpc.CLI.ResyncNetwork:input_type -> rpc.ResyncNetworkRequest
-	33, // 25: rpc.CLI.CreateGroup:input_type -> rpc.CreateGroupRequest
-	35, // 26: rpc.CLI.AddIPToGroup:input_type -> rpc.AddIPToGroupRequest
-	37, // 27: rpc.CLI.RemoveIPFromGroup:input_type -> rpc.RemoveIPFromGroupRequest
-	39, // 28: rpc.CLI.AssignGroupToNode:input_type -> rpc.AssignGroupRequest
-	45, // 29: rpc.CLI.UnassignGroupFromNode:input_type -> rpc.UnassignGroupRequest
-	47, // 30: rpc.CLI.DeleteGroup:input_type -> rpc.DeleteGroupRequest
-	41, // 31: rpc.CLI.ListGroups:input_type -> rpc.ListGroupsRequest
-	49, // 32: rpc.CLI.CreateCluster:input_type -> rpc.CreateClusterRequest
-	64, // 33: rpc.CLI.Token:input_type -> rpc.TokenRequest
+	29, // 22: rpc.CLI.UpdateConfig:input_type -> rpc.UpdateConfigRequest
+	31, // 23: rpc.CLI.ResyncNetwork:input_type -> rpc.ResyncNetworkRequest
+	49, // 24: rpc.CLI.CreateCluster:input_type -> rpc.CreateClusterRequest
+	64, // 25: rpc.CLI.Token:input_type -> rpc.TokenRequest
+	33, // 26: rpc.CLI.CreateGroup:input_type -> rpc.CreateGroupRequest
+	35, // 27: rpc.CLI.AddIPToGroup:input_type -> rpc.AddIPToGroupRequest
+	37, // 28: rpc.CLI.RemoveIPFromGroup:input_type -> rpc.RemoveIPFromGroupRequest
+	39, // 29: rpc.CLI.AssignGroupToNode:input_type -> rpc.AssignGroupRequest
+	45, // 30: rpc.CLI.UnassignGroupFromNode:input_type -> rpc.UnassignGroupRequest
+	47, // 31: rpc.CLI.DeleteGroup:input_type -> rpc.DeleteGroupRequest
+	41, // 32: rpc.CLI.ListGroups:input_type -> rpc.ListGroupsRequest
+	66, // 33: rpc.CLI.InitiateJoin:input_type -> rpc.InitiateJoinRequest
 	58, // 34: rpc.CLI.GetVotingSessions:input_type -> rpc.GetVotingSessionsRequest
 	61, // 35: rpc.CLI.GetVotingSessionDetails:input_type -> rpc.GetVotingSessionDetailsRequest
 	13, // 36: rpc.Server.ConfigSync:input_type -> rpc.ConfigSyncRequest
@@ -4298,18 +4298,18 @@ var file_rpc_server_proto_depIdxs = []int32{
 	9,  // 48: rpc.CLI.Status:output_type -> rpc.StatusResponse
 	12, // 49: rpc.CLI.Promote:output_type -> rpc.PromoteResponse
 	28, // 50: rpc.CLI.SetMode:output_type -> rpc.SetModeResponse
-	67, // 51: rpc.CLI.InitiateJoin:output_type -> rpc.InitiateJoinResponse
-	30, // 52: rpc.CLI.UpdateConfig:output_type -> rpc.UpdateConfigResponse
-	32, // 53: rpc.CLI.ResyncNetwork:output_type -> rpc.ResyncNetworkResponse
-	34, // 54: rpc.CLI.CreateGroup:output_type -> rpc.CreateGroupResponse
-	36, // 55: rpc.CLI.AddIPToGroup:output_type -> rpc.AddIPToGroupResponse
-	38, // 56: rpc.CLI.RemoveIPFromGroup:output_type -> rpc.RemoveIPFromGroupResponse
-	40, // 57: rpc.CLI.AssignGroupToNode:output_type -> rpc.AssignGroupResponse
-	46, // 58: rpc.CLI.UnassignGroupFromNode:output_type -> rpc.UnassignGroupResponse
-	48, // 59: rpc.CLI.DeleteGroup:output_type -> rpc.DeleteGroupResponse
-	44, // 60: rpc.CLI.ListGroups:output_type -> rpc.ListGroupsResponse
-	50, // 61: rpc.CLI.CreateCluster:output_type -> rpc.CreateClusterResponse
-	65, // 62: rpc.CLI.Token:output_type -> rpc.TokenResponse
+	30, // 51: rpc.CLI.UpdateConfig:output_type -> rpc.UpdateConfigResponse
+	32, // 52: rpc.CLI.ResyncNetwork:output_type -> rpc.ResyncNetworkResponse
+	50, // 53: rpc.CLI.CreateCluster:output_type -> rpc.CreateClusterResponse
+	65, // 54: rpc.CLI.Token:output_type -> rpc.TokenResponse
+	34, // 55: rpc.CLI.CreateGroup:output_type -> rpc.CreateGroupResponse
+	36, // 56: rpc.CLI.AddIPToGroup:output_type -> rpc.AddIPToGroupResponse
+	38, // 57: rpc.CLI.RemoveIPFromGroup:output_type -> rpc.RemoveIPFromGroupResponse
+	40, // 58: rpc.CLI.AssignGroupToNode:output_type -> rpc.AssignGroupResponse
+	46, // 59: rpc.CLI.UnassignGroupFromNode:output_type -> rpc.UnassignGroupResponse
+	48, // 60: rpc.CLI.DeleteGroup:output_type -> rpc.DeleteGroupResponse
+	44, // 61: rpc.CLI.ListGroups:output_type -> rpc.ListGroupsResponse
+	67, // 62: rpc.CLI.InitiateJoin:output_type -> rpc.InitiateJoinResponse
 	60, // 63: rpc.CLI.GetVotingSessions:output_type -> rpc.GetVotingSessionsResponse
 	63, // 64: rpc.CLI.GetVotingSessionDetails:output_type -> rpc.GetVotingSessionDetailsResponse
 	14, // 65: rpc.Server.ConfigSync:output_type -> rpc.ConfigSyncResponse

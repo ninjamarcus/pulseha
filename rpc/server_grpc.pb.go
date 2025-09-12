@@ -24,9 +24,10 @@ const (
 	CLI_Status_FullMethodName                  = "/rpc.CLI/Status"
 	CLI_Promote_FullMethodName                 = "/rpc.CLI/Promote"
 	CLI_SetMode_FullMethodName                 = "/rpc.CLI/SetMode"
-	CLI_InitiateJoin_FullMethodName            = "/rpc.CLI/InitiateJoin"
 	CLI_UpdateConfig_FullMethodName            = "/rpc.CLI/UpdateConfig"
 	CLI_ResyncNetwork_FullMethodName           = "/rpc.CLI/ResyncNetwork"
+	CLI_CreateCluster_FullMethodName           = "/rpc.CLI/CreateCluster"
+	CLI_Token_FullMethodName                   = "/rpc.CLI/Token"
 	CLI_CreateGroup_FullMethodName             = "/rpc.CLI/CreateGroup"
 	CLI_AddIPToGroup_FullMethodName            = "/rpc.CLI/AddIPToGroup"
 	CLI_RemoveIPFromGroup_FullMethodName       = "/rpc.CLI/RemoveIPFromGroup"
@@ -34,8 +35,7 @@ const (
 	CLI_UnassignGroupFromNode_FullMethodName   = "/rpc.CLI/UnassignGroupFromNode"
 	CLI_DeleteGroup_FullMethodName             = "/rpc.CLI/DeleteGroup"
 	CLI_ListGroups_FullMethodName              = "/rpc.CLI/ListGroups"
-	CLI_CreateCluster_FullMethodName           = "/rpc.CLI/CreateCluster"
-	CLI_Token_FullMethodName                   = "/rpc.CLI/Token"
+	CLI_InitiateJoin_FullMethodName            = "/rpc.CLI/InitiateJoin"
 	CLI_GetVotingSessions_FullMethodName       = "/rpc.CLI/GetVotingSessions"
 	CLI_GetVotingSessionDetails_FullMethodName = "/rpc.CLI/GetVotingSessionDetails"
 )
@@ -45,19 +45,35 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // CLI Service
+// -----------------------------------------------------------------------------
+// This service is primarily the daemon-local API that `pulsectl` calls on
+// 127.0.0.1. It also contains a small number of RPCs that are invoked by
+// other nodes during membership operations.
+//
+// Organization of methods below:
+//   - Membership (remote-target): called by other nodes to join/leave.
+//   - Daemon-local admin: used by the local CLI to manage the node/cluster.
+//   - Group management: CRUD and assignment for floating IP groups.
+//   - Orchestration (local-only): helpers that orchestrate multi-step flows
+//     while keeping pulsectl connectivity local-only.
+//   - Quorum info: read-only inspection of voting sessions.
 type CLIClient interface {
+	// Membership (remote-target)
 	Join(ctx context.Context, in *JoinRequest, opts ...grpc.CallOption) (*JoinResponse, error)
 	Leave(ctx context.Context, in *LeaveRequest, opts ...grpc.CallOption) (*LeaveResponse, error)
+	// Daemon-local admin
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	Promote(ctx context.Context, in *PromoteRequest, opts ...grpc.CallOption) (*PromoteResponse, error)
 	SetMode(ctx context.Context, in *SetModeRequest, opts ...grpc.CallOption) (*SetModeResponse, error)
-	// Initiate a server-driven join against a target member
-	InitiateJoin(ctx context.Context, in *InitiateJoinRequest, opts ...grpc.CallOption) (*InitiateJoinResponse, error)
 	// Config updates
 	UpdateConfig(ctx context.Context, in *UpdateConfigRequest, opts ...grpc.CallOption) (*UpdateConfigResponse, error)
 	// Network resync
 	ResyncNetwork(ctx context.Context, in *ResyncNetworkRequest, opts ...grpc.CallOption) (*ResyncNetworkResponse, error)
-	// New configuration management methods
+	// Cluster lifecycle
+	CreateCluster(ctx context.Context, in *CreateClusterRequest, opts ...grpc.CallOption) (*CreateClusterResponse, error)
+	// Token management
+	Token(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenResponse, error)
+	// Group management
 	CreateGroup(ctx context.Context, in *CreateGroupRequest, opts ...grpc.CallOption) (*CreateGroupResponse, error)
 	AddIPToGroup(ctx context.Context, in *AddIPToGroupRequest, opts ...grpc.CallOption) (*AddIPToGroupResponse, error)
 	RemoveIPFromGroup(ctx context.Context, in *RemoveIPFromGroupRequest, opts ...grpc.CallOption) (*RemoveIPFromGroupResponse, error)
@@ -65,10 +81,10 @@ type CLIClient interface {
 	UnassignGroupFromNode(ctx context.Context, in *UnassignGroupRequest, opts ...grpc.CallOption) (*UnassignGroupResponse, error)
 	DeleteGroup(ctx context.Context, in *DeleteGroupRequest, opts ...grpc.CallOption) (*DeleteGroupResponse, error)
 	ListGroups(ctx context.Context, in *ListGroupsRequest, opts ...grpc.CallOption) (*ListGroupsResponse, error)
-	CreateCluster(ctx context.Context, in *CreateClusterRequest, opts ...grpc.CallOption) (*CreateClusterResponse, error)
-	// Token management
-	Token(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenResponse, error)
-	// Quorum voting methods
+	// Orchestration (local-only)
+	// Initiate a server-driven join against a target member
+	InitiateJoin(ctx context.Context, in *InitiateJoinRequest, opts ...grpc.CallOption) (*InitiateJoinResponse, error)
+	// Quorum info (read-only)
 	GetVotingSessions(ctx context.Context, in *GetVotingSessionsRequest, opts ...grpc.CallOption) (*GetVotingSessionsResponse, error)
 	GetVotingSessionDetails(ctx context.Context, in *GetVotingSessionDetailsRequest, opts ...grpc.CallOption) (*GetVotingSessionDetailsResponse, error)
 }
@@ -131,16 +147,6 @@ func (c *cLIClient) SetMode(ctx context.Context, in *SetModeRequest, opts ...grp
 	return out, nil
 }
 
-func (c *cLIClient) InitiateJoin(ctx context.Context, in *InitiateJoinRequest, opts ...grpc.CallOption) (*InitiateJoinResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(InitiateJoinResponse)
-	err := c.cc.Invoke(ctx, CLI_InitiateJoin_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *cLIClient) UpdateConfig(ctx context.Context, in *UpdateConfigRequest, opts ...grpc.CallOption) (*UpdateConfigResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(UpdateConfigResponse)
@@ -155,6 +161,26 @@ func (c *cLIClient) ResyncNetwork(ctx context.Context, in *ResyncNetworkRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ResyncNetworkResponse)
 	err := c.cc.Invoke(ctx, CLI_ResyncNetwork_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cLIClient) CreateCluster(ctx context.Context, in *CreateClusterRequest, opts ...grpc.CallOption) (*CreateClusterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateClusterResponse)
+	err := c.cc.Invoke(ctx, CLI_CreateCluster_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cLIClient) Token(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TokenResponse)
+	err := c.cc.Invoke(ctx, CLI_Token_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -231,20 +257,10 @@ func (c *cLIClient) ListGroups(ctx context.Context, in *ListGroupsRequest, opts 
 	return out, nil
 }
 
-func (c *cLIClient) CreateCluster(ctx context.Context, in *CreateClusterRequest, opts ...grpc.CallOption) (*CreateClusterResponse, error) {
+func (c *cLIClient) InitiateJoin(ctx context.Context, in *InitiateJoinRequest, opts ...grpc.CallOption) (*InitiateJoinResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateClusterResponse)
-	err := c.cc.Invoke(ctx, CLI_CreateCluster_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *cLIClient) Token(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(TokenResponse)
-	err := c.cc.Invoke(ctx, CLI_Token_FullMethodName, in, out, cOpts...)
+	out := new(InitiateJoinResponse)
+	err := c.cc.Invoke(ctx, CLI_InitiateJoin_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -276,19 +292,35 @@ func (c *cLIClient) GetVotingSessionDetails(ctx context.Context, in *GetVotingSe
 // for forward compatibility.
 //
 // CLI Service
+// -----------------------------------------------------------------------------
+// This service is primarily the daemon-local API that `pulsectl` calls on
+// 127.0.0.1. It also contains a small number of RPCs that are invoked by
+// other nodes during membership operations.
+//
+// Organization of methods below:
+//   - Membership (remote-target): called by other nodes to join/leave.
+//   - Daemon-local admin: used by the local CLI to manage the node/cluster.
+//   - Group management: CRUD and assignment for floating IP groups.
+//   - Orchestration (local-only): helpers that orchestrate multi-step flows
+//     while keeping pulsectl connectivity local-only.
+//   - Quorum info: read-only inspection of voting sessions.
 type CLIServer interface {
+	// Membership (remote-target)
 	Join(context.Context, *JoinRequest) (*JoinResponse, error)
 	Leave(context.Context, *LeaveRequest) (*LeaveResponse, error)
+	// Daemon-local admin
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	Promote(context.Context, *PromoteRequest) (*PromoteResponse, error)
 	SetMode(context.Context, *SetModeRequest) (*SetModeResponse, error)
-	// Initiate a server-driven join against a target member
-	InitiateJoin(context.Context, *InitiateJoinRequest) (*InitiateJoinResponse, error)
 	// Config updates
 	UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error)
 	// Network resync
 	ResyncNetwork(context.Context, *ResyncNetworkRequest) (*ResyncNetworkResponse, error)
-	// New configuration management methods
+	// Cluster lifecycle
+	CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error)
+	// Token management
+	Token(context.Context, *TokenRequest) (*TokenResponse, error)
+	// Group management
 	CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error)
 	AddIPToGroup(context.Context, *AddIPToGroupRequest) (*AddIPToGroupResponse, error)
 	RemoveIPFromGroup(context.Context, *RemoveIPFromGroupRequest) (*RemoveIPFromGroupResponse, error)
@@ -296,10 +328,10 @@ type CLIServer interface {
 	UnassignGroupFromNode(context.Context, *UnassignGroupRequest) (*UnassignGroupResponse, error)
 	DeleteGroup(context.Context, *DeleteGroupRequest) (*DeleteGroupResponse, error)
 	ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error)
-	CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error)
-	// Token management
-	Token(context.Context, *TokenRequest) (*TokenResponse, error)
-	// Quorum voting methods
+	// Orchestration (local-only)
+	// Initiate a server-driven join against a target member
+	InitiateJoin(context.Context, *InitiateJoinRequest) (*InitiateJoinResponse, error)
+	// Quorum info (read-only)
 	GetVotingSessions(context.Context, *GetVotingSessionsRequest) (*GetVotingSessionsResponse, error)
 	GetVotingSessionDetails(context.Context, *GetVotingSessionDetailsRequest) (*GetVotingSessionDetailsResponse, error)
 	mustEmbedUnimplementedCLIServer()
@@ -327,14 +359,17 @@ func (UnimplementedCLIServer) Promote(context.Context, *PromoteRequest) (*Promot
 func (UnimplementedCLIServer) SetMode(context.Context, *SetModeRequest) (*SetModeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetMode not implemented")
 }
-func (UnimplementedCLIServer) InitiateJoin(context.Context, *InitiateJoinRequest) (*InitiateJoinResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method InitiateJoin not implemented")
-}
 func (UnimplementedCLIServer) UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateConfig not implemented")
 }
 func (UnimplementedCLIServer) ResyncNetwork(context.Context, *ResyncNetworkRequest) (*ResyncNetworkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ResyncNetwork not implemented")
+}
+func (UnimplementedCLIServer) CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCluster not implemented")
+}
+func (UnimplementedCLIServer) Token(context.Context, *TokenRequest) (*TokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Token not implemented")
 }
 func (UnimplementedCLIServer) CreateGroup(context.Context, *CreateGroupRequest) (*CreateGroupResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateGroup not implemented")
@@ -357,11 +392,8 @@ func (UnimplementedCLIServer) DeleteGroup(context.Context, *DeleteGroupRequest) 
 func (UnimplementedCLIServer) ListGroups(context.Context, *ListGroupsRequest) (*ListGroupsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListGroups not implemented")
 }
-func (UnimplementedCLIServer) CreateCluster(context.Context, *CreateClusterRequest) (*CreateClusterResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateCluster not implemented")
-}
-func (UnimplementedCLIServer) Token(context.Context, *TokenRequest) (*TokenResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Token not implemented")
+func (UnimplementedCLIServer) InitiateJoin(context.Context, *InitiateJoinRequest) (*InitiateJoinResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InitiateJoin not implemented")
 }
 func (UnimplementedCLIServer) GetVotingSessions(context.Context, *GetVotingSessionsRequest) (*GetVotingSessionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVotingSessions not implemented")
@@ -480,24 +512,6 @@ func _CLI_SetMode_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CLI_InitiateJoin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(InitiateJoinRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CLIServer).InitiateJoin(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CLI_InitiateJoin_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CLIServer).InitiateJoin(ctx, req.(*InitiateJoinRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _CLI_UpdateConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UpdateConfigRequest)
 	if err := dec(in); err != nil {
@@ -530,6 +544,42 @@ func _CLI_ResyncNetwork_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CLIServer).ResyncNetwork(ctx, req.(*ResyncNetworkRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CLI_CreateCluster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateClusterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).CreateCluster(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_CreateCluster_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).CreateCluster(ctx, req.(*CreateClusterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CLI_Token_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).Token(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_Token_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).Token(ctx, req.(*TokenRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -660,38 +710,20 @@ func _CLI_ListGroups_Handler(srv interface{}, ctx context.Context, dec func(inte
 	return interceptor(ctx, in, info, handler)
 }
 
-func _CLI_CreateCluster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateClusterRequest)
+func _CLI_InitiateJoin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InitiateJoinRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CLIServer).CreateCluster(ctx, in)
+		return srv.(CLIServer).InitiateJoin(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: CLI_CreateCluster_FullMethodName,
+		FullMethod: CLI_InitiateJoin_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CLIServer).CreateCluster(ctx, req.(*CreateClusterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _CLI_Token_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(TokenRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(CLIServer).Token(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: CLI_Token_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CLIServer).Token(ctx, req.(*TokenRequest))
+		return srv.(CLIServer).InitiateJoin(ctx, req.(*InitiateJoinRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -760,16 +792,20 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CLI_SetMode_Handler,
 		},
 		{
-			MethodName: "InitiateJoin",
-			Handler:    _CLI_InitiateJoin_Handler,
-		},
-		{
 			MethodName: "UpdateConfig",
 			Handler:    _CLI_UpdateConfig_Handler,
 		},
 		{
 			MethodName: "ResyncNetwork",
 			Handler:    _CLI_ResyncNetwork_Handler,
+		},
+		{
+			MethodName: "CreateCluster",
+			Handler:    _CLI_CreateCluster_Handler,
+		},
+		{
+			MethodName: "Token",
+			Handler:    _CLI_Token_Handler,
 		},
 		{
 			MethodName: "CreateGroup",
@@ -800,12 +836,8 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CLI_ListGroups_Handler,
 		},
 		{
-			MethodName: "CreateCluster",
-			Handler:    _CLI_CreateCluster_Handler,
-		},
-		{
-			MethodName: "Token",
-			Handler:    _CLI_Token_Handler,
+			MethodName: "InitiateJoin",
+			Handler:    _CLI_InitiateJoin_Handler,
 		},
 		{
 			MethodName: "GetVotingSessions",
@@ -838,6 +870,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // Server Service
+// -----------------------------------------------------------------------------
+// Inter-node service used for state synchronization, quorum voting, and
+// operational actions (IP bring up/down, health checks, removal, etc.).
 type ServerClient interface {
 	ConfigSync(ctx context.Context, in *ConfigSyncRequest, opts ...grpc.CallOption) (*ConfigSyncResponse, error)
 	MakePassive(ctx context.Context, in *MakePassiveRequest, opts ...grpc.CallOption) (*MakePassiveResponse, error)
@@ -965,6 +1000,9 @@ func (c *serverClient) GetVotingResult(ctx context.Context, in *GetVotingResultR
 // for forward compatibility.
 //
 // Server Service
+// -----------------------------------------------------------------------------
+// Inter-node service used for state synchronization, quorum voting, and
+// operational actions (IP bring up/down, health checks, removal, etc.).
 type ServerServer interface {
 	ConfigSync(context.Context, *ConfigSyncRequest) (*ConfigSyncResponse, error)
 	MakePassive(context.Context, *MakePassiveRequest) (*MakePassiveResponse, error)

@@ -13,19 +13,37 @@ enum LogLevel {
 }
 
 // CLI Service
+// -----------------------------------------------------------------------------
+// This service is primarily the daemon-local API that `pulsectl` calls on
+// 127.0.0.1. It also contains a small number of RPCs that are invoked by
+// other nodes during membership operations.
+//
+// Organization of methods below:
+// - Membership (remote-target): called by other nodes to join/leave.
+// - Daemon-local admin: used by the local CLI to manage the node/cluster.
+// - Group management: CRUD and assignment for floating IP groups.
+// - Orchestration (local-only): helpers that orchestrate multi-step flows
+//   while keeping pulsectl connectivity local-only.
+// - Quorum info: read-only inspection of voting sessions.
 service CLI {
+    // Membership (remote-target)
     rpc Join(JoinRequest) returns (JoinResponse) {}
     rpc Leave(LeaveRequest) returns (LeaveResponse) {}
+
+    // Daemon-local admin
     rpc Status(StatusRequest) returns (StatusResponse) {}
     rpc Promote(PromoteRequest) returns (PromoteResponse) {}
     rpc SetMode(SetModeRequest) returns (SetModeResponse) {}
-    // Initiate a server-driven join against a target member
-    rpc InitiateJoin(InitiateJoinRequest) returns (InitiateJoinResponse) {}
     // Config updates
     rpc UpdateConfig(UpdateConfigRequest) returns (UpdateConfigResponse) {}
     // Network resync
     rpc ResyncNetwork(ResyncNetworkRequest) returns (ResyncNetworkResponse) {}
-    // New configuration management methods
+    // Cluster lifecycle
+    rpc CreateCluster(CreateClusterRequest) returns (CreateClusterResponse) {}
+    // Token management
+    rpc Token(TokenRequest) returns (TokenResponse) {}
+
+    // Group management
     rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse) {}
     rpc AddIPToGroup(AddIPToGroupRequest) returns (AddIPToGroupResponse) {}
     rpc RemoveIPFromGroup(RemoveIPFromGroupRequest) returns (RemoveIPFromGroupResponse) {}
@@ -33,15 +51,20 @@ service CLI {
     rpc UnassignGroupFromNode(UnassignGroupRequest) returns (UnassignGroupResponse) {}
     rpc DeleteGroup(DeleteGroupRequest) returns (DeleteGroupResponse) {}
     rpc ListGroups(ListGroupsRequest) returns (ListGroupsResponse) {}
-    rpc CreateCluster(CreateClusterRequest) returns (CreateClusterResponse) {}
-    // Token management
-    rpc Token(TokenRequest) returns (TokenResponse) {}
-    // Quorum voting methods
+
+    // Orchestration (local-only)
+    // Initiate a server-driven join against a target member
+    rpc InitiateJoin(InitiateJoinRequest) returns (InitiateJoinResponse) {}
+
+    // Quorum info (read-only)
     rpc GetVotingSessions(GetVotingSessionsRequest) returns (GetVotingSessionsResponse) {}
     rpc GetVotingSessionDetails(GetVotingSessionDetailsRequest) returns (GetVotingSessionDetailsResponse) {}
 }
 
 // Server Service
+// -----------------------------------------------------------------------------
+// Inter-node service used for state synchronization, quorum voting, and
+// operational actions (IP bring up/down, health checks, removal, etc.).
 service Server {
     rpc ConfigSync(ConfigSyncRequest) returns (ConfigSyncResponse) {}
     rpc MakePassive(MakePassiveRequest) returns (MakePassiveResponse) {}
