@@ -2,6 +2,7 @@ package integration
 
 import (
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -10,6 +11,9 @@ import (
 )
 
 func TestClusterFormation(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	// Set test mode to skip hostname validation
 	os.Setenv("PULSEHA_TEST", "true")
 	defer os.Unsetenv("PULSEHA_TEST")
@@ -65,6 +69,9 @@ func TestClusterFormation(t *testing.T) {
 }
 
 func TestClusterHealthCheck(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	// Create a new test cluster
 	cluster := testutils.NewTestCluster()
 	defer cluster.Cleanup()
@@ -103,6 +110,9 @@ func TestClusterHealthCheck(t *testing.T) {
 }
 
 func TestActiveActiveMode(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	// Set test mode to skip hostname validation
 	os.Setenv("PULSEHA_TEST", "true")
 	defer os.Unsetenv("PULSEHA_TEST")

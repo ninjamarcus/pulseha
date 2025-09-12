@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -12,8 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"net"
-
+	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/packages/security"
@@ -141,12 +139,10 @@ func (c *Client) GetProtoFuncList() map[string]interface{} {
 			return c.cliClient.AssignGroupToNode(ctx, data.(*rpc.AssignGroupRequest))
 		},
 		"UnassignGroupFromNode": func(ctx context.Context, data interface{}) (interface{}, error) {
-			// Direct call to server method for now
-			return c.callUnassignGroup(ctx, data)
+			return c.cliClient.UnassignGroupFromNode(ctx, data.(*rpc.UnassignGroupRequest))
 		},
 		"DeleteGroup": func(ctx context.Context, data interface{}) (interface{}, error) {
-			// Direct call to server method for now
-			return c.callDeleteGroup(ctx, data)
+			return c.cliClient.DeleteGroup(ctx, data.(*rpc.DeleteGroupRequest))
 		},
 		"ListGroups": func(ctx context.Context, data interface{}) (interface{}, error) {
 			return c.cliClient.ListGroups(ctx, data.(*rpc.ListGroupsRequest))
@@ -207,25 +203,6 @@ func (c *Client) Close() {
 	if c.Connection != nil {
 		c.Connection.Close()
 	}
-}
-
-// GetNodeIDByHostname translates a hostname to a node_id
-func (c *Client) GetNodeIDByHostname(hostname string) (string, error) {
-	cfg := config.New()
-	uuid, _, err := cfg.GetNodeByHostname(hostname)
-	if err != nil {
-		return "", fmt.Errorf("failed to get node ID for hostname %s: %v", hostname, err)
-	}
-	return uuid, nil
-}
-
-// GetHostnameByNodeID translates a node_id to a hostname
-func (c *Client) GetHostnameByNodeID(nodeID string) (string, error) {
-	cfg := config.New()
-	if node, ok := cfg.Nodes[nodeID]; ok {
-		return node.Hostname, nil
-	}
-	return "", fmt.Errorf("failed to get hostname for node ID %s", nodeID)
 }
 
 // Send sends an RPC command over the client connection
@@ -335,22 +312,17 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		}
 	}
 
-	// Connect to the target node
-	if err := c.Connect(host, port, false); err != nil {
-		return fmt.Errorf("failed to connect to target node: %v", err)
-	}
-
 	// Get local hostname
 	hostname, err := os.Hostname()
 	if err != nil {
 		return fmt.Errorf("failed to get hostname: %v", err)
 	}
+	_ = hostname // server validates/records
 
-	// Determine node ID
-	cfg := c.GetConfig()
+	// Determine node ID (server expects a node_id); generate if not provided
 	nodeID := customNodeID
 	if nodeID == "" {
-		nodeID = cfg.GenerateNodeID()
+		nodeID = uuid.New().String()
 	}
 
 	// Default bind port if not provided
@@ -358,216 +330,29 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		bindPort = "8080"
 	}
 
-	// Validate bind IP exists locally; if empty, try to auto-detect primary IP
-	if bindIP == "" {
-		// Auto-detect a non-loopback IPv4 address
-		ifaces, _ := net.Interfaces()
-		for _, iface := range ifaces {
-			if (iface.Flags&net.FlagLoopback) != 0 || (iface.Flags&net.FlagUp) == 0 {
-				continue
-			}
-			addrs, _ := iface.Addrs()
-			for _, a := range addrs {
-				if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP.To4() != nil {
-					bindIP = ipNet.IP.String()
-					break
-				}
-			}
-			if bindIP != "" {
-				break
-			}
-		}
-	}
-	if bindIP == "" {
-		return fmt.Errorf("could not determine a valid local bind IP; please specify --bind-ip")
-	}
-
-	// If user provided a bind IP, ensure it exists on this host
-	isLocalIP := false
-	ifaces, _ := net.Interfaces()
-	for _, iface := range ifaces {
-		addrs, _ := iface.Addrs()
-		for _, a := range addrs {
-			if ipNet, ok := a.(*net.IPNet); ok && ipNet.IP.To4() != nil {
-				if ipNet.IP.String() == bindIP {
-					isLocalIP = true
-					break
-				}
-			}
-		}
-		if isLocalIP {
-			break
-		}
-	}
-	if !isLocalIP {
-		return fmt.Errorf("bind-ip %s is not assigned to any local interface", bindIP)
-	}
-
-	// Create join request
-	joinReq := &rpc.JoinRequest{
-		Address:  hostname,
-		Token:    token,
-		NodeId:   nodeID,
-		BindIp:   bindIP,
-		BindPort: bindPort,
-	}
-
-	resp, err := c.CLI().Join(context.Background(), joinReq)
+	// Ask local daemon to initiate join with target via dedicated RPC
+	_, err = c.CLI().InitiateJoin(context.Background(), &rpc.InitiateJoinRequest{
+		TargetHost: host,
+		TargetPort: port,
+		Token:      token,
+		BindIp:     bindIP,
+		BindPort:   bindPort,
+		NodeId:     nodeID,
+	})
 	if err != nil {
-		return fmt.Errorf("join request failed: %v", err)
+		return fmt.Errorf("join initiate failed: %v", err)
 	}
-
-	if !resp.Success {
-		return fmt.Errorf("join failed: %s", resp.Message)
-	}
-
-	// If cluster configuration is provided, use it
-	if resp.ClusterConfig != nil && len(resp.ClusterConfig) > 0 {
-		// Enhanced config structure that includes member states
-		type EnhancedConfig struct {
-			*config.Config
-			MemberStates map[string]int `json:"member_states"`
-		}
-
-		// Unmarshal the enhanced cluster configuration
-		enhancedConfig := &EnhancedConfig{}
-		if err := json.Unmarshal(resp.ClusterConfig, enhancedConfig); err != nil {
-			log.Warnf("Failed to unmarshal enhanced cluster config: %v", err)
-			// Try plain config as fallback
-			clusterConfig := &config.Config{}
-			if err := json.Unmarshal(resp.ClusterConfig, clusterConfig); err != nil {
-				log.Warnf("Failed to unmarshal plain cluster config: %v", err)
-				// Fall back to minimal config
-			} else {
-				enhancedConfig = &EnhancedConfig{Config: clusterConfig}
-			}
-		}
-
-		if enhancedConfig != nil && enhancedConfig.Config != nil {
-			// Preserve local-specific settings
-			loggingLevel := cfg.Pulse.LoggingLevel
-			logToFile := cfg.Pulse.LogToFile
-			logFileLocation := cfg.Pulse.LogFileLocation
-
-			// Merge cluster config while preserving local settings
-			cfg.Nodes = enhancedConfig.Nodes
-			cfg.Groups = enhancedConfig.Groups
-			cfg.Pulse.ClusterToken = enhancedConfig.Pulse.ClusterToken
-			cfg.Pulse.Mode = enhancedConfig.Pulse.Mode
-			cfg.Pulse.QuorumEnabled = enhancedConfig.Pulse.QuorumEnabled
-			cfg.Pulse.QuorumMinNodes = enhancedConfig.Pulse.QuorumMinNodes
-			cfg.Pulse.HealthCheckInterval = enhancedConfig.Pulse.HealthCheckInterval
-			cfg.Pulse.FailOverInterval = enhancedConfig.Pulse.FailOverInterval
-			cfg.Pulse.FailOverLimit = enhancedConfig.Pulse.FailOverLimit
-			cfg.Pulse.AutoFailback = enhancedConfig.Pulse.AutoFailback
-
-			// Restore local-specific settings but use the new node ID
-			cfg.Pulse.LocalNode = resp.NodeId // Use the new UUID assigned by the cluster
-			cfg.Pulse.LoggingLevel = loggingLevel
-			cfg.Pulse.LogToFile = logToFile
-			cfg.Pulse.LogFileLocation = logFileLocation
-
-			// Log member states if available
-			if enhancedConfig.MemberStates != nil {
-				log.Info("Received member states from cluster:")
-				for id, status := range enhancedConfig.MemberStates {
-					log.Infof("  Member %s: status=%d", id, status)
-				}
-			}
-
-			log.Info("Successfully received and merged cluster configuration")
-		}
-	} else {
-		// Fall back to minimal configuration if no cluster config provided
-		log.Warn("No cluster configuration received, using minimal config")
-
-		// Update local config with the cluster information
-		cfg.Pulse.LocalNode = resp.NodeId
-		cfg.Pulse.ClusterToken = token
-
-		// Add this node to the nodes map
-		if cfg.Nodes == nil {
-			cfg.Nodes = make(map[string]*config.Node)
-		}
-
-		cfg.Nodes[resp.NodeId] = &config.Node{
-			Hostname: hostname,
-			IP:       bindIP,
-			Port:     bindPort,
-			IPGroups: make(map[string][]string),
-		}
-	}
-
-	// Save the updated config
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("successfully joined cluster but failed to save local config: %v", err)
-	}
-
-	// Trigger immediate resync/activation on the LOCAL daemon so status reflects changes instantly
-	// The current client may be connected to the remote join target; create a fresh local client
-	if localClient, newErr := New(); newErr == nil {
-		defer localClient.Close()
-		// Best-effort: push full config directly to the local daemon to avoid any path mismatch
-		if cfgBytes, mErr := json.Marshal(cfg); mErr == nil {
-			ctxCfg, cancelCfg := context.WithTimeout(context.Background(), 3*time.Second)
-			_, _ = localClient.Server().ConfigSync(ctxCfg, &rpc.ConfigSyncRequest{Config: cfgBytes})
-			cancelCfg()
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = localClient.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
-	}
-
-	// Post-join UX: quick connectivity hint if local cluster listener not reachable
-	// Try to connect to our own bind address quickly; if it fails, provide guidance
-	selfConn, selfErr := net.DialTimeout("tcp", fmt.Sprintf("%s:%s", bindIP, bindPort), 500*time.Millisecond)
-	if selfErr == nil {
-		_ = selfConn.Close()
-	} else {
-		log.Warnf("Local cluster listener not reachable at %s:%s. If status does not update, run: 'pulsectl cluster network resync'", bindIP, bindPort)
-		// Brief retry loop: re-run local resync and probe again a couple of times
-		for i := 0; i < 3; i++ {
-			if localClient2, e := New(); e == nil {
-				ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
-				_, _ = localClient2.CLI().ResyncNetwork(ctx2, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
-				cancel2()
-				localClient2.Close()
-			}
-			time.Sleep(400 * time.Millisecond)
-			probe, perr := net.DialTimeout("tcp", fmt.Sprintf("%s:%s", bindIP, bindPort), 300*time.Millisecond)
-			if perr == nil {
-				_ = probe.Close()
-				break
-			}
-		}
-	}
-
-	fmt.Printf("Successfully joined cluster with node ID: %s\n", resp.NodeId)
+	fmt.Printf("Join initiated. Check status for updates.\n")
 	return nil
 }
 
 // LeaveCluster removes this node from the cluster
 func (c *Client) LeaveCluster() error {
-	// Get current config to read the local node ID
-	cfg := c.GetConfig()
-	localNodeID, err := cfg.GetLocalNodeUUID()
-	if err != nil {
-		return fmt.Errorf("failed to get local node ID: %v", err)
-	}
-
-	_, err = c.CLI().Leave(context.Background(), &rpc.LeaveRequest{
-		NodeId: localNodeID,
-	})
+	// Empty NodeId indicates local node; server will resolve and handle
+	_, err := c.CLI().Leave(context.Background(), &rpc.LeaveRequest{})
 	if err != nil {
 		return err
 	}
-
-	// Best-effort resync: if the daemon is still running (e.g., leaving a remote member in the future),
-	// trigger immediate status/config refresh. If we just left ourselves, the daemon will be stopping.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	_, _ = c.CLI().ResyncNetwork(ctx, &rpc.ResyncNetworkRequest{CreateDefaultGroups: false})
-
 	return nil
 }
 
@@ -578,13 +363,10 @@ func (c *Client) GetClusterStatus() (*ClusterStatus, error) {
 		return nil, err
 	}
 
-	// Get current config to read the mode
-	cfg := c.GetConfig()
-
 	status := &ClusterStatus{
 		Members: make([]Member, len(resp.Members)),
-		Groups:  make([]GroupInfo, 0), // Initialize empty groups slice
-		Mode:    cfg.Pulse.Mode,       // Read mode from config instead of hardcoding
+		Groups:  make([]GroupInfo, 0),
+		Mode:    "active-passive",
 	}
 
 	for i, m := range resp.Members {
@@ -616,28 +398,16 @@ func (c *Client) GetClusterStatus() (*ClusterStatus, error) {
 		log.Debugf("Member %s latency from RPC: %s", m.Hostname, m.Latency)
 	}
 
-	// Get group information from the config since we can't rely on the proto update yet
-	for groupName, ips := range cfg.Groups {
+	// Populate groups from server response (authoritative)
+	for _, g := range resp.Groups {
 		group := GroupInfo{
-			Name:        groupName,
-			IPs:         ips,
-			Assignments: make([]GroupAssignment, 0),
+			Name:        g.Name,
+			IPs:         g.Ips,
+			Assignments: make([]GroupAssignment, 0, len(g.Assignments)),
 		}
-
-		// Find assignments for this group
-		for id, node := range cfg.Nodes {
-			for iface, assignedGroups := range node.IPGroups {
-				for _, g := range assignedGroups {
-					if g == groupName {
-						group.Assignments = append(group.Assignments, GroupAssignment{
-							NodeID:    id,
-							Interface: iface,
-						})
-					}
-				}
-			}
+		for _, a := range g.Assignments {
+			group.Assignments = append(group.Assignments, GroupAssignment{NodeID: a.NodeId, Interface: a.Interface})
 		}
-
 		status.Groups = append(status.Groups, group)
 	}
 
@@ -665,14 +435,21 @@ func (c *Client) CreateGroup(name string) error {
 
 // PromoteNode promotes a node to active state
 func (c *Client) PromoteNode(hostname string, ips []string) error {
-	// Look up node_id from hostname
-	cfg := c.GetConfig()
-	nodeID, _, err := cfg.GetNodeByHostname(hostname)
+	// Resolve node_id via authoritative Status RPC rather than local file
+	resp, err := c.CLI().Status(context.Background(), &rpc.StatusRequest{})
 	if err != nil {
-		return fmt.Errorf("failed to get node_id for hostname %s: %v", hostname, err)
+		return fmt.Errorf("failed to get cluster status: %v", err)
 	}
-
-	// Send request with only node_id
+	var nodeID string
+	for _, m := range resp.Members {
+		if m.Hostname == hostname {
+			nodeID = m.NodeId
+			break
+		}
+	}
+	if nodeID == "" {
+		return fmt.Errorf("failed to resolve node_id for hostname %s", hostname)
+	}
 	_, err = c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
 		NodeId: nodeID,
 		Ips:    ips,
@@ -687,30 +464,13 @@ func (c *Client) GetConfig() *config.Config {
 
 // SetClusterMode changes the cluster operation mode
 func (c *Client) SetClusterMode(mode string) error {
-	// Get current config
-	cfg := c.GetConfig()
-	if !cfg.ClusterCheck() {
-		return fmt.Errorf("no cluster configured")
-	}
-
-	// Validate mode
-	if mode != "active-passive" && mode != "active-active" {
-		return fmt.Errorf("invalid mode %q: must be either 'active-passive' or 'active-active'", mode)
-	}
-
-	// Send RPC request to update mode
-	resp, err := c.CLI().SetMode(context.Background(), &rpc.SetModeRequest{
-		Mode: mode,
-	})
+	resp, err := c.CLI().SetMode(context.Background(), &rpc.SetModeRequest{Mode: mode})
 	if err != nil {
 		return fmt.Errorf("failed to set cluster mode: %v", err)
 	}
-
 	if !resp.Success {
 		return fmt.Errorf("failed to set cluster mode: %s", resp.Message)
 	}
-
-	// The server will handle updating the configuration and syncing with other nodes
 	return nil
 }
 
@@ -805,156 +565,34 @@ func (c *Client) ListGroups(jsonOutput bool) (string, []*rpc.GroupInfo, error) {
 	return response.JsonData, response.Groups, nil
 }
 
-// Temporary struct definitions to match server-side (until protobuf is regenerated)
-type UnassignGroupRequest struct {
-	GroupName string
-	NodeID    string
-	Interface string
-}
-
-type UnassignGroupResponse struct {
-	Success bool
-	Message string
-}
-
-type DeleteGroupRequest struct {
-	GroupName string
-	Force     bool
-}
-
-type DeleteGroupResponse struct {
-	Success  bool
-	Message  string
-	Warnings []string
-}
-
-// Helper methods for direct server calls
-func (c *Client) callUnassignGroup(ctx context.Context, data interface{}) (interface{}, error) {
-	// This is a simplified direct call - in practice, this would use gRPC
-	// For now, returning an error to indicate not implemented via RPC
-	return nil, fmt.Errorf("unassign group RPC not yet implemented - use direct method")
-}
-
-func (c *Client) callDeleteGroup(ctx context.Context, data interface{}) (interface{}, error) {
-	// This is a simplified direct call - in practice, this would use gRPC
-	// For now, returning an error to indicate not implemented via RPC
-	return nil, fmt.Errorf("delete group RPC not yet implemented - use direct method")
-}
-
 // UnassignGroupFromNode removes a group assignment from a node's interface
 func (c *Client) UnassignGroupFromNode(groupName, nodeID, iface string) error {
-	// For now, implement this by directly reading and modifying the config
-	// This is a temporary solution until RPC is properly implemented
-	cfg := c.GetConfig()
-
-	// Check if group exists
-	if _, exists := cfg.Groups[groupName]; !exists {
-		return fmt.Errorf("group %s does not exist", groupName)
-	}
-
-	// Resolve node by ID (canonical)
-	node, ok := cfg.Nodes[nodeID]
-	if !ok {
-		return fmt.Errorf("node_id %s not found", nodeID)
-	}
-
-	if node.IPGroups == nil {
-		return fmt.Errorf("group %s is not assigned to interface %s on node %s", groupName, iface, nodeID)
-	}
-
-	// Find and remove the group from interface
-	groups := node.IPGroups[iface]
-	groupIndex := -1
-	for i, g := range groups {
-		if g == groupName {
-			groupIndex = i
-			break
-		}
-	}
-
-	if groupIndex == -1 {
-		return fmt.Errorf("group %s is not assigned to interface %s on node %s", groupName, iface, nodeID)
-	}
-
-	// Remove group from slice
-	node.IPGroups[iface] = append(groups[:groupIndex], groups[groupIndex+1:]...)
-
-	// If interface has no more groups, remove the entry
-	if len(node.IPGroups[iface]) == 0 {
-		delete(node.IPGroups, iface)
-	}
-
-	// Save config
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %v", err)
-	}
-
-	fmt.Printf("Successfully unassigned group %s from interface %s on node %s\n", groupName, iface, nodeID)
-	return nil
+	_, err := c.CLI().UnassignGroupFromNode(context.Background(), &rpc.UnassignGroupRequest{
+		GroupName: groupName,
+		NodeId:    nodeID,
+		Interface: iface,
+	})
+	return err
 }
 
 // DeleteGroup removes a group and optionally its assignments
 func (c *Client) DeleteGroup(groupName string, force bool) error {
-	// For now, implement this by directly reading and modifying the config
-	// This is a temporary solution until RPC is properly implemented
-	cfg := c.GetConfig()
-
-	var warnings []string
-
-	// Check if group exists
-	if _, exists := cfg.Groups[groupName]; !exists {
-		return fmt.Errorf("group %s does not exist", groupName)
+	resp, err := c.CLI().DeleteGroup(context.Background(), &rpc.DeleteGroupRequest{
+		GroupName: groupName,
+		Force:     force,
+	})
+	if err != nil {
+		return err
 	}
 
-	// Check if group is assigned to any nodes (unless force is true)
-	var assignedNodes []string
-	for _, node := range cfg.Nodes {
-		for iface, groups := range node.IPGroups {
-			for _, group := range groups {
-				if group == groupName {
-					assignedNodes = append(assignedNodes, fmt.Sprintf("%s:%s", node.Hostname, iface))
-				}
-			}
-		}
+	for _, w := range resp.Warnings {
+		fmt.Printf("Warning: %s\n", w)
 	}
 
-	if len(assignedNodes) > 0 && !force {
-		return fmt.Errorf("group %s is assigned to nodes: %v. Use --force to delete anyway", groupName, assignedNodes)
+	if !resp.Success {
+		return fmt.Errorf(resp.Message)
 	}
 
-	// If force is true and group is assigned, remove assignments and add warnings
-	if len(assignedNodes) > 0 && force {
-		for _, node := range cfg.Nodes {
-			for iface := range node.IPGroups {
-				groups := node.IPGroups[iface]
-				for i := len(groups) - 1; i >= 0; i-- {
-					if groups[i] == groupName {
-						// Remove group from slice
-						node.IPGroups[iface] = append(groups[:i], groups[i+1:]...)
-						warnings = append(warnings, fmt.Sprintf("removed assignment from %s:%s", node.Hostname, iface))
-					}
-				}
-				// If interface has no more groups, remove the entry
-				if len(node.IPGroups[iface]) == 0 {
-					delete(node.IPGroups, iface)
-				}
-			}
-		}
-	}
-
-	// Delete the group
-	delete(cfg.Groups, groupName)
-
-	// Save config
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %v", err)
-	}
-
-	// Display warnings
-	for _, warning := range warnings {
-		fmt.Printf("Warning: %s\n", warning)
-	}
-
-	fmt.Printf("Successfully deleted group %s\n", groupName)
+	fmt.Printf("%s\n", resp.Message)
 	return nil
 }

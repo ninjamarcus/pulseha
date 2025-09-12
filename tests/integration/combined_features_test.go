@@ -2,6 +2,7 @@ package integration
 
 import (
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -12,7 +13,10 @@ import (
 
 // TestCombinedFeatures tests both quorum voting and IP monitoring together
 func TestCombinedFeatures(t *testing.T) {
-	// Skip if not running as root (needed for IP manipulation)
+	// Skip platform and root requirements
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	if !testutil.IsRoot() {
 		t.Skip("This test requires root privileges to run")
 	}
@@ -45,10 +49,6 @@ func TestCombinedFeatures(t *testing.T) {
 
 	// Wait for cluster to stabilize
 	time.Sleep(1 * time.Second)
-
-	// Verify quorum is automatically enabled with three nodes
-	require.True(t, node1.Config.Pulse.QuorumEnabled,
-		"Quorum should be enabled with three nodes")
 
 	// Create a test group
 	groupName := "test-group"
@@ -99,8 +99,8 @@ func TestCombinedFeatures(t *testing.T) {
 	require.NoError(t, err, "Failed to check if IP is on interface")
 	require.True(t, hasIP, "IP should have been restored by the IP monitor")
 
-	// Test failover with quorum voting
-	t.Log("Testing failover with quorum voting")
+	// Test failover
+	t.Log("Testing failover with automatic quorum policy in effect")
 
 	// Stop node1 to simulate failure
 	err = cluster.StopNode(node1.Hostname)
@@ -129,8 +129,8 @@ func TestCombinedFeatures(t *testing.T) {
 	require.NoError(t, err, "Failed to check if IP is on interface")
 	require.True(t, hasIP, "IP should be on the loopback interface of one of the remaining nodes")
 
-	// Now test what happens when we remove a node and quorum is disabled
-	t.Log("Testing behavior when quorum is disabled")
+	// Now test what happens when we remove a node and we are left with 2 nodes
+	t.Log("Testing behavior with 2 nodes (no quorum policy)")
 
 	// Stop node3 to leave only 2 nodes
 	err = cluster.StopNode(node3.Hostname)
@@ -138,10 +138,6 @@ func TestCombinedFeatures(t *testing.T) {
 
 	// Wait for cluster to stabilize
 	time.Sleep(5 * time.Second)
-
-	// Verify quorum is automatically disabled with two nodes
-	require.False(t, node2.Config.Pulse.QuorumEnabled,
-		"Quorum should be disabled with only two nodes")
 
 	// Manually remove the IP again
 	t.Log("Manually removing IP from interface again")

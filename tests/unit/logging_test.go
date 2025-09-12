@@ -30,5 +30,5 @@ func TestLoggingFireMissingNode(t *testing.T) {
 		assert.NoError(t, err)
 	})
 	assert.NotNil(t, req)
-	assert.Equal(t, "", req.Node)
+	assert.Equal(t, "", req.NodeId)
 }

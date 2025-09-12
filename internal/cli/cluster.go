@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ func NewClusterCmd() *cobra.Command {
 		newClusterTokenCmd(),
 		newClusterModeCmd(),
 		newNetworkCmd(),
+		newClusterConvergeCmd(),
 	)
 
 	return cmd
@@ -169,14 +171,6 @@ func newClusterModeSetCmd() *cobra.Command {
 				return err
 			}
 
-			// Validate mode
-			switch mode {
-			case "active-passive", "active-active":
-				// Valid modes
-			default:
-				return fmt.Errorf("invalid mode %q: must be either 'active-passive' or 'active-active'", mode)
-			}
-
 			return client.SetClusterMode(mode)
 		},
 	}
@@ -212,6 +206,51 @@ func newNetworkResyncCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&createGroups, "create-default-groups", false, "Create default groups for new interfaces")
+	return cmd
+}
+
+func newClusterConvergeCmd() *cobra.Command {
+	var leaderID string
+	cmd := &cobra.Command{
+		Use:   "converge",
+		Short: "Force convergence by broadcasting current cluster state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := client.New()
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			// Pull status to build states map
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			resp, err := c.CLI().Status(ctx, &rpc.StatusRequest{})
+			if err != nil {
+				return err
+			}
+			states := make(map[string]int)
+			for _, m := range resp.Members {
+				states[m.NodeId] = int(m.Status)
+			}
+
+			// Encode enhanced payload (states + optional leaderID)
+			payload := map[string]interface{}{
+				"member_states": states,
+			}
+			if leaderID != "" {
+				payload["leader_id"] = leaderID
+			}
+			bytes, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+
+			// Call Server.ConfigSync locally (the daemon will broadcast to peers)
+			_, err = c.Server().ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: bytes})
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&leaderID, "leader-id", "", "Override leader ID to enforce in active-passive mode")
 	return cmd
 }
 

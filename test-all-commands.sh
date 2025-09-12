@@ -21,11 +21,28 @@ PASSED=0
 FAILED=0
 FAILED_COMMANDS=()
 
+# Pick a default running container (prefer node1, then node2, then node3)
+choose_default_container() {
+    local running
+    running=$(docker ps --format '{{.Names}}' | tr '\n' ' ')
+    if echo "$running" | grep -q "pulseha-node1"; then
+        echo "pulseha-node1"
+    elif echo "$running" | grep -q "pulseha-node2"; then
+        echo "pulseha-node2"
+    elif echo "$running" | grep -q "pulseha-node3"; then
+        echo "pulseha-node3"
+    else
+        echo "pulseha-node1"
+    fi
+}
+
+DEFAULT_CONTAINER=$(choose_default_container)
+
 # Function to test a command
 test_command() {
     local description="$1"
     local command="$2"
-    local container="${3:-pulseha-node1}"
+    local container="${3:-$DEFAULT_CONTAINER}"
     
     echo -n "Testing: $description ... "
     
@@ -47,7 +64,7 @@ test_command() {
 test_command_should_fail() {
     local description="$1"
     local command="$2"
-    local container="${3:-pulseha-node1}"
+    local container="${3:-$DEFAULT_CONTAINER}"
     
     echo -n "Testing (should fail): $description ... "
     
@@ -72,20 +89,20 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if cluster is already running
-if docker ps | grep -q pulseha-node1; then
+# Check if cluster is already running (any node)
+if docker ps --format '{{.Names}}' | grep -E -q '^pulseha-node(1|2|3)$'; then
     echo "Using existing cluster..."
     CLUSTER_EXISTS=true
     
-    # Check if it's configured
-    if ! docker exec pulseha-node1 /usr/local/bin/pulsectl status 2>/dev/null | grep -q "Node:"; then
+    # Check if it's configured via any running node
+    if ! docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl status 2>/dev/null | grep -q "Node:"; then
         echo "Cluster exists but not configured. Creating cluster..."
-        docker exec pulseha-node1 /usr/local/bin/pulsectl cluster create --bind-ip 172.20.0.10 --bind-port 8080 --mode active-passive > /dev/null 2>&1
+        docker exec pulseha-node1 /usr/local/bin/pulsectl cluster create --bind-ip 172.20.0.10 --bind-port 8080 --mode active-passive > /dev/null 2>&1 || true
         
         # Get token and join other nodes
         TOKEN=$(docker exec pulseha-node1 /usr/local/bin/pulsectl cluster token | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
-        docker exec pulseha-node2 /usr/local/bin/pulsectl cluster join --address 172.20.0.10 --token "$TOKEN" --bind-ip 172.20.0.11 --bind-port 8080 > /dev/null 2>&1
-        docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join --address 172.20.0.10 --token "$TOKEN" --bind-ip 172.20.0.12 --bind-port 8080 > /dev/null 2>&1
+        docker exec pulseha-node2 /usr/local/bin/pulsectl cluster join --address 172.20.0.10 --token "$TOKEN" --bind-ip 172.20.0.11 --bind-port 8080 > /dev/null 2>&1 || true
+        docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join --address 172.20.0.10 --token "$TOKEN" --bind-ip 172.20.0.12 --bind-port 8080 > /dev/null 2>&1 || true
         sleep 5
     fi
 else
@@ -96,6 +113,7 @@ else
             echo -e "${RED}Failed to start cluster${NC}"
             exit 1
         }
+        cd - > /dev/null 2>&1 || true
     else
         # Fallback: start containers manually
         docker-compose -f docker-compose-fresh.yml up -d > /dev/null 2>&1
@@ -112,6 +130,9 @@ else
     fi
     CLUSTER_EXISTS=false
 fi
+
+# Re-evaluate default container in case node1 is stopped by prior tests
+DEFAULT_CONTAINER=$(choose_default_container)
 
 echo ""
 echo "Testing pulsectl commands..."
@@ -139,7 +160,7 @@ test_command "pulsectl cluster --help" "cluster --help"
 
 # Get token
 echo -n "Getting cluster token ... "
-TOKEN=$(docker exec pulseha-node1 /usr/local/bin/pulsectl cluster token | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+TOKEN=$(docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl cluster token | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
 if [ -n "$TOKEN" ]; then
     echo -e "${GREEN}✓${NC} ($TOKEN)"
     ((PASSED++))
@@ -190,17 +211,17 @@ test_command "pulsectl group --help" "group --help"
 test_command "pulsectl group list" "group list"
 
 # Clean up any existing test-group first
-docker exec pulseha-node1 /usr/local/bin/pulsectl group delete --name test-group --force > /dev/null 2>&1 || true
+docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group delete test-group --force > /dev/null 2>&1 || true
 
 # Create a test group
 echo -n "Testing group create (test-group) ... "
-if docker exec pulseha-node1 /usr/local/bin/pulsectl group create --name test-group > /tmp/test-output.txt 2>&1; then
+if docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group create test-group > /tmp/test-output.txt 2>&1; then
     echo -e "${GREEN}✓${NC}"
     ((PASSED++))
     
     # Add IP to group
     echo -n "Testing group add IP (192.168.1.100) ... "
-    if docker exec pulseha-node1 /usr/local/bin/pulsectl group add test-group 192.168.1.100 > /tmp/test-output.txt 2>&1; then
+    if docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group add test-group 192.168.1.100 > /tmp/test-output.txt 2>&1; then
         echo -e "${GREEN}✓${NC}"
         ((PASSED++))
         
@@ -209,7 +230,7 @@ if docker exec pulseha-node1 /usr/local/bin/pulsectl group create --name test-gr
         
         # Remove IP from group
         echo -n "Testing group remove IP ... "
-        if docker exec pulseha-node1 /usr/local/bin/pulsectl group remove test-group 192.168.1.100 > /tmp/test-output.txt 2>&1; then
+        if docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group remove test-group 192.168.1.100 > /tmp/test-output.txt 2>&1; then
             echo -e "${GREEN}✓${NC}"
             ((PASSED++))
         else
@@ -224,18 +245,18 @@ if docker exec pulseha-node1 /usr/local/bin/pulsectl group create --name test-gr
     fi
     
     # Get node ID for assign/unassign tests
-    NODE_ID=$(docker exec pulseha-node1 /usr/local/bin/pulsectl status | grep -A2 "Node: node1" | grep -oE '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1 || echo "")
+    NODE_ID=$(docker exec "$DEFAULT_CONTAINER" sh -lc "sed -n 's/.*\"local_node\": \"\([a-f0-9-]\+\)\".*/\1/p' /etc/pulseha/config.json" 2>/dev/null || echo "")
     
     if [ -n "$NODE_ID" ]; then
         # Assign group to node
         echo -n "Testing group assign to node ... "
-        if docker exec pulseha-node1 /usr/local/bin/pulsectl group assign test-group eth0 $NODE_ID > /tmp/test-output.txt 2>&1; then
+        if docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group assign --group test-group --interface eth0 --node-id $NODE_ID > /tmp/test-output.txt 2>&1; then
             echo -e "${GREEN}✓${NC}"
             ((PASSED++))
             
             # Unassign group from node
             echo -n "Testing group unassign from node ... "
-            if docker exec pulseha-node1 /usr/local/bin/pulsectl group unassign test-group eth0 $NODE_ID > /tmp/test-output.txt 2>&1; then
+            if docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group unassign --group test-group --interface eth0 --node-id $NODE_ID > /tmp/test-output.txt 2>&1; then
                 echo -e "${GREEN}✓${NC}"
                 ((PASSED++))
             else
@@ -252,7 +273,7 @@ if docker exec pulseha-node1 /usr/local/bin/pulsectl group create --name test-gr
     
     # Delete the test group
     echo -n "Testing group delete ... "
-    if docker exec pulseha-node1 /usr/local/bin/pulsectl group delete --name test-group --force > /tmp/test-output.txt 2>&1; then
+    if docker exec "$DEFAULT_CONTAINER" /usr/local/bin/pulsectl group delete test-group --force > /tmp/test-output.txt 2>&1; then
         echo -e "${GREEN}✓${NC}"
         ((PASSED++))
     else

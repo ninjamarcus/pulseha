@@ -63,8 +63,6 @@ func (q *TestQuorumManager) ProcessTestExpiredSessions() {
 
 // CalculateQuorumMinimum calculates the minimum number of nodes required for quorum
 func (q *TestQuorumManager) CalculateQuorumMinimum(cfg *config.Config, nodeCount int) int {
-	if cfg.Pulse.QuorumMajorityMode {
-		return (nodeCount / 2) + 1
-	}
-	return cfg.Pulse.QuorumMinNodes
+	// Always majority for 3+ nodes; not used for <3 in new model
+	return (nodeCount / 2) + 1
 }

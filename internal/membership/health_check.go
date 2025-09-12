@@ -17,6 +17,10 @@ import (
 type ServerReference interface {
 	// Add methods that the health checker needs to call on the server
 	GetQuorumManager() *quorum.QuorumManager
+	OrchestrateIPFailover(oldNodeID, newNodeID string, ips []string) error
+	// Cluster-state convergence helpers
+	GetClusterEpoch() int64
+	BroadcastClusterState(memberStates map[string]MemberStatus, epoch int64, leaderID string, leases map[string]string) error
 }
 
 // HealthCheck represents the result of a health check
@@ -359,18 +363,31 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 
 		// Mark the active node as unknown
 		member.Lock()
+		oldNodeID := member.ID
+		activeIPsCopy := append([]string{}, activeIPs...)
 		member.Status = StatusUnknown
 		member.Unlock()
 
 		// Elect a new active node and transfer IPs
 		h.electNewActiveNode()
 
-		// Transfer the failed node's IPs to the new active
+		// Transfer the failed node's IPs to the new active using server IP helpers
 		newActive := h.findActiveNode()
-		if newActive != nil && len(activeIPs) > 0 {
-			h.logger.Infof("Transferring %d IPs from failed active node to new active", len(activeIPs))
-			if err := newActive.MakeActive(activeIPs); err != nil {
-				h.logger.Errorf("Failed to transfer IPs to new active node: %v", err)
+		if newActive != nil && len(activeIPsCopy) > 0 {
+			h.logger.Infof("Transferring %d IPs from failed active node to new active", len(activeIPsCopy))
+			if h.server != nil {
+				if err := h.server.OrchestrateIPFailover(oldNodeID, newActive.ID, activeIPsCopy); err != nil {
+					h.logger.Errorf("Failed to transfer IPs to new active node: %v", err)
+				} else {
+					// Update member IP state
+					newActive.Lock()
+					newActive.ActiveIPs = append([]string{}, activeIPsCopy...)
+					newActive.Unlock()
+
+					member.Lock()
+					member.ActiveIPs = nil
+					member.Unlock()
+				}
 			}
 		}
 	}
@@ -479,8 +496,8 @@ func (h *HealthChecker) electNewActiveNode() {
 			}
 			h.logger.Info("Quorum vote passed, proceeding with promotion")
 		} else {
-			h.logger.Warn("Quorum manager not available, proceeding with time-based election")
-			// Fall through to time-based check below
+			h.logger.Warn("Quorum manager not available, aborting election to prevent split-brain")
+			return
 		}
 	} else if clusterSize == 2 {
 		// 2 nodes: Use time-based tiebreaker to prevent split-brain
@@ -535,6 +552,17 @@ func (h *HealthChecker) electNewActiveNode() {
 	bestCandidate.Unlock()
 
 	h.logger.Infof("Leader election complete, %s is now the active node", bestCandidate.Hostname)
+
+	// Broadcast the new cluster state (increment epoch and set leader) for convergence in active-passive mode
+	if h.server != nil {
+		states := make(map[string]MemberStatus)
+		for id, m := range h.members.Members {
+			m.Lock()
+			states[id] = m.Status
+			m.Unlock()
+		}
+		_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, bestCandidate.ID, nil)
+	}
 }
 
 // findActiveNode returns the current active node
@@ -690,8 +718,20 @@ func (h *HealthChecker) handlePartialFailure(member *Member, failedIPs []string)
 						member.Lock() // Lock again to continue
 					}
 
-					if err := otherMember.MakeActive(member.ActiveIPs); err != nil {
-						h.logger.Errorf("Failed to promote passive node: %v", err)
+					if h.server != nil {
+						if err := h.server.OrchestrateIPFailover(member.ID, otherMember.ID, member.ActiveIPs); err != nil {
+							h.logger.Errorf("Failed to promote passive node: %v", err)
+						} else {
+							h.logger.Infof("Passive node %s promoted to active", otherMember.Hostname)
+							// Update member IP state
+							otherMember.Lock()
+							otherMember.ActiveIPs = append([]string{}, member.ActiveIPs...)
+							otherMember.Unlock()
+
+							member.Lock()
+							member.ActiveIPs = nil
+							member.Unlock()
+						}
 					}
 					break
 				}

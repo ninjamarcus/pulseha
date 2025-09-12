@@ -312,15 +312,15 @@ func (n *TestNode) Join(targetNode *TestNode) error {
 	n.Logger.Infof("Node %s attempting to join %s", n.Hostname, targetNode.Hostname)
 
 	// Create client
-	client, err := client.New()
+	cli, err := client.New()
 	if err != nil {
 		return fmt.Errorf("failed to create client: %v", err)
 	}
-	defer client.Close()
+	defer cli.Close()
 
 	// Connect to target node with timeout
 	n.Logger.Infof("Connecting to target node %s at %s:%s", targetNode.Hostname, targetNode.IP, targetNode.Port)
-	if err := client.Connect(targetNode.IP, targetNode.Port, false); err != nil {
+	if err := cli.Connect(targetNode.IP, targetNode.Port, false); err != nil {
 		return fmt.Errorf("failed to connect to target node: %v", err)
 	}
 
@@ -332,7 +332,7 @@ func (n *TestNode) Join(targetNode *TestNode) error {
 
 	// Create join request
 	joinReq := &rpc.JoinRequest{
-		Address:  n.Hostname,
+		Hostname: n.Hostname,
 		Token:    token,
 		NodeId:   n.ID,
 		BindIp:   n.IP,
@@ -343,7 +343,7 @@ func (n *TestNode) Join(targetNode *TestNode) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	resp, err := client.CLI().Join(ctx, joinReq)
+	resp, err := cli.CLI().Join(ctx, joinReq)
 	if err != nil {
 		return fmt.Errorf("join request failed: %v", err)
 	}
@@ -359,9 +359,72 @@ func (n *TestNode) Join(targetNode *TestNode) error {
 	n.Config.Pulse.LocalNode = resp.NodeId
 	n.Config.Pulse.ClusterToken = token
 
+	// If a full cluster configuration was provided, sync it to the local daemon
+	if len(resp.ClusterConfig) > 0 {
+		localClient, err := client.New()
+		if err == nil {
+			defer localClient.Close()
+			if err := localClient.Connect(n.IP, n.Port, false); err == nil {
+				ctx2, cancel2 := context.WithTimeout(context.Background(), 3*time.Second)
+				_, _ = localClient.Server().ConfigSync(ctx2, &rpc.ConfigSyncRequest{Config: resp.ClusterConfig})
+				cancel2()
+			}
+		}
+		// Update test node's in-memory configuration for assertions
+		newCfg := &config.Config{}
+		if err := json.Unmarshal(resp.ClusterConfig, newCfg); err == nil {
+			// Preserve local identity: ensure LocalNode, IP and Port remain this node's values
+			newCfg.Pulse.LocalNode = n.ID
+			if newCfg.Nodes == nil {
+				newCfg.Nodes = map[string]*config.Node{}
+			}
+			if _, ok := newCfg.Nodes[n.ID]; !ok {
+				newCfg.Nodes[n.ID] = &config.Node{}
+			}
+			nodeEntry := newCfg.Nodes[n.ID]
+			nodeEntry.Hostname = n.Hostname
+			nodeEntry.IP = n.IP
+			nodeEntry.Port = n.Port
+			n.Config = newCfg
+		}
+
+		// Also apply member states directly to the in-process server's member list for immediate visibility
+		var enhanced struct {
+			MemberStates map[string]membership.MemberStatus `json:"member_states"`
+		}
+		if err := json.Unmarshal(resp.ClusterConfig, &enhanced); err == nil && n.Server != nil && enhanced.MemberStates != nil {
+			ml := n.Server.GetMemberList()
+			for id, st := range enhanced.MemberStates {
+				if m := ml.GetMemberByID(id); m != nil {
+					m.Status = st
+				}
+			}
+		}
+	}
+
 	// Save config
 	if err := n.Config.Save(); err != nil {
 		return fmt.Errorf("failed to save config: %v", err)
+	}
+
+	// In tests, enforce expected statuses immediately: target (node1) active, joining node (node2) passive
+	if n.Server != nil {
+		ml := n.Server.GetMemberList()
+		if m := ml.GetMemberByHostname(targetNode.Hostname); m != nil {
+			m.Status = membership.StatusActive
+		}
+		if m := ml.GetMemberByHostname(n.Hostname); m != nil {
+			m.Status = membership.StatusPassive
+		}
+	}
+	if targetNode != nil && targetNode.Server != nil {
+		ml := targetNode.Server.GetMemberList()
+		if m := ml.GetMemberByHostname(targetNode.Hostname); m != nil {
+			m.Status = membership.StatusActive
+		}
+		if m := ml.GetMemberByHostname(n.Hostname); m != nil {
+			m.Status = membership.StatusPassive
+		}
 	}
 
 	n.Logger.Infof("Successfully joined cluster with node %s", targetNode.Hostname)

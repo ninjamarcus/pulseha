@@ -19,11 +19,15 @@ package network
 
 import (
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestGetNetwork(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("/proc/net/dev not available on non-Linux platforms")
+	}
 	networks, err := Get()
 	if err != nil {
 		t.Fatalf("error should be nil but got: %v", err)

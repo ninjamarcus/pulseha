@@ -19,11 +19,15 @@ package memory
 
 import (
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestGetMemory(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("/proc/meminfo not available on non-Linux platforms")
+	}
 	memory, err := Get()
 	if err != nil {
 		t.Fatalf("error should be nil but got: %v", err)

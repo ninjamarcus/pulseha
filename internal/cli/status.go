@@ -56,15 +56,10 @@ func NewStatusCmd() *cobra.Command {
 }
 
 func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, error) {
-	c, err := client.New()
-	if err != nil {
-		return nil, err
-	}
-	cfg := c.GetConfig()
 	status := &client.ClusterStatus{
 		Members: make([]client.Member, len(resp.Members)),
 		Groups:  make([]client.GroupInfo, 0),
-		Mode:    cfg.Pulse.Mode,
+		Mode:    "active-passive",
 	}
 	for i, m := range resp.Members {
 		s := "Unknown"
@@ -77,16 +72,7 @@ func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, e
 			s = "PartialActive"
 		}
 
-		// Derive NodeID if server didn't supply it (fallback by matching config)
 		nodeID := m.NodeId
-		if nodeID == "" {
-			for id, n := range cfg.Nodes {
-				if n.Hostname == m.Hostname || (n.IP == m.Ip && n.Port == m.Port) {
-					nodeID = id
-					break
-				}
-			}
-		}
 
 		status.Members[i] = client.Member{
 			Hostname:      m.Hostname,
@@ -101,16 +87,10 @@ func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, e
 			PartialActive: m.PartialActive,
 		}
 	}
-	for groupName, ips := range cfg.Groups {
-		gi := client.GroupInfo{Name: groupName, IPs: ips}
-		for id, node := range cfg.Nodes {
-			for iface, groups := range node.IPGroups {
-				for _, g := range groups {
-					if g == groupName {
-						gi.Assignments = append(gi.Assignments, client.GroupAssignment{NodeID: id, Interface: iface})
-					}
-				}
-			}
+	for _, g := range resp.Groups {
+		gi := client.GroupInfo{Name: g.Name, IPs: g.Ips}
+		for _, a := range g.Assignments {
+			gi.Assignments = append(gi.Assignments, client.GroupAssignment{NodeID: a.NodeId, Interface: a.Interface})
 		}
 		status.Groups = append(status.Groups, gi)
 	}
@@ -139,7 +119,15 @@ func printClusterStatus(status *client.ClusterStatus) error {
 			fmt.Printf("Partially Active: Yes\n")
 		}
 		if member.LastResponse != "" {
-			fmt.Printf("Last Response: %s\n", member.LastResponse)
+			if t, err := time.Parse(time.RFC3339, member.LastResponse); err == nil {
+				ago := time.Since(t).Round(time.Second)
+				if ago < 0 {
+					ago = -ago
+				}
+				fmt.Printf("Last Response: %s (%s ago)\n", t.Local().Format("15:04:05 2006-01-02"), ago)
+			} else {
+				fmt.Printf("Last Response: %s\n", member.LastResponse)
+			}
 		}
 		if member.Latency != "" {
 			fmt.Printf("Latency: %s\n", member.Latency)

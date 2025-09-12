@@ -77,8 +77,6 @@ func newConfigGetCmd() *cobra.Command {
 				fmt.Fprintf(w, "Failover Interval:\t%dms\n", cfg.Pulse.FailOverInterval)
 				fmt.Fprintf(w, "Failover Limit:\t%dms\n", cfg.Pulse.FailOverLimit)
 				fmt.Fprintf(w, "Auto Failback:\t%v\n", cfg.Pulse.AutoFailback)
-				fmt.Fprintf(w, "Quorum Enabled:\t%v\n", cfg.Pulse.QuorumEnabled)
-				fmt.Fprintf(w, "Quorum Min Nodes:\t%d\n", cfg.Pulse.QuorumMinNodes)
 				w.Flush()
 			} else {
 				// Show specific config value
@@ -100,10 +98,6 @@ func newConfigGetCmd() *cobra.Command {
 					fmt.Println(cfg.Pulse.FailOverLimit)
 				case "auto_failback":
 					fmt.Println(cfg.Pulse.AutoFailback)
-				case "quorum_enabled":
-					fmt.Println(cfg.Pulse.QuorumEnabled)
-				case "quorum_min_nodes":
-					fmt.Println(cfg.Pulse.QuorumMinNodes)
 				default:
 					// Try to get it as JSON field
 					data, _ := json.Marshal(cfg.Pulse)

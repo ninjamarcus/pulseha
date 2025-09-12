@@ -2,6 +2,7 @@ package integration
 
 import (
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -12,6 +13,9 @@ import (
 
 // TestIPMonitoring tests the IP monitoring system
 func TestIPMonitoring(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	// Skip if not running as root (needed for IP manipulation)
 	if !testutil.IsRoot() {
 		t.Skip("This test requires root privileges to run")

@@ -91,51 +91,7 @@ func (q *QuorumManager) UpdateNodeCount(count int) {
 	defer q.Unlock()
 
 	q.nodeCount = count
-
-	// Automatically adjust quorum settings based on node count
-	if count < 3 {
-		// For 1-2 nodes, quorum voting doesn't make sense
-		if q.config.Pulse.QuorumEnabled {
-			q.logger.Warn("Automatically disabling quorum voting as it requires at least 3 nodes")
-			q.config.Pulse.QuorumEnabled = false
-
-			// Save the configuration change
-			if err := q.config.Save(); err != nil {
-				q.logger.Errorf("Failed to save configuration after disabling quorum: %v", err)
-			}
-		}
-	} else {
-		// For 3+ nodes, enable quorum voting by default if not explicitly disabled
-		// We only enable it automatically if it wasn't explicitly disabled by the user
-		if !q.config.Pulse.QuorumEnabled && q.config.Pulse.QuorumMinNodes == 0 {
-			q.logger.Info("Automatically enabling quorum voting with 3+ nodes")
-			q.config.Pulse.QuorumEnabled = true
-
-			// Set quorum minimum based on majority
-			q.config.Pulse.QuorumMajorityMode = true
-			q.config.Pulse.QuorumMinNodes = (count / 2) + 1
-
-			// Save the configuration change
-			if err := q.config.Save(); err != nil {
-				q.logger.Errorf("Failed to save configuration after enabling quorum: %v", err)
-			}
-		}
-	}
-
-	// Recalculate quorum minimum if in majority mode
-	if q.config.Pulse.QuorumEnabled && q.config.Pulse.QuorumMajorityMode {
-		newMinimum := (count / 2) + 1
-		if q.config.Pulse.QuorumMinNodes != newMinimum {
-			q.logger.Infof("Adjusting quorum minimum from %d to %d based on node count",
-				q.config.Pulse.QuorumMinNodes, newMinimum)
-			q.config.Pulse.QuorumMinNodes = newMinimum
-
-			// Save the configuration change
-			if err := q.config.Save(); err != nil {
-				q.logger.Errorf("Failed to save configuration after adjusting quorum minimum: %v", err)
-			}
-		}
-	}
+	// Quorum behavior is automatic now; no config toggles to persist
 }
 
 // StartVotingSession creates a new voting session and returns its ID
@@ -143,9 +99,9 @@ func (q *QuorumManager) StartVotingSession(voteType VoteType, subject string, de
 	q.Lock()
 	defer q.Unlock()
 
-	// Check if quorum voting is enabled
-	if !q.config.Pulse.QuorumEnabled {
-		return "", fmt.Errorf("quorum voting is not enabled in the configuration")
+	// Require at least 3 nodes to start a voting session
+	if q.nodeCount < 3 {
+		return "", fmt.Errorf("quorum voting requires at least 3 nodes")
 	}
 
 	// Generate a unique session ID
@@ -254,34 +210,14 @@ func (q *QuorumManager) HasQuorum(voteCount int) bool {
 	q.RLock()
 	defer q.RUnlock()
 
-	// If quorum is disabled, always return true
-	if !q.config.Pulse.QuorumEnabled {
-		q.logger.Debug("Quorum voting is disabled, automatically passing")
-		return true
-	}
-
-	// Validate node count
+	// With fewer than 3 nodes, quorum logic is not applicable
 	if q.nodeCount < 3 {
-		q.logger.Warn("Quorum check with fewer than 3 nodes, automatically passing")
 		return true
 	}
 
-	// Calculate minimum votes needed
-	minVotes := q.config.Pulse.QuorumMinNodes
-	if q.config.Pulse.QuorumMajorityMode {
-		minVotes = (q.nodeCount / 2) + 1
-	}
-
-	// Check if we have enough votes
-	hasQuorum := voteCount >= minVotes
-
-	if hasQuorum {
-		q.logger.Debugf("Quorum achieved: %d votes (minimum: %d)", voteCount, minVotes)
-	} else {
-		q.logger.Warnf("Quorum not achieved: %d votes (minimum: %d)", voteCount, minVotes)
-	}
-
-	return hasQuorum
+	// Majority of current node count
+	minVotes := (q.nodeCount / 2) + 1
+	return voteCount >= minVotes
 }
 
 // canConcludeVoting checks if a voting session can be concluded early
@@ -314,7 +250,8 @@ func (q *QuorumManager) canConcludeVoting(session *VotingSession) bool {
 
 	// If we have enough NO votes to guarantee failure
 	remainingPossibleYes := q.nodeCount - len(session.Votes)
-	if yesCount+remainingPossibleYes < q.config.Pulse.QuorumMinNodes {
+	minVotes := (q.nodeCount / 2) + 1
+	if yesCount+remainingPossibleYes < minVotes {
 		return true
 	}
 

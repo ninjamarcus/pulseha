@@ -17,9 +17,15 @@
 */
 package uptime
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestGetUptime(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uptime source may not be available or reliable on non-Linux in CI")
+	}
 	uptime, err := Get()
 	if err != nil {
 		t.Fatalf("error should be nil but got: %v", err)

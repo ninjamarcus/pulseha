@@ -24,6 +24,7 @@ const (
 	CLI_Status_FullMethodName                  = "/rpc.CLI/Status"
 	CLI_Promote_FullMethodName                 = "/rpc.CLI/Promote"
 	CLI_SetMode_FullMethodName                 = "/rpc.CLI/SetMode"
+	CLI_InitiateJoin_FullMethodName            = "/rpc.CLI/InitiateJoin"
 	CLI_UpdateConfig_FullMethodName            = "/rpc.CLI/UpdateConfig"
 	CLI_ResyncNetwork_FullMethodName           = "/rpc.CLI/ResyncNetwork"
 	CLI_CreateGroup_FullMethodName             = "/rpc.CLI/CreateGroup"
@@ -50,6 +51,8 @@ type CLIClient interface {
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusResponse, error)
 	Promote(ctx context.Context, in *PromoteRequest, opts ...grpc.CallOption) (*PromoteResponse, error)
 	SetMode(ctx context.Context, in *SetModeRequest, opts ...grpc.CallOption) (*SetModeResponse, error)
+	// Initiate a server-driven join against a target member
+	InitiateJoin(ctx context.Context, in *InitiateJoinRequest, opts ...grpc.CallOption) (*InitiateJoinResponse, error)
 	// Config updates
 	UpdateConfig(ctx context.Context, in *UpdateConfigRequest, opts ...grpc.CallOption) (*UpdateConfigResponse, error)
 	// Network resync
@@ -122,6 +125,16 @@ func (c *cLIClient) SetMode(ctx context.Context, in *SetModeRequest, opts ...grp
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetModeResponse)
 	err := c.cc.Invoke(ctx, CLI_SetMode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *cLIClient) InitiateJoin(ctx context.Context, in *InitiateJoinRequest, opts ...grpc.CallOption) (*InitiateJoinResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InitiateJoinResponse)
+	err := c.cc.Invoke(ctx, CLI_InitiateJoin_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +282,8 @@ type CLIServer interface {
 	Status(context.Context, *StatusRequest) (*StatusResponse, error)
 	Promote(context.Context, *PromoteRequest) (*PromoteResponse, error)
 	SetMode(context.Context, *SetModeRequest) (*SetModeResponse, error)
+	// Initiate a server-driven join against a target member
+	InitiateJoin(context.Context, *InitiateJoinRequest) (*InitiateJoinResponse, error)
 	// Config updates
 	UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error)
 	// Network resync
@@ -311,6 +326,9 @@ func (UnimplementedCLIServer) Promote(context.Context, *PromoteRequest) (*Promot
 }
 func (UnimplementedCLIServer) SetMode(context.Context, *SetModeRequest) (*SetModeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetMode not implemented")
+}
+func (UnimplementedCLIServer) InitiateJoin(context.Context, *InitiateJoinRequest) (*InitiateJoinResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InitiateJoin not implemented")
 }
 func (UnimplementedCLIServer) UpdateConfig(context.Context, *UpdateConfigRequest) (*UpdateConfigResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateConfig not implemented")
@@ -458,6 +476,24 @@ func _CLI_SetMode_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CLIServer).SetMode(ctx, req.(*SetModeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CLI_InitiateJoin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InitiateJoinRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CLIServer).InitiateJoin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CLI_InitiateJoin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CLIServer).InitiateJoin(ctx, req.(*InitiateJoinRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -722,6 +758,10 @@ var CLI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetMode",
 			Handler:    _CLI_SetMode_Handler,
+		},
+		{
+			MethodName: "InitiateJoin",
+			Handler:    _CLI_InitiateJoin_Handler,
 		},
 		{
 			MethodName: "UpdateConfig",

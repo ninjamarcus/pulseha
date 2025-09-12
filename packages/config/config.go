@@ -83,16 +83,12 @@ type Local struct {
 	AutoFailback        bool   `json:"auto_failback"`
 	LogToFile           bool   `json:"log_to_file"`
 	LogFileLocation     string `json:"log_file_location"`
-	LogToSyslog         bool   `json:"log_to_syslog"`    // Enable syslog logging
-	SyslogNetwork       string `json:"syslog_network"`   // Network type: "", "tcp", "udp"
-	SyslogAddress       string `json:"syslog_address"`   // Syslog server address
-	SyslogFacility      string `json:"syslog_facility"`  // Syslog facility: LOG_LOCAL0, etc.
-	SyslogTag           string `json:"syslog_tag"`       // Syslog tag
-	Mode                string `json:"mode"` // active-passive or active-active
-	// Quorum configuration
-	QuorumEnabled      bool `json:"quorum_enabled"`   // Whether to use quorum voting
-	QuorumMinNodes     int  `json:"quorum_min_nodes"` // Minimum nodes required for quorum
-	QuorumMajorityMode bool `json:"quorum_majority"`  // If true, quorum is majority of nodes; if false, use fixed number
+	LogToSyslog         bool   `json:"log_to_syslog"`   // Enable syslog logging
+	SyslogNetwork       string `json:"syslog_network"`  // Network type: "", "tcp", "udp"
+	SyslogAddress       string `json:"syslog_address"`  // Syslog server address
+	SyslogFacility      string `json:"syslog_facility"` // Syslog facility: LOG_LOCAL0, etc.
+	SyslogTag           string `json:"syslog_tag"`      // Syslog tag
+	Mode                string `json:"mode"`            // active-passive or active-active
 }
 
 type Node struct {
@@ -112,7 +108,7 @@ func New() *Config {
 			FailOverLimit:       10000,
 			LoggingLevel:        "info",
 			AutoFailback:        true,
-			LogToFile:           false,  // Default to syslog only
+			LogToFile:           false, // Default to syslog only
 			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
 			LogToSyslog:         true,
 			SyslogNetwork:       "",
@@ -278,10 +274,10 @@ func (c *Config) Load() error {
 		if err = json.Unmarshal(b, &c); err != nil {
 			return fmt.Errorf("unable to unmarshal config: %v", err)
 		}
-		
+
 		// Migrate old configs: set default syslog values if missing
 		c.migrateConfig()
-		
+
 		if err := c.Validate(); err != nil {
 			return fmt.Errorf("config validation failed: %v", err)
 		}
@@ -297,10 +293,10 @@ func (c *Config) Load() error {
 // migrateConfig ensures backward compatibility by setting default values for new fields
 func (c *Config) migrateConfig() {
 	migrated := false
-	
+
 	// Check if syslog fields are missing and set defaults
-	if c.Pulse.SyslogNetwork == "" && c.Pulse.SyslogAddress == "" && 
-	   c.Pulse.SyslogFacility == "" && c.Pulse.SyslogTag == "" {
+	if c.Pulse.SyslogNetwork == "" && c.Pulse.SyslogAddress == "" &&
+		c.Pulse.SyslogFacility == "" && c.Pulse.SyslogTag == "" {
 		// This looks like an old config, set syslog defaults
 		c.Pulse.LogToSyslog = true
 		c.Pulse.SyslogNetwork = ""
@@ -310,7 +306,7 @@ func (c *Config) migrateConfig() {
 		migrated = true
 		log.Debug("Migrated config: added default syslog settings")
 	}
-	
+
 	// Save the migrated config if changes were made
 	if migrated {
 		if err := c.Save(); err != nil {
@@ -323,7 +319,7 @@ func (c *Config) migrateConfig() {
 
 // Reload the config file into memory.
 func (c *Config) Reload() error {
-	log.Info("Reloading PulseHA config")
+	log.WithField("component", "config").Info("Reloading PulseHA config")
 	return c.Load()
 }
 
@@ -339,7 +335,7 @@ func (c *Config) SaveDefaultLocalConfig() error {
 			LocalNode:           hostname,
 			ClusterToken:        "",
 			LoggingLevel:        "info",
-			LogToFile:           false,  // Default to syslog only
+			LogToFile:           false, // Default to syslog only
 			LogFileLocation:     filepath.Join(CONFIG_DIR, "pulseha.log"),
 			LogToSyslog:         true,
 			SyslogNetwork:       "",
@@ -439,35 +435,6 @@ func (c *Config) Validate() error {
 
 	if c.Pulse.FailOverLimit < c.Pulse.FailOverInterval {
 		return errors.New("failover interval must be smaller than failover limit")
-	}
-
-	// Validate quorum settings based on node count
-	nodeCount := len(c.Nodes)
-	if c.Pulse.QuorumEnabled && nodeCount < 3 {
-		return fmt.Errorf("quorum voting requires at least 3 nodes, but only %d nodes are configured", nodeCount)
-	}
-
-	// Validate quorum minimum
-	if c.Pulse.QuorumEnabled {
-		if c.Pulse.QuorumMajorityMode {
-			// In majority mode, minimum should be (n/2)+1
-			expectedMin := (nodeCount / 2) + 1
-			if c.Pulse.QuorumMinNodes != expectedMin {
-				// Auto-correct the minimum
-				c.Pulse.QuorumMinNodes = expectedMin
-			}
-		} else {
-			// In fixed mode, minimum should not exceed node count
-			if c.Pulse.QuorumMinNodes > nodeCount {
-				return fmt.Errorf("quorum minimum (%d) exceeds node count (%d)", c.Pulse.QuorumMinNodes, nodeCount)
-			}
-			// And should be at least majority
-			minRecommended := (nodeCount / 2) + 1
-			if c.Pulse.QuorumMinNodes < minRecommended {
-				return fmt.Errorf("quorum minimum (%d) is less than recommended minimum (%d) for %d nodes",
-					c.Pulse.QuorumMinNodes, minRecommended, nodeCount)
-			}
-		}
 	}
 
 	return nil

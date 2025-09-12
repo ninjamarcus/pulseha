@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/server"
 	"github.com/syleron/pulseha/packages/config"
@@ -26,8 +26,8 @@ func TestCreateClusterReturnsWithoutDeadlock(t *testing.T) {
 
 	// Create config and logger
 	cfg := config.New()
-	logger := logrus.New()
-	logger.SetLevel(logrus.WarnLevel)
+	logger := log.New(os.Stdout)
+	logger.SetLevel(log.WarnLevel)
 
 	// Create member list and health checker
 	ml := membership.NewMemberList(cfg, logger)

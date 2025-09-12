@@ -23,9 +23,6 @@ import (
 	"strings"
 
 	"github.com/syleron/pulseha/internal/client"
-	"github.com/syleron/pulseha/packages/config"
-	"github.com/syleron/pulseha/packages/network"
-	"github.com/syleron/pulseha/packages/utils"
 	"github.com/syleron/pulseha/rpc"
 )
 
@@ -159,52 +156,7 @@ func (c *Client) CLI() rpc.CLIClient {
 
 // CreateCluster creates a new cluster with the given bind IP and port
 func (c *Client) CreateCluster(bindIP, bindPort, mode string) error {
-	// Get hostname
-	hostname, err := utils.GetHostname()
-	if err != nil {
-		return fmt.Errorf("failed to get hostname: %v", err)
-	}
-
-	// Generate node ID
-	nodeID := c.Client.GetConfig().GenerateNodeID()
-
-	// Create initial config
-	cfg := c.Client.GetConfig()
-	cfg.Pulse.LocalNode = nodeID
-	cfg.Pulse.Mode = mode
-
-	// Add local node to config
-	cfg.Nodes[nodeID] = &config.Node{
-		Hostname: hostname,
-		IP:       bindIP,
-		Port:     bindPort,
-		IPGroups: make(map[string][]string),
-	}
-
-	// Create IP groups for each network interface
-	interfaces := network.GetInterfaceNames()
-	for _, iface := range interfaces {
-		// Skip loopback interface
-		if iface == "lo" {
-			continue
-		}
-
-		// Create group name from interface
-		groupName := fmt.Sprintf("group-%s", iface)
-
-		// Create empty group
-		cfg.Groups[groupName] = []string{}
-
-		// Assign group to interface
-		cfg.Nodes[nodeID].IPGroups[iface] = []string{groupName}
-	}
-
-	// Save config
-	if err := cfg.Save(); err != nil {
-		return fmt.Errorf("failed to save config: %v", err)
-	}
-
-	return nil
+	return c.Client.CreateCluster(bindIP, bindPort, mode)
 }
 
 // GetVotingSessions retrieves a list of voting sessions
@@ -265,9 +217,9 @@ func (c *Client) JoinCluster(address, token, bindIP, bindPort string) error {
 		return fmt.Errorf("failed to get hostname: %v", err)
 	}
 
-	// Create join request
+	// Create join request (server handles all authoritative logic)
 	joinReq := &rpc.JoinRequest{
-		Address:  hostname,
+		Hostname: hostname,
 		Token:    token,
 		BindIp:   bindIP,
 		BindPort: bindPort,

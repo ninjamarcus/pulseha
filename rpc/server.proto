@@ -56,7 +56,7 @@ service Server {
 
 // Join Request/Response
 message JoinRequest {
-    string address = 1;  // Address of the node (FQDN or IP)
+    string hostname = 1;  // Node hostname (display/identifier only)
     string token = 2;    // Cluster join token
     string node_id = 3;  // Required node ID
     string bind_ip = 4;  // Optional local bind IP
@@ -72,7 +72,7 @@ message JoinResponse {
 
 // Leave Request/Response
 message LeaveRequest {
-    string node_id = 1;   // Primary identifier (UUID)
+    string node_id = 1;
 }
 
 message LeaveResponse {
@@ -97,7 +97,7 @@ enum MemberStatusEnum {
 }
 
 message Member {
-    string hostname = 1;
+    string hostname = 1;  // Node hostname (display only)
     MemberStatusEnum status = 2;
     repeated string active_ips = 3;
     string last_response = 4;
@@ -111,7 +111,7 @@ message Member {
 
 // Promote Request/Response
 message PromoteRequest {
-    string node_id = 1;   // Primary identifier (UUID)
+    string node_id = 1;
     repeated string ips = 2;
 }
 
@@ -132,7 +132,7 @@ message ConfigSyncResponse {
 
 // MakePassive Request/Response
 message MakePassiveRequest {
-    string node_id = 1;   // Primary identifier (UUID)
+    string node_id = 1;
 }
 
 message MakePassiveResponse {
@@ -176,8 +176,7 @@ message LogsRequest {
     int32 lines = 1;
     LogLevel level = 2;
     string message = 3;
-    string node = 4;
-    string node_id = 5;   // Primary identifier (UUID)
+    string node_id = 4;
 }
 
 message LogsResponse {
@@ -186,7 +185,7 @@ message LogsResponse {
 
 // Remove Request/Response
 message RemoveRequest {
-    string node_id = 1;   // Primary identifier (UUID)
+    string node_id = 1;
 }
 
 message RemoveResponse {
@@ -281,9 +280,8 @@ message GroupInfo {
 }
 
 message GroupAssignment {
-    string hostname = 1;  // kept for backward compatibility
-    string interface = 2;
-    string node_id = 3;   // preferred unique identifier (UUID)
+    string interface = 1;
+    string node_id = 2;
 }
 
 message ListGroupsResponse {
@@ -296,9 +294,8 @@ message ListGroupsResponse {
 // Group Unassignment
 message UnassignGroupRequest {
     string group_name = 1;
-    string hostname = 2; // deprecated, prefer node_id
-    string interface = 3;
-    string node_id = 4;  // preferred unique identifier (UUID)
+    string interface = 2;
+    string node_id = 3;
 }
 
 message UnassignGroupResponse {

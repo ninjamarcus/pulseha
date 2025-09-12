@@ -35,7 +35,7 @@ func newGroupCreateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			
+
 			client, err := client.New()
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)
@@ -206,7 +206,7 @@ func newGroupListCmd() *cobra.Command {
 				if len(group.Assignments) > 0 {
 					fmt.Println("  Assigned to:")
 					for _, assignment := range group.Assignments {
-						fmt.Printf("    - Node: %s (%s), Interface: %s\n", assignment.Hostname, assignment.NodeId, assignment.Interface)
+						fmt.Printf("    - Node ID: %s, Interface: %s\n", assignment.NodeId, assignment.Interface)
 					}
 				} else {
 					fmt.Println("  Assigned to: None")
@@ -269,7 +269,7 @@ func newGroupDeleteCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			
+
 			client, err := client.New()
 			if err != nil {
 				fmt.Printf("Failed to create client: %v\n", err)

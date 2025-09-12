@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"time"
 
 	log "github.com/charmbracelet/log"
-	"github.com/vishvananda/netlink"
 )
 
 // IPMonitor monitors IP addresses on interfaces and ensures they match the expected configuration
@@ -42,8 +40,8 @@ func (m *IPMonitor) Start() error {
 		return fmt.Errorf("failed to initialize expected IPs: %v", err)
 	}
 
-	// Start periodic verification
-	go m.periodicVerification()
+	// Start platform-specific event monitoring (pure event-driven)
+	go m.monitorLoop()
 
 	m.logger.Info("IP monitor started")
 	return nil
@@ -122,109 +120,20 @@ func (m *IPMonitor) initializeExpectedIPs() error {
 	copy(activeIPs, localMember.ActiveIPs)
 	localMember.Unlock()
 
-	// Group IPs by interface
+	// Group IPs by interface (best effort via config)
 	for _, ip := range activeIPs {
-		// Get the interface for this IP
 		iface, err := m.members.config.GetGroupIface(localMember.Hostname, "")
 		if err != nil {
 			m.logger.Warn("Failed to get interface for IP", "ip", ip, "error", err)
 			continue
 		}
-
-		// Add to expected IPs
 		m.expectedIPs[iface] = append(m.expectedIPs[iface], ip)
 	}
 
 	return nil
 }
 
-// monitorLoop processes netlink updates (disabled for now due to API changes)
-func (m *IPMonitor) monitorLoop() {
-	// NetLink monitoring disabled due to API changes
-	// This functionality will be restored in a future version
-	return
-}
-
-// restoreIP attempts to restore an IP that was unexpectedly removed
-func (m *IPMonitor) restoreIP(iface string, ip string) {
-	m.logger.Info("Attempting to restore IP", "ip", ip, "iface", iface)
-
-	// Get the link
-	link, err := netlink.LinkByName(iface)
-	if err != nil {
-		m.logger.Error("Failed to get link for interface", "iface", iface, "error", err)
-		return
-	}
-
-	// Parse the IP
-	addr, err := netlink.ParseAddr(ip + "/32") // Assuming /32 for simplicity
-	if err != nil {
-		m.logger.Error("Failed to parse IP", "ip", ip, "error", err)
-		return
-	}
-
-	// Add the IP to the interface
-	if err := netlink.AddrAdd(link, addr); err != nil {
-		m.logger.Error("Failed to add IP to interface", "ip", ip, "iface", iface, "error", err)
-		return
-	}
-
-	m.logger.Info("Successfully restored IP on interface", "ip", ip, "iface", iface)
-}
-
-// periodicVerification periodically verifies that all expected IPs are present
-func (m *IPMonitor) periodicVerification() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-m.stopChan:
-			return
-		case <-ticker.C:
-			m.verifyAllIPs()
-		}
-	}
-}
-
-// verifyAllIPs verifies that all expected IPs are present on their interfaces
-func (m *IPMonitor) verifyAllIPs() {
-	m.RLock()
-	// Create a copy to avoid holding the lock during potentially slow operations
-	expectedCopy := make(map[string][]string)
-	for iface, ips := range m.expectedIPs {
-		ipsCopy := make([]string, len(ips))
-		copy(ipsCopy, ips)
-		expectedCopy[iface] = ipsCopy
-	}
-	m.RUnlock()
-
-	for iface, expectedIPs := range expectedCopy {
-		// Get the actual IPs on this interface
-		actualIPs, err := m.getInterfaceIPs(iface)
-		if err != nil {
-			m.logger.Error("Failed to get IPs for interface", "iface", iface, "error", err)
-			continue
-		}
-
-		// Check for missing IPs
-		for _, expectedIP := range expectedIPs {
-			found := false
-			for _, actualIP := range actualIPs {
-				if actualIP == expectedIP {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				m.logger.Warn("Expected IP not found on interface", "ip", expectedIP, "iface", iface)
-				// Restore the IP
-				m.restoreIP(iface, expectedIP)
-			}
-		}
-	}
-}
+// monitor loop is provided by platform-specific file (e.g., ip_monitor_linux.go)
 
 // getInterfaceIPs gets all IPs assigned to an interface
 func (m *IPMonitor) getInterfaceIPs(iface string) ([]string, error) {

@@ -2,6 +2,7 @@ package integration
 
 import (
 	"os"
+	"runtime"
 	"testing"
 	"time"
 
@@ -12,11 +13,9 @@ import (
 
 // TestGroupManagement tests the group management functionality
 func TestGroupManagement(t *testing.T) {
-	// Skip if not running as root
-	// if os.Geteuid() != 0 {
-	//     t.Skip("This test requires root privileges to run")
-	// }
-
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	// Set environment variable to skip hostname validation
 	os.Setenv("PULSEHA_TEST", "true")
 
@@ -104,6 +103,9 @@ func TestGroupManagement(t *testing.T) {
 
 // TestGroupIPRemoval tests removing IPs from a group
 func TestGroupIPRemoval(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("integration tests run only on Linux")
+	}
 	// Skip if not running as root (needed for IP manipulation)
 	if !testutil.IsRoot() {
 		t.Skip("This test requires root privileges to run")
