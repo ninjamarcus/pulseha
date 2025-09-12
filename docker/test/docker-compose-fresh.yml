@@ -19,11 +19,11 @@ services:
     environment:
       - PULSEHA_NODE_ID=node1
       - PULSEHA_BIND_IP=172.20.0.10
-      - PULSEHA_BIND_PORT=8080
+      - PULSEHA_BIND_PORT=9083
     # Start pulseha without any configuration - just like a fresh install
     command: ["/usr/local/bin/pulseha"]
     ports:
-      - "8081:8080"
+      - "9081:9083"
 
   pulseha-node2:
     build:
@@ -43,11 +43,11 @@ services:
     environment:
       - PULSEHA_NODE_ID=node2
       - PULSEHA_BIND_IP=172.20.0.11
-      - PULSEHA_BIND_PORT=8080
+      - PULSEHA_BIND_PORT=9083
     # Start with a delay to ensure node1 is up first
     command: ["/bin/bash", "-c", "sleep 5 && /usr/local/bin/pulseha"]
     ports:
-      - "8082:8080"
+      - "9082:9083"
 
   pulseha-node3:
     build:
@@ -67,11 +67,11 @@ services:
     environment:
       - PULSEHA_NODE_ID=node3
       - PULSEHA_BIND_IP=172.20.0.12
-      - PULSEHA_BIND_PORT=8080
+      - PULSEHA_BIND_PORT=9083
     # Start with a longer delay
     command: ["/bin/bash", "-c", "sleep 10 && /usr/local/bin/pulseha"]
     ports:
-      - "8083:8080"
+      - "9083:9083"
 
 networks:
   pulseha-net:

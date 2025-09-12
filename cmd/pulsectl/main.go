@@ -34,7 +34,7 @@ func main() {
 
 var (
 	versionFlag bool
-	rootCmd = &cobra.Command{
+	rootCmd     = &cobra.Command{
 		Use:   "pulsectl",
 		Short: "PulseHA cluster management tool",
 		Long:  `PulseHA cluster management tool - Manage your high availability cluster`,
@@ -52,12 +52,21 @@ var (
 
 func init() {
 	rootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Show version information")
-	
+
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Show version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("PulseHA CLI Version: %s\n", utils.Version)
+			fmt.Printf("Build: %s\n", utils.Build)
+		},
+	})
+
 	rootCmd.AddCommand(
 		cli.NewClusterCmd(),
 		cli.NewNodeCmd(),
 		cli.NewGroupCmd(),
 		cli.NewStatusCmd(),
-		cli.NewConfigCmd(),  // Add config command
+		cli.NewConfigCmd(), // Add config command
 	)
 }

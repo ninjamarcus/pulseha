@@ -71,12 +71,6 @@ func newClusterJoinCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			// Prevent join if local daemon already has a cluster configured
-			if client.GetConfig().ClusterCheck() {
-				return fmt.Errorf("this node is already part of a cluster; run 'pulsectl cluster leave' first")
-			}
-
 			return client.JoinClusterWithNodeID(address, token, bindIP, bindPort, nodeID)
 		},
 	}

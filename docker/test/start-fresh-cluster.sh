@@ -78,7 +78,7 @@ echo "   This tests the exact same path that would hang in the reported issue"
 # Create cluster - this is the operation that was hanging
 if ! docker exec pulseha-node1 /usr/local/bin/pulsectl cluster create \
     --bind-ip 172.20.0.10 \
-    --bind-port 8080 \
+    --bind-port 9083 \
     --mode active-passive; then
     echo "❌ Failed to create cluster"
     docker logs pulseha-node1 | tail -50
@@ -103,10 +103,10 @@ echo "🔑 Token: $TOKEN"
 echo ""
 echo "2️⃣  Joining node2 to cluster..."
 if docker exec pulseha-node2 /usr/local/bin/pulsectl cluster join \
-    --address 172.20.0.10:8080 \
+    --address 172.20.0.10:9083 \
     --token "$TOKEN" \
     --bind-ip 172.20.0.11 \
-    --bind-port 8080; then
+    --bind-port 9083; then
     echo "✅ Node2 joined successfully"
 else
     echo "⚠️  Node2 join failed (may need retry)"
@@ -121,19 +121,19 @@ sleep 2
 echo ""
 echo "3️⃣  Joining node3 to cluster..."
 if docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join \
-    --address 172.20.0.10:8080 \
+    --address 172.20.0.10:9083 \
     --token "$TOKEN" \
     --bind-ip 172.20.0.12 \
-    --bind-port 8080; then
+    --bind-port 9083; then
     echo "✅ Node3 joined successfully"
 else
     echo "⚠️  Node3 join failed, retrying once after short wait..."
     sleep 3
     if docker exec pulseha-node3 /usr/local/bin/pulsectl cluster join \
-        --address 172.20.0.10:8080 \
+        --address 172.20.0.10:9083 \
         --token "$TOKEN" \
         --bind-ip 172.20.0.12 \
-        --bind-port 8080; then
+        --bind-port 9083; then
         echo "✅ Node3 joined successfully on retry"
     else
         echo "❌ Node3 join failed after retry"

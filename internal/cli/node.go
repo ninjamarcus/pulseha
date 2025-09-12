@@ -39,11 +39,6 @@ func newNodePromoteCmd() *cobra.Command {
 			}
 			defer c.Close()
 
-			// Must be part of a cluster to promote
-			if !c.GetConfig().ClusterCheck() {
-				return fmt.Errorf("no cluster configured; cannot promote")
-			}
-
 			if nodeID == "" {
 				return fmt.Errorf("--node-id is required")
 			}
