@@ -342,8 +342,26 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 	if err != nil {
 		return fmt.Errorf("join initiate failed: %v", err)
 	}
-	fmt.Printf("Join initiated. Check status for updates.\n")
-	return nil
+
+	// Deterministic confirmation: poll Status until the new node appears (or timeout)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("join did not appear in cluster within 20s; retry or run 'pulsectl status'")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		resp, sErr := c.CLI().Status(ctx, &rpc.StatusRequest{})
+		cancel()
+		if sErr == nil {
+			for _, m := range resp.Members {
+				if m.NodeId == nodeID {
+					fmt.Printf("Successfully joined cluster: %s (%s:%s) [id=%s]\n", m.Hostname, m.Ip, m.Port, m.NodeId)
+					return nil
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 // LeaveCluster removes this node from the cluster
