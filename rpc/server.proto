@@ -19,6 +19,8 @@ service CLI {
     rpc Status(StatusRequest) returns (StatusResponse) {}
     rpc Promote(PromoteRequest) returns (PromoteResponse) {}
     rpc SetMode(SetModeRequest) returns (SetModeResponse) {}
+    // Initiate a server-driven join against a target member
+    rpc InitiateJoin(InitiateJoinRequest) returns (InitiateJoinResponse) {}
     // Config updates
     rpc UpdateConfig(UpdateConfigRequest) returns (UpdateConfigResponse) {}
     // Network resync
@@ -435,3 +437,18 @@ message TokenResponse {
     string message = 2;
     string token = 3; // The cluster join token
 } 
+
+// Server-driven join
+message InitiateJoinRequest {
+    string target_host = 1;
+    string target_port = 2;
+    string token = 3;
+    string bind_ip = 4;
+    string bind_port = 5;
+    string node_id = 6;
+}
+
+message InitiateJoinResponse {
+    bool success = 1;
+    string message = 2;
+}
