@@ -165,8 +165,7 @@ func main() {
 func setupLogging(cfg *config.Config, logger *log.Logger) error {
 	var writers []io.Writer
 
-	// Always include stdout for container/systemd compatibility
-	writers = append(writers, os.Stdout)
+	// We prefer syslog/file if configured; we'll fallback to stdout only if no other writers are available
 
 	// Setup syslog logging if enabled (default to true if not explicitly set)
 	logToSyslog := cfg.Pulse.LogToSyslog
@@ -238,6 +237,11 @@ func setupLogging(cfg *config.Config, logger *log.Logger) error {
 		}
 		writers = append(writers, logFile)
 		logger.Info("File logging enabled", "path", cfg.Pulse.LogFileLocation)
+	}
+
+	// Fallback to stdout if no writers configured (ensures we always emit logs somewhere)
+	if len(writers) == 0 {
+		writers = append(writers, os.Stdout)
 	}
 
 	// Set multi-writer output (stdout + file if enabled)
