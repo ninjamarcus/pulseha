@@ -100,7 +100,7 @@ func (s *Server) Start() error {
 	if os.Getenv("PULSEHA_TEST") == "true" {
 		cliAddr = "127.0.0.1:0"
 	}
-	s.logger.Debug("Starting CLI gRPC server on ", cliAddr)
+	s.logger.Debug("Starting CLI gRPC server", "addr", cliAddr)
 	s.cliServer = grpc.NewServer()
 	// Register both CLI and Server services on the local listener so local operations (e.g., ConfigSync) work pre-cluster
 	rpc.RegisterServerServer(s.cliServer, s)
@@ -110,7 +110,7 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to listen for CLI server on %s: %v", cliAddr, err)
 	}
 	go func() {
-		s.logger.Debug("Serving CLI gRPC on ", cliListener.Addr().String())
+		s.logger.Debug("Serving CLI gRPC", "addr", cliListener.Addr().String())
 		if err := s.cliServer.Serve(cliListener); err != nil {
 			s.logger.Error("CLI server failed", "error", err)
 		}
@@ -220,7 +220,7 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 	}
 
 	go func() {
-		s.logger.Debug("Serving cluster gRPC on ", listener.Addr().String())
+		s.logger.Debug("Serving cluster gRPC", "addr", listener.Addr().String())
 		if err := s.grpcServer.Serve(listener); err != nil {
 			s.logger.Error("Cluster gRPC server failed", "error", err)
 		}
