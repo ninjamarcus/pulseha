@@ -73,8 +73,12 @@ func (m *Member) initializeClient() error {
 	m.logger.Debug(fmt.Sprintf("Initializing client connection for member %s", m.Hostname))
 
 	// Get node config
-	node, ok := m.config.Nodes[m.Hostname]
-	if !ok {
+	// Prefer lookup by member ID (config Nodes is keyed by ID)
+	var node *config.Node
+	if n, ok := m.config.Nodes[m.ID]; ok {
+		node = n
+	}
+	if node == nil {
 		return fmt.Errorf("no configuration found for member %s", m.Hostname)
 	}
 

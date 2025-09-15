@@ -118,7 +118,10 @@ func printClusterStatus(status *client.ClusterStatus) error {
 		if member.PartialActive {
 			fmt.Printf("Partially Active: Yes\n")
 		}
-		if member.LastResponse != "" {
+		if member.Status == "Unknown" || member.LastResponse == "" {
+			fmt.Printf("Last Response: N/A\n")
+			fmt.Printf("Latency: N/A\n")
+		} else {
 			if t, err := time.Parse(time.RFC3339, member.LastResponse); err == nil {
 				ago := time.Since(t).Round(time.Second)
 				if ago < 0 {
@@ -128,9 +131,9 @@ func printClusterStatus(status *client.ClusterStatus) error {
 			} else {
 				fmt.Printf("Last Response: %s\n", member.LastResponse)
 			}
-		}
-		if member.Latency != "" {
-			fmt.Printf("Latency: %s\n", member.Latency)
+			if member.Latency != "" {
+				fmt.Printf("Latency: %s\n", member.Latency)
+			}
 		}
 	}
 

@@ -264,6 +264,23 @@ func (s *Server) Stop() {
 
 	s.logger.Info("Stopping PulseHA server")
 
+	// Best-effort: drop all configured VIPs on local node before stopping
+	if s.config != nil {
+		if localID, err := s.config.GetLocalNodeUUID(); err == nil {
+			if node := s.config.Nodes[localID]; node != nil {
+				for iface, groups := range node.IPGroups {
+					for _, g := range groups {
+						if ips, ok := s.config.Groups[g]; ok {
+							if len(ips) > 0 {
+								_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Stop the health checker
 	if s.healthCheck != nil {
 		s.healthCheck.Stop()
@@ -381,6 +398,46 @@ func (s *Server) loadInitialMembers() error {
 
 	s.logger.Info("All members loaded successfully from configuration")
 	s.logger.Debugf("Final member list contains %d members", len(s.memberList.Members))
+
+	// After members are loaded, perform one-shot VIP reconcile on local node
+	go func() {
+		// small delay to ensure listeners up
+		time.Sleep(500 * time.Millisecond)
+		if localID, err := s.config.GetLocalNodeUUID(); err == nil {
+			member := s.memberList.GetMemberByID(localID)
+			node := s.config.Nodes[localID]
+			if member != nil && node != nil {
+				if member.Status == membership.StatusActive {
+					// Bring up any missing expected VIPs
+					for iface, groups := range node.IPGroups {
+						var ips []string
+						for _, g := range groups {
+							if gips, ok := s.config.Groups[g]; ok {
+								ips = append(ips, gips...)
+							}
+						}
+						if len(ips) > 0 {
+							_, _ = s.BringUpIP(context.Background(), &rpc.UpIpRequest{Iface: iface, Ips: ips})
+						}
+					}
+				} else {
+					// Passive: drop any VIPs found on local interfaces
+					for iface, groups := range node.IPGroups {
+						var ips []string
+						for _, g := range groups {
+							if gips, ok := s.config.Groups[g]; ok {
+								ips = append(ips, gips...)
+							}
+						}
+						if len(ips) > 0 {
+							_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
+						}
+					}
+				}
+			}
+		}
+	}()
+
 	return nil
 }
 
@@ -792,6 +849,9 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 	}
 	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, nodeID, nil)
 
+	// Post-promotion: reconcile VIPs on local node
+	go s.refreshLocalMonitorExpectedIPs()
+
 	// Success
 	return &rpc.PromoteResponse{
 		Success: true,
@@ -1002,6 +1062,9 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		states[id] = m.Status
 	}
 	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, req.NodeId, nil)
+
+	// Post-promotion: reconcile VIPs on local node
+	go s.refreshLocalMonitorExpectedIPs()
 
 	// Success
 	return &rpc.PromoteResponse{
@@ -1265,6 +1328,21 @@ func (s *Server) refreshLocalMonitorExpectedIPs() {
 		s.ipMonitor.ClearExpectedIPs(iface)
 		if len(ifaceIPs) > 0 {
 			s.ipMonitor.UpdateExpectedIPs(iface, ifaceIPs)
+			// Proactively bring up any missing expected IPs on this interface
+			var missing []string
+			for _, ip := range ifaceIPs {
+				ipOnly, _ := utils.GetCIDR(ip)
+				if ipOnly == nil {
+					continue
+				}
+				exists, existingIface, _ := network.CheckIfIPExists(ipOnly.String())
+				if !exists || existingIface != iface {
+					missing = append(missing, ip)
+				}
+			}
+			if len(missing) > 0 {
+				_, _ = s.BringUpIP(context.Background(), &rpc.UpIpRequest{Iface: iface, Ips: missing})
+			}
 		}
 	}
 }

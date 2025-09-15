@@ -37,22 +37,79 @@ func (m *IPMonitor) monitorLoop() {
 			m.RLock()
 			expected := make([]string, len(m.expectedIPs[iface]))
 			copy(expected, m.expectedIPs[iface])
+			// Also capture expected set across all interfaces to resolve correct iface
+			allExpected := make(map[string]string) // ip(without mask)->iface
+			for ifn, ips := range m.expectedIPs {
+				for _, e := range ips {
+					ipOnly := e
+					if strings.Contains(e, "/") {
+						ipOnly = strings.Split(e, "/")[0]
+					}
+					allExpected[ipOnly] = ifn
+				}
+			}
 			m.RUnlock()
+
+			changedIP := upd.LinkAddress.IP.String()
+			// Construct netlink.Addr from update
+			addrStr := upd.LinkAddress.String()
+			addrObj, perr := netlink.ParseAddr(addrStr)
+			if perr != nil {
+				continue
+			}
+
+			// Evaluate local role
+			localID, err := m.members.config.GetLocalNodeUUID()
+			if err != nil {
+				continue
+			}
+			localMember := m.members.GetMemberByID(localID)
+			if localMember == nil {
+				continue
+			}
+
+			if upd.NewAddr {
+				// Address added
+				if localMember.Status != StatusActive {
+					// Drop any VIP additions while passive
+					_ = netlink.AddrDel(link, addrObj)
+					m.logger.Info("IP monitor: dropped IP on passive node", "ip", changedIP, "iface", iface)
+					continue
+				}
+				// Active: allow only expected IPs on the correct interface
+				correctIface, isExpected := allExpected[changedIP]
+				if !isExpected {
+					// Unexpected addition; remove
+					_ = netlink.AddrDel(link, addrObj)
+					m.logger.Warn("IP monitor: removed unexpected IP on active node", "ip", changedIP, "iface", iface)
+					continue
+				}
+				if correctIface != iface {
+					// Move to correct interface
+					_ = netlink.AddrDel(link, addrObj)
+					if targetLink, e := netlink.LinkByName(correctIface); e == nil {
+						_ = netlink.AddrAdd(targetLink, addrObj)
+					}
+					m.logger.Info("IP monitor: moved IP to correct interface", "ip", changedIP, "from", iface, "to", correctIface)
+				}
+				continue
+			}
+
+			// Address removed: restore expected IPs
 			if len(expected) == 0 {
 				continue
 			}
 
-			// Changed address without mask -> string
-			changedIP := upd.LinkAddress.IP.String()
-
 			// If an expected IP was removed, immediately restore
-			if !upd.NewAddr {
-				for _, exp := range expected {
-					if exp == changedIP {
-						m.logger.Warn("IP monitor: expected IP removed; restoring", "ip", exp, "iface", iface)
-						m.restoreIP(iface, exp)
-						break
-					}
+			for _, exp := range expected {
+				ipOnly := exp
+				if strings.Contains(exp, "/") {
+					ipOnly = strings.Split(exp, "/")[0]
+				}
+				if ipOnly == changedIP {
+					m.logger.Warn("IP monitor: expected IP removed; restoring", "ip", exp, "iface", iface)
+					m.restoreIP(iface, exp)
+					break
 				}
 			}
 		}
