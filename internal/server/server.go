@@ -920,19 +920,20 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		}, nil
 	}
 
-	// If another node is currently Active in active-passive mode, demote it first to avoid conflicts
+	// If another node is currently Active in active-passive mode, demote it first to avoid conflicts.
+	// Capture the previous active ID for deterministic VIP transfer later.
+	prevActiveID := ""
 	if s.config.Pulse.Mode == "active-passive" {
-		var currentActiveID string
 		for id, m := range s.memberList.Members {
 			if m.Status == membership.StatusActive {
-				currentActiveID = id
+				prevActiveID = id
 				break
 			}
 		}
-		if currentActiveID != "" && currentActiveID != req.NodeId {
-			s.logger.Info("Demoting current active before promotion", "current_active", currentActiveID, "target", req.NodeId)
+		if prevActiveID != "" && prevActiveID != req.NodeId {
+			s.logger.Info("Demoting current active before promotion", "current_active", prevActiveID, "target", req.NodeId)
 			// Best-effort demotion via RPC path (handles local/remote)
-			if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: currentActiveID}); err != nil {
+			if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: prevActiveID}); err != nil {
 				s.logger.Warn("Failed to demote current active before promotion", "error", err)
 			}
 		}
@@ -986,14 +987,8 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		for _, ipList := range s.config.Groups {
 			allIPs = append(allIPs, ipList...)
 		}
-		// Identify previous active (if any)
-		oldActiveID := ""
-		for id, m := range s.memberList.Members {
-			if id != req.NodeId && m.Status == membership.StatusActive {
-				oldActiveID = id
-				break
-			}
-		}
+		// Use previously captured active (before demotion)
+		oldActiveID := prevActiveID
 		if len(allIPs) > 0 {
 			if err := s.OrchestrateIPFailover(oldActiveID, req.NodeId, allIPs); err != nil {
 				s.logger.Warn("VIP transfer encountered issues", "error", err)
@@ -1037,6 +1032,22 @@ func (s *Server) MakePassive(ctx context.Context, req *rpc.MakePassiveRequest) (
 
 	// If local, make passive locally; otherwise forward to remote node and reflect state
 	if member.IsLocal() {
+		// Proactively bring down all floating IPs assigned to this node per config
+		var ipsToDrop []string
+		if localNodeCfg := s.config.Nodes[member.ID]; localNodeCfg != nil {
+			for _, groups := range localNodeCfg.IPGroups {
+				for _, g := range groups {
+					if ipList, ok := s.config.Groups[g]; ok {
+						ipsToDrop = append(ipsToDrop, ipList...)
+					}
+				}
+			}
+		}
+		if len(ipsToDrop) > 0 {
+			if err := member.BringDownIPs(ipsToDrop); err != nil {
+				s.logger.Warn("Failed to bring down IPs during demotion", "error", err)
+			}
+		}
 		member.Status = membership.StatusPassive
 		member.ActiveIPs = nil
 		member.PartialActive = false
@@ -1231,6 +1242,16 @@ func (s *Server) refreshLocalMonitorExpectedIPs() {
 		for iface := range node.IPGroups {
 			s.ipMonitor.ClearExpectedIPs(iface)
 		}
+		// Actively drop configured floating IPs on passive role
+		for iface, groups := range node.IPGroups {
+			for _, g := range groups {
+				if ips, ok := s.config.Groups[g]; ok {
+					for _, ip := range ips {
+						_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: []string{ip}})
+					}
+				}
+			}
+		}
 		return
 	}
 
@@ -1344,8 +1365,9 @@ func (s *Server) CreateGroup(ctx context.Context, req *rpc.CreateGroupRequest) (
 
 	// Check if group already exists
 	if _, exists := s.config.Groups[req.Name]; exists {
+		s.logger.Infof("Group %s already exists; treating as success", req.Name)
 		return &rpc.CreateGroupResponse{
-			Success: false,
+			Success: true,
 			Message: fmt.Sprintf("group %s already exists", req.Name),
 		}, nil
 	}
@@ -1427,16 +1449,33 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 		}
 	}
 
-	// Check if IP already exists in any group
+	// Check if IP already exists in configuration
+	alreadyInSameGroup := false
 	for g, ips := range s.config.Groups {
 		for _, existingIP := range ips {
 			if existingIP == ipToUse {
+				if g == req.GroupName {
+					alreadyInSameGroup = true
+					break
+				}
 				return &rpc.AddIPToGroupResponse{
 					Success: false,
 					Message: fmt.Sprintf("IP %s already exists in group %s", ipToUse, g),
 				}, nil
 			}
 		}
+		if alreadyInSameGroup {
+			break
+		}
+	}
+	// If already configured in this group, treat as idempotent success without touching interfaces
+	if alreadyInSameGroup {
+		s.logger.Infof("IP %s already configured in group %s; treating as success", ipToUse, req.GroupName)
+		return &rpc.AddIPToGroupResponse{
+			Success:  true,
+			Message:  fmt.Sprintf("IP %s already exists in group %s", ipToUse, req.GroupName),
+			Warnings: warnings,
+		}, nil
 	}
 
 	// Find nodes that have this group assigned and try to bring up the IP
@@ -1462,7 +1501,7 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 							continue
 						}
 
-						// Check if IP is already in use on another interface
+						// Check if IP is already present; treat as success if on target iface
 						ipObj, _ := utils.GetCIDR(ipToUse)
 						if ipObj != nil {
 							exists, existingIface, err := network.CheckIfIPExists(ipObj.String())
@@ -1471,8 +1510,20 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 								continue
 							}
 							if exists {
-								warnings = append(warnings, fmt.Sprintf("IP %s is already in use on interface %s", ipToUse, existingIface))
-								continue
+								if existingIface == iface {
+									// Already configured on desired iface; mark success and update expected IPs
+									ipBroughtUp = true
+									s.logger.Infof("IP %s already present on interface %s; treating as success", ipToUse, iface)
+									if s.ipMonitor != nil {
+										s.ipMonitor.UpdateExpectedIPs(iface, []string{ipToUse})
+									}
+									continue
+								}
+								// Present on a different iface; try to bring it down there first
+								if derr := network.BringIPdown(existingIface, ipToUse); derr != nil {
+									warnings = append(warnings, fmt.Sprintf("Failed to remove existing IP %s from interface %s: %v", ipToUse, existingIface, derr))
+									continue
+								}
 							}
 						}
 
@@ -1615,8 +1666,9 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 	}
 
 	if !found {
+		s.logger.Infof("IP %s not present in group %s; treating as success", ipToUse, req.GroupName)
 		return &rpc.RemoveIPFromGroupResponse{
-			Success: false,
+			Success: true,
 			Message: fmt.Sprintf("IP %s not found in group %s", ipToUse, req.GroupName),
 		}, nil
 	}
@@ -1752,12 +1804,13 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 		node.IPGroups = make(map[string][]string)
 	}
 
-	// Check if group is already assigned to this interface
+	// Check if group is already assigned to this interface (idempotent success)
 	for _, g := range node.IPGroups[req.Interface] {
 		if g == req.GroupName {
+			s.logger.Infof("Group %s already assigned to %s on node %s; treating as success", req.GroupName, req.Interface, req.NodeId)
 			return &rpc.AssignGroupResponse{
-				Success: false,
-				Message: fmt.Sprintf("group %s is already assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId),
+				Success: true,
+				Message: fmt.Sprintf("group %s already assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId),
 			}, nil
 		}
 	}
@@ -1850,7 +1903,9 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 
 	// Check if group is assigned to this interface
 	if node.IPGroups == nil {
-		return &rpc.UnassignGroupResponse{Success: false, Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId)}, nil
+		// Nothing assigned; idempotent success
+		s.logger.Infof("Group %s not assigned on %s for node %s; treating as success", req.GroupName, req.Interface, req.NodeId)
+		return &rpc.UnassignGroupResponse{Success: true, Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId)}, nil
 	}
 
 	// Find and remove the group from interface
@@ -1864,7 +1919,9 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	}
 
 	if groupIndex == -1 {
-		return &rpc.UnassignGroupResponse{Success: false, Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId)}, nil
+		// Already unassigned; idempotent success
+		s.logger.Infof("Group %s already unassigned from %s on node %s; treating as success", req.GroupName, req.Interface, req.NodeId)
+		return &rpc.UnassignGroupResponse{Success: true, Message: fmt.Sprintf("group %s is not assigned to interface %s on node %s", req.GroupName, req.Interface, req.NodeId)}, nil
 	}
 
 	// Remove group from slice
@@ -1921,9 +1978,10 @@ func (s *Server) DeleteGroup(ctx context.Context, req *rpc.DeleteGroupRequest) (
 		return &rpc.DeleteGroupResponse{Success: false, Message: "no cluster configured"}, nil
 	}
 
-	// Validate group exists
+	// Validate group exists (idempotent success if missing)
 	if _, exists := s.config.Groups[req.GroupName]; !exists {
-		return &rpc.DeleteGroupResponse{Success: false, Message: fmt.Sprintf("group %s does not exist", req.GroupName)}, nil
+		s.logger.Infof("Group %s does not exist; treating delete as success", req.GroupName)
+		return &rpc.DeleteGroupResponse{Success: true, Message: fmt.Sprintf("group %s does not exist", req.GroupName)}, nil
 	}
 
 	// Check if group is assigned to any nodes (unless force is true)
@@ -2479,6 +2537,76 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		newConfig.Pulse.SyslogAddress = syslogAddressPreserve
 		newConfig.Pulse.SyslogFacility = syslogFacilityPreserve
 		newConfig.Pulse.SyslogTag = syslogTagPreserve
+
+		// Merge: preserve/merge groups and interface assignments when missing or empty in incoming
+		if len(newConfig.Groups) == 0 && len(s.config.Groups) > 0 {
+			// Deep copy local groups
+			newConfig.Groups = make(map[string][]string, len(s.config.Groups))
+			for g, ips := range s.config.Groups {
+				copySlice := make([]string, len(ips))
+				copy(copySlice, ips)
+				newConfig.Groups[g] = copySlice
+			}
+		}
+		// For any group present with empty list, prefer local non-empty list
+		if len(s.config.Groups) > 0 {
+			if newConfig.Groups == nil {
+				newConfig.Groups = make(map[string][]string)
+			}
+			for g, localIPs := range s.config.Groups {
+				if len(localIPs) == 0 {
+					continue
+				}
+				incomingIPs, ok := newConfig.Groups[g]
+				if !ok || len(incomingIPs) == 0 {
+					copySlice := make([]string, len(localIPs))
+					copy(copySlice, localIPs)
+					newConfig.Groups[g] = copySlice
+				}
+			}
+		}
+		// Preserve per-node interface group assignments when missing in incoming
+		for nodeID, existing := range s.config.Nodes {
+			if existing == nil {
+				continue
+			}
+			nIncoming, ok := newConfig.Nodes[nodeID]
+			if !ok || nIncoming == nil {
+				// Keep existing node entirely if absent
+				copied := *existing
+				if copied.IPGroups != nil {
+					copiedGroups := make(map[string][]string, len(copied.IPGroups))
+					for iface, groups := range copied.IPGroups {
+						gg := make([]string, len(groups))
+						copy(gg, groups)
+						copiedGroups[iface] = gg
+					}
+					copied.IPGroups = copiedGroups
+				}
+				newConfig.Nodes[nodeID] = &copied
+				continue
+			}
+			if len(nIncoming.IPGroups) == 0 && len(existing.IPGroups) > 0 {
+				nIncoming.IPGroups = make(map[string][]string, len(existing.IPGroups))
+				for iface, groups := range existing.IPGroups {
+					gg := make([]string, len(groups))
+					copy(gg, groups)
+					nIncoming.IPGroups[iface] = gg
+				}
+			}
+			// For any interface present with empty group list, prefer local list
+			for iface, localGroups := range existing.IPGroups {
+				if len(localGroups) == 0 {
+					continue
+				}
+				incomingGroups, ok := nIncoming.IPGroups[iface]
+				if !ok || len(incomingGroups) == 0 {
+					gg := make([]string, len(localGroups))
+					copy(gg, localGroups)
+					nIncoming.IPGroups[iface] = gg
+				}
+			}
+		}
 
 		// Persist and update our configuration
 		if err := newConfig.Save(); err != nil {

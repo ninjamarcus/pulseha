@@ -269,7 +269,7 @@ func CheckIfIPExists(ipAddr string) (bool, string, error) {
 		}
 		for _, addr := range addrs {
 			if ipAddr == addr.IP.String() {
-				return true, addr.Label, nil
+				return true, link.Attrs().Name, nil
 			}
 		}
 	}
