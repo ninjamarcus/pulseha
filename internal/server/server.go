@@ -979,6 +979,28 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		member.Status = membership.StatusActive
 	}
 
+	// If active-passive, orchestrate floating IP transfer from old active to new active
+	if s.config.Pulse.Mode == "active-passive" {
+		// Collect all floating IPs defined in config
+		var allIPs []string
+		for _, ipList := range s.config.Groups {
+			allIPs = append(allIPs, ipList...)
+		}
+		// Identify previous active (if any)
+		oldActiveID := ""
+		for id, m := range s.memberList.Members {
+			if id != req.NodeId && m.Status == membership.StatusActive {
+				oldActiveID = id
+				break
+			}
+		}
+		if len(allIPs) > 0 {
+			if err := s.OrchestrateIPFailover(oldActiveID, req.NodeId, allIPs); err != nil {
+				s.logger.Warn("VIP transfer encountered issues", "error", err)
+			}
+		}
+	}
+
 	// Broadcast convergence state so peers adopt the same active (active-passive)
 	states := make(map[string]membership.MemberStatus)
 	for id, m := range s.memberList.Members {
@@ -1374,6 +1396,21 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 	ipToUse := req.Ip
 	var warnings []string
 
+	// Determine active-passive gating context
+	activePassive := s.config.Pulse.Mode == "active-passive"
+	activeID := ""
+	if activePassive {
+		for id, m := range s.memberList.Members {
+			if m.Status == membership.StatusActive {
+				activeID = id
+				break
+			}
+		}
+		if activeID == "" {
+			warnings = append(warnings, "No active node currently; IP will be enforced when a node becomes active")
+		}
+	}
+
 	// Check if it's already in CIDR notation
 	if !utils.IsCIDR(req.Ip) {
 		if utils.IsIPv4(req.Ip) {
@@ -1408,6 +1445,11 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 		for iface, groups := range node.IPGroups {
 			for _, g := range groups {
 				if g == req.GroupName {
+					// In active-passive mode, only enforce on the current active node
+					if activePassive && activeID != "" && nodeID != activeID {
+						// Skip bringing IP up on passive nodes; config still records the IP
+						continue
+					}
 					// Check if this is the local node
 					if nodeID == s.config.Pulse.LocalNode {
 						// This is the local node, bring up the IP locally
@@ -1485,13 +1527,18 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 		}
 	}
 
-	// If we couldn't bring up the IP on any node, return the error
+	// If we couldn't bring up the IP immediately, decide whether to treat as fatal
 	if !ipBroughtUp && len(warnings) > 0 {
-		return &rpc.AddIPToGroupResponse{
-			Success:  false,
-			Message:  "Failed to bring up IP on any node",
-			Warnings: warnings,
-		}, nil
+		if activePassive {
+			// In active-passive mode, lack of immediate bring-up may be expected (no active yet or gated)
+			s.logger.Info("IP not brought up immediately due to active-passive gating or no active present", "ip", ipToUse)
+		} else {
+			return &rpc.AddIPToGroupResponse{
+				Success:  false,
+				Message:  "Failed to bring up IP on any node",
+				Warnings: warnings,
+			}, nil
+		}
 	}
 
 	// Add IP to group in config
