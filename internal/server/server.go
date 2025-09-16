@@ -156,7 +156,7 @@ func (s *Server) Start() error {
 		nodeCount := s.memberList.GetMemberCount()
 		s.quorumManager.UpdateNodeCount(nodeCount)
 		s.quorumManager.Start()
-		s.logger.Debug("Quorum manager started with node count: ", nodeCount)
+		s.logger.Debug("Quorum manager started", "node_count", nodeCount)
 	} else {
 		s.logger.Warn("Quorum manager is nil, quorum voting will not be available")
 	}
@@ -3266,15 +3266,6 @@ func (s *Server) groupIPsByInterfaceForNode(nodeID string, ips []string) (map[st
 	ifaceToIPs := make(map[string][]string)
 
 	nodeCfg := s.config.Nodes[nodeID]
-	if nodeCfg == nil {
-		// Try by hostname for backward compatibility
-		if nodeID != "" {
-			if host, n, err := s.config.GetNodeByHostname(nodeID); err == nil && n != nil {
-				_ = host
-				nodeCfg = n
-			}
-		}
-	}
 	if nodeCfg == nil {
 		return nil, fmt.Errorf("node configuration not found for %s", nodeID)
 	}

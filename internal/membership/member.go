@@ -259,11 +259,6 @@ func (m *Member) groupIPsByInterface(ips []string) (map[string][]string, error) 
 	var nodeCfg *config.Node
 	if n, ok := m.config.Nodes[m.ID]; ok {
 		nodeCfg = n
-	} else {
-		// Backward compatibility: resolve by hostname
-		if _, n2, err := m.config.GetNodeByHostname(m.Hostname); err == nil {
-			nodeCfg = n2
-		}
 	}
 	if nodeCfg == nil {
 		return nil, fmt.Errorf("node configuration not found for %s", m.ID)
