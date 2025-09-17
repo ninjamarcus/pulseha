@@ -1556,6 +1556,8 @@ func (s *Server) CreateGroup(ctx context.Context, req *rpc.CreateGroupRequest) (
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
+	// Broadcast updated config to peers
+	go s.broadcastFullConfigToPeers()
 
 	s.logger.Infof("Successfully created group: %s", req.Name)
 	return &rpc.CreateGroupResponse{
@@ -1772,6 +1774,8 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 			Warnings: warnings,
 		}, nil
 	}
+	// Broadcast updated config to peers
+	go s.broadcastFullConfigToPeers()
 
 	s.logger.Infof("Successfully added IP %s to group %s", ipToUse, req.GroupName)
 	return &rpc.AddIPToGroupResponse{
@@ -1923,6 +1927,8 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 			Warnings: warnings,
 		}, nil
 	}
+	// Broadcast updated config to peers
+	go s.broadcastFullConfigToPeers()
 
 	// If we couldn't bring down the IP on any node but it was in the config, add a warning
 	if !ipBroughtDown && len(warnings) > 0 {
@@ -1994,6 +2000,8 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
+	// Broadcast updated config to peers
+	go s.broadcastFullConfigToPeers()
 
 	// If assigning on the local node, refresh expected IPs for this interface
 	if s.ipMonitor != nil {
@@ -2108,6 +2116,8 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
+	// Broadcast updated config to peers
+	go s.broadcastFullConfigToPeers()
 
 	// If unassigning on the local node, refresh expected IPs for this interface
 	if s.ipMonitor != nil {
@@ -2203,6 +2213,8 @@ func (s *Server) DeleteGroup(ctx context.Context, req *rpc.DeleteGroupRequest) (
 			Message: fmt.Sprintf("failed to save config: %v", err),
 		}, nil
 	}
+	// Broadcast updated config to peers
+	go s.broadcastFullConfigToPeers()
 
 	s.logger.Infof("Successfully deleted group %s", req.GroupName)
 	return &rpc.DeleteGroupResponse{
@@ -3500,4 +3512,29 @@ func (s *Server) BroadcastClusterState(memberStates map[string]membership.Member
 		remoteClient.Close()
 	}
 	return nil
+}
+
+func (s *Server) broadcastFullConfigToPeers() {
+	configBytes, err := json.Marshal(s.config)
+	if err != nil {
+		return
+	}
+	localID, _ := s.config.GetLocalNodeUUID()
+	for id, node := range s.config.Nodes {
+		if id == localID {
+			continue
+		}
+		remoteClient, err := client.New()
+		if err != nil {
+			continue
+		}
+		if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+			remoteClient.Close()
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
+		cancel()
+		remoteClient.Close()
+	}
 }
