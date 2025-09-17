@@ -75,7 +75,6 @@ func newGroupAddIPCmd() *cobra.Command {
 				fmt.Printf("Failed to add IP to group: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Successfully ensured %s is in group %s\n", ip, group)
 			return nil
 		},
 	}
