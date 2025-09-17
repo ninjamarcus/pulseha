@@ -2826,34 +2826,55 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 
 	// Apply incoming member states if provided
 	if len(incomingMemberStates) > 0 {
-		for id, st := range incomingMemberStates {
-			if m := s.memberList.GetMemberByID(id); m != nil {
-				m.Status = st
+		// Decide whether to apply incoming states based on epoch and leader to avoid cross-over
+		applyStates := false
+		currentEpoch := s.clusterEpoch
+		currentLeader := s.leaderID
+		if incomingEpoch > currentEpoch {
+			applyStates = true
+		} else if incomingEpoch == currentEpoch {
+			// Only accept if leader matches (or no leader set yet)
+			if currentLeader == "" || incomingLeaderID == currentLeader {
+				applyStates = true
 			}
 		}
-		// Enforce view based on mode
-		if _, err := s.config.GetLocalNodeUUID(); err == nil {
-			if s.config.Pulse.Mode == "active-passive" {
-				// Enforce single active matching incoming leader/member states
-				var activeID string
-				for id, st := range incomingMemberStates {
-					if st == membership.StatusActive {
-						activeID = id
-						break
-					}
+		if applyStates {
+			// Update epoch/leader if needed
+			if incomingEpoch >= currentEpoch {
+				s.clusterEpoch = incomingEpoch
+				s.leaderID = incomingLeaderID
+			}
+			for id, st := range incomingMemberStates {
+				if m := s.memberList.GetMemberByID(id); m != nil {
+					m.Status = st
 				}
-				if activeID != "" {
-					for id, m := range s.memberList.Members {
-						if id == activeID {
-							m.Status = membership.StatusActive
-						} else {
-							m.Status = membership.StatusPassive
+			}
+			// Enforce view based on mode
+			if _, err := s.config.GetLocalNodeUUID(); err == nil {
+				if s.config.Pulse.Mode == "active-passive" {
+					// Enforce single active matching incoming leader/member states
+					var activeID string
+					for id, st := range incomingMemberStates {
+						if st == membership.StatusActive {
+							activeID = id
+							break
 						}
 					}
+					if activeID != "" {
+						for id, m := range s.memberList.Members {
+							if id == activeID {
+								m.Status = membership.StatusActive
+							} else {
+								m.Status = membership.StatusPassive
+							}
+						}
+					}
+				} else {
+					// active-active: accept multiple actives; no special enforcement beyond applying states
 				}
-			} else {
-				// active-active: accept multiple actives; no special enforcement beyond applying states
 			}
+		} else {
+			s.logger.Debug("ConfigSync: ignoring incoming member_states due to stale epoch or foreign leader", "incoming_epoch", incomingEpoch, "current_epoch", currentEpoch, "incoming_leader", incomingLeaderID, "current_leader", currentLeader)
 		}
 	}
 
