@@ -2003,6 +2003,9 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 	// Broadcast updated config to peers
 	go s.broadcastFullConfigToPeers()
 
+	// Reconcile VIPs according to local role (ensures active brings up missing IPs after assignment)
+	go s.refreshLocalMonitorExpectedIPs()
+
 	// If assigning on the local node, refresh expected IPs for this interface
 	if s.ipMonitor != nil {
 		if localID, err := s.config.GetLocalNodeUUID(); err == nil && req.NodeId == localID {
@@ -2118,6 +2121,9 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	}
 	// Broadcast updated config to peers
 	go s.broadcastFullConfigToPeers()
+
+	// Reconcile VIPs according to local role (ensures passives drop after unassignment)
+	go s.refreshLocalMonitorExpectedIPs()
 
 	// If unassigning on the local node, refresh expected IPs for this interface
 	if s.ipMonitor != nil {
@@ -3164,7 +3170,15 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIpResponse, error) {
 	s.logger.Infof("RPC BringUpIP on iface %s for %d IP(s)", req.Iface, len(req.Ips))
 
-	for _, ip := range req.Ips {
+	// Ensure interface exists
+	exists, _ := network.InterfaceExist(req.Iface)
+	if !exists {
+		return &rpc.UpIpResponse{Success: false, Message: "interface does not exist"}, nil
+	}
+
+	for _, raw := range req.Ips {
+		ip := raw
+		// Normalize to CIDR
 		if !utils.IsCIDR(ip) {
 			if utils.IsIPv4(ip) {
 				ip = ip + "/32"
@@ -3175,13 +3189,36 @@ func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIp
 			}
 		}
 
+		// Pre-check if already present
+		ipOnly, _ := utils.GetCIDR(ip)
+		if ipOnly != nil {
+			ex, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+			if ex {
+				if eIface == req.Iface {
+					// Already present on desired interface: send GARP and continue
+					_ = network.SendGARP(req.Iface, ip)
+					continue
+				}
+				// Present on a different interface: try to remove there first (best-effort)
+				_ = network.BringIPdown(eIface, ip)
+			}
+		}
+
 		if err := network.BringIPup(req.Iface, ip); err != nil {
+			// If add failed, recheck if it is now present on target iface (treat as success)
+			if ipOnly != nil {
+				ex, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+				if ex && eIface == req.Iface {
+					_ = network.SendGARP(req.Iface, ip)
+					continue
+				}
+			}
 			s.logger.Error("BringUpIP failed", "iface", req.Iface, "ip", ip, "error", err)
 			return &rpc.UpIpResponse{Success: false, Message: err.Error()}, nil
 		}
-		if err := network.SendGARP(req.Iface, ip); err != nil {
-			s.logger.Warn("SendGARP failed", "iface", req.Iface, "ip", ip, "error", err)
-		}
+
+		// Best-effort GARP
+		_ = network.SendGARP(req.Iface, ip)
 	}
 	return &rpc.UpIpResponse{Success: true, Message: "IPs brought up"}, nil
 }
