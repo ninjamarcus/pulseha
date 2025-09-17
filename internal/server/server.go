@@ -675,15 +675,72 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 	}
 
 	// If this is the local node, we need to stop the server
-	if nodeID == localNodeID {
+	if member.ID == localNodeID {
 		s.logger.Info("Leaving cluster as local node")
-		go func() {
-			time.Sleep(1 * time.Second)
-			s.Stop()
-		}()
+
+		// Broadcast removal of this node to all other peers before adjusting local state
+		for id, node := range s.config.Nodes {
+			if id == localNodeID {
+				continue
+			}
+			remoteClient, err := client.New()
+			if err != nil {
+				s.logger.Warn("Failed to create client for peer", "peer", id, "error", err)
+				continue
+			}
+			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+				remoteClient.Close()
+				s.logger.Warn("Failed to connect to peer", "peer", id, "error", err)
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_, err = remoteClient.Server().Remove(ctx, &rpc.RemoveRequest{NodeId: localNodeID})
+			cancel()
+			remoteClient.Close()
+			if err != nil {
+				s.logger.Warn("Failed to propagate removal to peer", "peer", id, "error", err)
+			}
+		}
+
+		// Best-effort: drop all configured VIPs on local node
+		if node := s.config.Nodes[localNodeID]; node != nil {
+			for iface, groups := range node.IPGroups {
+				for _, g := range groups {
+					if ips, ok := s.config.Groups[g]; ok {
+						if len(ips) > 0 {
+							_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
+						}
+					}
+				}
+			}
+		}
+
+		// Remove from member list
+		_ = s.memberList.RemoveMember(localNodeID)
+
+		// Update local config to reflect no cluster configured
+		delete(s.config.Nodes, localNodeID)
+		// Clearing LocalNode indicates no active cluster binding
+		s.config.Pulse.LocalNode = ""
+		// Clear cluster token to avoid accidental reuse
+		s.config.Pulse.ClusterToken = ""
+		if err := s.config.Save(); err != nil {
+			s.logger.Warn("Failed to save config after leave", "error", err)
+		}
+
+		// Stop the cluster (inter-node) gRPC server only; keep CLI server alive for further config
+		if s.grpcServer != nil {
+			s.grpcServer.GracefulStop()
+			s.grpcServer = nil
+		}
+		// Optionally stop health checker since there is no cluster configured
+		if s.healthCheck != nil {
+			s.healthCheck.Stop()
+		}
+
 		return &rpc.LeaveResponse{
 			Success: true,
-			Message: "Successfully left the cluster",
+			Message: "Successfully left the cluster; CLI remains available on 127.0.0.1:8080",
 		}, nil
 	}
 
@@ -911,7 +968,7 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 	if member.ID == localNodeID {
 		s.logger.Info("Leaving cluster as local node")
 
-		// Broadcast removal of this node to all other peers before stopping
+		// Broadcast removal of this node to all other peers before adjusting local state
 		for id, node := range s.config.Nodes {
 			if id == localNodeID {
 				continue
@@ -935,14 +992,45 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			}
 		}
 
-		// Stop the server asynchronously to allow RPC response to complete
-		go func() {
-			time.Sleep(1 * time.Second)
-			s.Stop()
-		}()
+		// Best-effort: drop all configured VIPs on local node
+		if node := s.config.Nodes[localNodeID]; node != nil {
+			for iface, groups := range node.IPGroups {
+				for _, g := range groups {
+					if ips, ok := s.config.Groups[g]; ok {
+						if len(ips) > 0 {
+							_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
+						}
+					}
+				}
+			}
+		}
+
+		// Remove from member list
+		_ = s.memberList.RemoveMember(localNodeID)
+
+		// Update local config to reflect no cluster configured
+		delete(s.config.Nodes, localNodeID)
+		// Clearing LocalNode indicates no active cluster binding
+		s.config.Pulse.LocalNode = ""
+		// Clear cluster token to avoid accidental reuse
+		s.config.Pulse.ClusterToken = ""
+		if err := s.config.Save(); err != nil {
+			s.logger.Warn("Failed to save config after leave", "error", err)
+		}
+
+		// Stop the cluster (inter-node) gRPC server only; keep CLI server alive for further config
+		if s.grpcServer != nil {
+			s.grpcServer.GracefulStop()
+			s.grpcServer = nil
+		}
+		// Optionally stop health checker since there is no cluster configured
+		if s.healthCheck != nil {
+			s.healthCheck.Stop()
+		}
+
 		return &rpc.LeaveResponse{
 			Success: true,
-			Message: "Successfully left the cluster",
+			Message: "Successfully left the cluster; CLI remains available on 127.0.0.1:8080",
 		}, nil
 	}
 
