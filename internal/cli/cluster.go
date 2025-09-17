@@ -96,7 +96,15 @@ func newClusterLeaveCmd() *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			return client.LeaveCluster()
+			resp, err := client.CLI().Leave(context.Background(), &rpc.LeaveRequest{})
+			if err != nil {
+				return err
+			}
+			if !resp.Success {
+				return fmt.Errorf(resp.Message)
+			}
+			fmt.Println(resp.Message)
+			return nil
 		},
 	}
 
@@ -165,12 +173,20 @@ func newClusterModeSetCmd() *cobra.Command {
 		Use:   "set",
 		Short: "Set cluster operation mode",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, err := client.New()
+			c, err := client.New()
 			if err != nil {
 				return err
 			}
-
-			return client.SetClusterMode(mode)
+			defer c.Close()
+			resp, err := c.CLI().SetMode(context.Background(), &rpc.SetModeRequest{Mode: mode})
+			if err != nil {
+				return err
+			}
+			if !resp.Success {
+				return fmt.Errorf(resp.Message)
+			}
+			fmt.Println(resp.Message)
+			return nil
 		},
 	}
 
@@ -200,8 +216,15 @@ func newNetworkResyncCmd() *cobra.Command {
 				return err
 			}
 			defer c.Close()
-			_, err = c.CLI().ResyncNetwork(context.Background(), &rpc.ResyncNetworkRequest{CreateDefaultGroups: createGroups})
-			return err
+			resp, err := c.CLI().ResyncNetwork(context.Background(), &rpc.ResyncNetworkRequest{CreateDefaultGroups: createGroups})
+			if err != nil {
+				return err
+			}
+			if !resp.Success {
+				return fmt.Errorf(resp.Message)
+			}
+			fmt.Println(resp.Message)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&createGroups, "create-default-groups", false, "Create default groups for new interfaces")
@@ -245,8 +268,16 @@ func newClusterConvergeCmd() *cobra.Command {
 			}
 
 			// Call Server.ConfigSync locally (the daemon will broadcast to peers)
-			_, err = c.Server().ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: bytes})
-			return err
+			cres, err := c.Server().ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: bytes})
+			if err != nil {
+				return err
+			}
+			if cres != nil && cres.Message != "" {
+				fmt.Println(cres.Message)
+			} else {
+				fmt.Println("Convergence broadcast requested")
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&leaderID, "leader-id", "", "Override leader ID to enforce in active-passive mode")

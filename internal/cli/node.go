@@ -43,11 +43,18 @@ func newNodePromoteCmd() *cobra.Command {
 				return fmt.Errorf("--node-id is required")
 			}
 
-			_, err = c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
+			resp, err := c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
 				NodeId: nodeID,
 				Ips:    ips,
 			})
-			return err
+			if err != nil {
+				return err
+			}
+			if !resp.Success {
+				return fmt.Errorf(resp.Message)
+			}
+			fmt.Println(resp.Message)
+			return nil
 		},
 	}
 

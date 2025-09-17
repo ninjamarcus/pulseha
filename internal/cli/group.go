@@ -75,7 +75,7 @@ func newGroupAddIPCmd() *cobra.Command {
 				fmt.Printf("Failed to add IP to group: %v\n", err)
 				os.Exit(1)
 			}
-
+			fmt.Printf("Successfully ensured %s is in group %s\n", ip, group)
 			return nil
 		},
 	}
@@ -108,7 +108,7 @@ func newGroupRemoveIPCmd() *cobra.Command {
 				fmt.Printf("Failed to remove IP from group: %v\n", err)
 				os.Exit(1)
 			}
-
+			fmt.Printf("Successfully removed %s from group %s (idempotent)\n", ip, group)
 			return nil
 		},
 	}
@@ -142,7 +142,7 @@ func newGroupAssignCmd() *cobra.Command {
 				fmt.Printf("Failed to assign group to node: %v\n", err)
 				os.Exit(1)
 			}
-
+			fmt.Printf("Successfully assigned group %s to %s on node %s\n", group, iface, nodeID)
 			return nil
 		},
 	}
@@ -245,7 +245,7 @@ func newGroupUnassignCmd() *cobra.Command {
 				fmt.Printf("Failed to unassign group from node: %v\n", err)
 				os.Exit(1)
 			}
-
+			fmt.Printf("Successfully unassigned group %s from %s on node %s\n", group, iface, nodeID)
 			return nil
 		},
 	}
