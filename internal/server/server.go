@@ -715,14 +715,15 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 			}
 		}
 
-		// Remove from member list
-		_ = s.memberList.RemoveMember(localNodeID)
+		// Remove all members from member list locally (leave into clean, non-clustered state)
+		s.memberList.Lock()
+		s.memberList.Members = make(map[string]*membership.Member)
+		s.memberList.Unlock()
 
-		// Update local config to reflect no cluster configured
-		delete(s.config.Nodes, localNodeID)
-		// Clearing LocalNode indicates no active cluster binding
+		// Wipe local cluster configuration (nodes and groups) and clear local identifiers
+		s.config.Nodes = make(map[string]*config.Node)
+		s.config.Groups = make(map[string][]string)
 		s.config.Pulse.LocalNode = ""
-		// Clear cluster token to avoid accidental reuse
 		s.config.Pulse.ClusterToken = ""
 		if err := s.config.Save(); err != nil {
 			s.logger.Warn("Failed to save config after leave", "error", err)
@@ -733,14 +734,14 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 			s.grpcServer.GracefulStop()
 			s.grpcServer = nil
 		}
-		// Optionally stop health checker since there is no cluster configured
+		// Stop health checker since there is no cluster configured
 		if s.healthCheck != nil {
 			s.healthCheck.Stop()
 		}
 
 		return &rpc.LeaveResponse{
 			Success: true,
-			Message: "Successfully left the cluster; CLI remains available on 127.0.0.1:8080",
+			Message: "Successfully left the cluster; local state cleared and CLI remains available on 127.0.0.1:8080",
 		}, nil
 	}
 
@@ -1005,14 +1006,15 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			}
 		}
 
-		// Remove from member list
-		_ = s.memberList.RemoveMember(localNodeID)
+		// Remove all members from member list locally (leave into clean, non-clustered state)
+		s.memberList.Lock()
+		s.memberList.Members = make(map[string]*membership.Member)
+		s.memberList.Unlock()
 
-		// Update local config to reflect no cluster configured
-		delete(s.config.Nodes, localNodeID)
-		// Clearing LocalNode indicates no active cluster binding
+		// Wipe local cluster configuration (nodes and groups) and clear local identifiers
+		s.config.Nodes = make(map[string]*config.Node)
+		s.config.Groups = make(map[string][]string)
 		s.config.Pulse.LocalNode = ""
-		// Clear cluster token to avoid accidental reuse
 		s.config.Pulse.ClusterToken = ""
 		if err := s.config.Save(); err != nil {
 			s.logger.Warn("Failed to save config after leave", "error", err)
@@ -1023,14 +1025,14 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			s.grpcServer.GracefulStop()
 			s.grpcServer = nil
 		}
-		// Optionally stop health checker since there is no cluster configured
+		// Stop health checker since there is no cluster configured
 		if s.healthCheck != nil {
 			s.healthCheck.Stop()
 		}
 
 		return &rpc.LeaveResponse{
 			Success: true,
-			Message: "Successfully left the cluster; CLI remains available on 127.0.0.1:8080",
+			Message: "Successfully left the cluster; local state cleared and CLI remains available on 127.0.0.1:8080",
 		}, nil
 	}
 
