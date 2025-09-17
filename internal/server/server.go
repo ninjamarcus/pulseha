@@ -2866,32 +2866,12 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		}
 	}()
 
-	// Rebuild expected IPs in the IP monitor from the synchronized config (local node only)
-	if s.ipMonitor != nil {
-		if localID, err := s.config.GetLocalNodeUUID(); err == nil {
-			if localNode := s.config.Nodes[localID]; localNode != nil {
-				for iface, groupNames := range localNode.IPGroups {
-					// Aggregate all IPs from the groups assigned to this interface
-					var ifaceIPs []string
-					for _, g := range groupNames {
-						if ips, ok := s.config.Groups[g]; ok {
-							ifaceIPs = append(ifaceIPs, ips...)
-						}
-					}
-					// Reset and update expected IPs for this interface
-					s.ipMonitor.ClearExpectedIPs(iface)
-					if len(ifaceIPs) > 0 {
-						s.ipMonitor.UpdateExpectedIPs(iface, ifaceIPs)
-					}
-				}
-			}
-		}
-	}
+	// Reconcile VIPs according to current local role (active/passive)
+	go s.refreshLocalMonitorExpectedIPs()
 
-	s.logger.Info("Configuration successfully synchronized")
 	return &rpc.ConfigSyncResponse{
 		Success: true,
-		Message: "configuration successfully synchronized",
+		Message: "configuration synchronized successfully",
 	}, nil
 }
 
