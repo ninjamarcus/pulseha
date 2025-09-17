@@ -62,8 +62,8 @@ func SendGARP(iface, ip string) error {
 	log.Debug("Sending gratuitous arp for " + cidrIP.String() + " on interface " + iface)
 	_, err = utils.Execute("arping", "-U", "-c", "5", "-I", iface, cidrIP.String())
 	if err != nil {
-		log.Error("failed to GARP. " + err.Error())
-		return err
+		log.Warn("failed to GARP (continuing): " + err.Error())
+		return nil
 	}
 	return nil
 }
@@ -100,8 +100,12 @@ func BringIPup(iface, ip string) error {
 		return err
 	}
 	if exists {
+		if eIface == iface {
+			// Already present on desired interface
+			return nil
+		}
 		if err := BringIPdown(eIface, ip); err != nil {
-			log.Debug("Attempted to bring down ip " + ipOb.String() + " however it appears it wasn't up")
+			log.Debug("Attempted to bring down ip "+ipOb.String()+" however it appears it wasn't up")
 		}
 	}
 	addr, err := netlink.ParseAddr(ip)
@@ -110,7 +114,12 @@ func BringIPup(iface, ip string) error {
 		return errors.New("unable to bring IP up because ip address couldn't be parsed")
 	}
 	if err := netlink.AddrAdd(link, addr); err != nil {
-		log.Debug("Network Package - BringIPup() ", err)
+		log.Debug("Network Package - AddrAdd returned error: ", err)
+		// If add failed, verify if IP is now present on target iface; treat as success
+		pexists, pIface, _ := CheckIfIPExists(ipOb.String())
+		if pexists && pIface == iface {
+			return nil
+		}
 		return errors.New("unable to bring IP up as netlink failed to do so")
 	}
 	return nil
@@ -125,15 +134,21 @@ func BringIPdown(iface, ip string) error {
 	exists, link := InterfaceExist(iface)
 	if !exists {
 		log.Debug("unable to bring IP down as the network interface does not exist")
-		return errors.New("unable to bring IP down as the network interface does not exist")
+		return nil
 	}
 	addr, err := netlink.ParseAddr(ip)
 	if err != nil {
 		log.Debug("unable to bring IP down because ip address couldn't be parsed")
-		return errors.New("unable to bring IP down because ip address couldn't be parsed")
+		return nil
 	}
 	if err := netlink.AddrDel(link, addr); err != nil {
-		log.Debug("Unable to bring down ip " + ip + " on interface " + iface + ". Perhaps it doesn't exist?")
+		log.Debug("Unable to bring down ip "+ip+" on interface "+iface+". Perhaps it doesn't exist?")
+		// Verify absence now; treat as success if gone
+		ipOb, _ := utils.GetCIDR(ip)
+		pexists, pIface, _ := CheckIfIPExists(ipOb.String())
+		if !pexists || pIface != iface {
+			return nil
+		}
 		return errors.New("Unable to bring down ip " + ip + " on interface " + iface + ". Perhaps it doesn't exist?")
 	}
 	return nil
