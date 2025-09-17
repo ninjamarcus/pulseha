@@ -3190,6 +3190,7 @@ func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIp
 func (s *Server) BringDownIP(ctx context.Context, req *rpc.DownIpRequest) (*rpc.DownIpResponse, error) {
 	s.logger.Infof("RPC BringDownIP on iface %s for %d IP(s)", req.Iface, len(req.Ips))
 
+	var failed []string
 	for _, ip := range req.Ips {
 		if !utils.IsCIDR(ip) {
 			if utils.IsIPv4(ip) {
@@ -3197,14 +3198,19 @@ func (s *Server) BringDownIP(ctx context.Context, req *rpc.DownIpRequest) (*rpc.
 			} else if utils.IsIPv6(ip) {
 				ip = ip + "/128"
 			} else {
-				return &rpc.DownIpResponse{Success: false, Message: "invalid IP"}, nil
+				s.logger.Warn("BringDownIP skipping invalid IP", "ip", ip)
+				continue
 			}
 		}
 
 		if err := network.BringIPdown(req.Iface, ip); err != nil {
 			s.logger.Error("BringDownIP failed", "iface", req.Iface, "ip", ip, "error", err)
-			return &rpc.DownIpResponse{Success: false, Message: err.Error()}, nil
+			failed = append(failed, ip)
+			continue
 		}
+	}
+	if len(failed) > 0 {
+		return &rpc.DownIpResponse{Success: true, Message: "Best-effort: some IPs may not have been present"}, nil
 	}
 	return &rpc.DownIpResponse{Success: true, Message: "IPs brought down"}, nil
 }
