@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"io"
 	"log/syslog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"sync"
@@ -85,6 +87,16 @@ func main() {
 
 	// Initialize health checker
 	healthChecker := membership.NewHealthChecker(memberList, logger)
+
+	// Start pprof server for memory profiling (only in debug mode)
+	if os.Getenv("PULSEHA_DEBUG") == "true" {
+		go func() {
+			logger.Debug("Starting pprof server on :6060 for memory profiling")
+			if err := http.ListenAndServe(":6060", nil); err != nil {
+				logger.Error("pprof server failed", "error", err)
+			}
+		}()
+	}
 
 	// Create and start server
 	srv := server.NewServer(cfg, logger, memberList, healthChecker)

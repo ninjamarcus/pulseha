@@ -23,6 +23,71 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Object pools to reduce memory allocations
+var (
+	stringMapPool = sync.Pool{
+		New: func() interface{} {
+			return make(map[string]string, 8)
+		},
+	}
+	statusMapPool = sync.Pool{
+		New: func() interface{} {
+			return make(map[string]membership.MemberStatus, 8)
+		},
+	}
+	stringSliceMapPool = sync.Pool{
+		New: func() interface{} {
+			return make(map[string][]string, 8)
+		},
+	}
+)
+
+// Helper functions to manage object pools
+func getStringMap() map[string]string {
+	m := stringMapPool.Get().(map[string]string)
+	// Clear the map
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+func putStringMap(m map[string]string) {
+	if m != nil {
+		stringMapPool.Put(m)
+	}
+}
+
+func getStatusMap() map[string]membership.MemberStatus {
+	m := statusMapPool.Get().(map[string]membership.MemberStatus)
+	// Clear the map
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+func putStatusMap(m map[string]membership.MemberStatus) {
+	if m != nil {
+		statusMapPool.Put(m)
+	}
+}
+
+func getStringSliceMap() map[string][]string {
+	m := stringSliceMapPool.Get().(map[string][]string)
+	// Clear the map
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+func putStringSliceMap(m map[string][]string) {
+	if m != nil {
+		stringSliceMapPool.Put(m)
+	}
+}
+
 // Server represents the PulseHA server
 type Server struct {
 	sync.RWMutex
@@ -266,7 +331,7 @@ func (s *Server) Stop() {
 	func() {
 		// Build states with local set to Unknown; clear leader to allow election
 		localID, _ := s.config.GetLocalNodeUUID()
-		states := make(map[string]membership.MemberStatus)
+		states := getStatusMap()
 		for id, m := range s.memberList.Members {
 			if id == localID {
 				states[id] = membership.StatusUnknown
@@ -275,10 +340,12 @@ func (s *Server) Stop() {
 			}
 		}
 		_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, "", nil)
+		putStatusMap(states)
 	}()
 
 	// Gather local VIPs to tear down without holding the server lock
-	ifaceToIPs := make(map[string][]string)
+	ifaceToIPs := getStringSliceMap()
+	defer putStringSliceMap(ifaceToIPs)
 	if s.config != nil {
 		if localID, err := s.config.GetLocalNodeUUID(); err == nil {
 			s.RLock()
@@ -663,11 +730,12 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 
 	// Trigger a quick convergence broadcast asynchronously
 	go func() {
-		states := make(map[string]membership.MemberStatus)
+		states := getStatusMap()
 		for id, m := range s.memberList.Members {
 			states[id] = m.Status
 		}
 		_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, s.leaderID, nil)
+		putStatusMap(states)
 	}()
 
 	return &rpc.JoinResponse{
@@ -2751,6 +2819,12 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		incomingEpoch        int64
 		incomingLeaderID     string
 	)
+	// Defer cleanup of any allocated maps
+	defer func() {
+		if incomingMemberStates != nil {
+			putStatusMap(incomingMemberStates)
+		}
+	}()
 	{
 		type enhanced struct {
 			MemberStates map[string]int    `json:"member_states"`
@@ -2761,7 +2835,7 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		var e enhanced
 		if err := json.Unmarshal(req.Config, &e); err == nil {
 			if len(e.MemberStates) > 0 {
-				incomingMemberStates = make(map[string]membership.MemberStatus, len(e.MemberStates))
+				incomingMemberStates = getStatusMap()
 				for id, st := range e.MemberStates {
 					incomingMemberStates[id] = membership.MemberStatus(st)
 				}

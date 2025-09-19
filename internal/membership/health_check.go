@@ -13,6 +13,31 @@ import (
 	"github.com/syleron/pulseha/internal/quorum"
 )
 
+// Object pools for health checker to reduce memory allocations
+var (
+	memberStatusMapPool = sync.Pool{
+		New: func() interface{} {
+			return make(map[string]MemberStatus, 8)
+		},
+	}
+)
+
+// Helper functions for health checker object pools
+func getMemberStatusMap() map[string]MemberStatus {
+	m := memberStatusMapPool.Get().(map[string]MemberStatus)
+	// Clear the map
+	for k := range m {
+		delete(m, k)
+	}
+	return m
+}
+
+func putMemberStatusMap(m map[string]MemberStatus) {
+	if m != nil {
+		memberStatusMapPool.Put(m)
+	}
+}
+
 // ServerReference is an interface for the server methods needed by the health checker
 type ServerReference interface {
 	// Add methods that the health checker needs to call on the server
@@ -246,13 +271,14 @@ func (h *HealthChecker) performHealthChecks() {
 					member.Hostname, StatusToString(previousStatus)))
 				// Immediate convergence nudge on status change
 				if h.server != nil && previousStatus != StatusUnknown {
-					states := make(map[string]MemberStatus)
+					states := getMemberStatusMap()
 					for id, m := range membersCopy {
 						m.Lock()
 						states[id] = m.Status
 						m.Unlock()
 					}
 					_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
+					putMemberStatusMap(states)
 					h.Lock()
 					h.lastLeaderBroadcast = time.Now()
 					h.Unlock()
@@ -334,13 +360,14 @@ func (h *HealthChecker) performHealthChecks() {
 
 		// Proactively broadcast updated member states so all nodes converge quickly
 		if h.server != nil {
-			states := make(map[string]MemberStatus)
+			states := getMemberStatusMap()
 			for id, m := range membersCopy {
 				m.Lock()
 				states[id] = m.Status
 				m.Unlock()
 			}
 			_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
+			putMemberStatusMap(states)
 			h.Lock()
 			h.lastLeaderBroadcast = time.Now()
 			h.Unlock()
@@ -351,7 +378,7 @@ func (h *HealthChecker) performHealthChecks() {
 
 		// Heartbeat convergence nudge every 3 checks (~3s) to advance LastResponse and align peers
 		if h.server != nil && h.checksWithoutChange%3 == 0 {
-			states := make(map[string]MemberStatus)
+			states := getMemberStatusMap()
 			for id, m := range membersCopy {
 				m.Lock()
 				states[id] = m.Status
@@ -360,6 +387,7 @@ func (h *HealthChecker) performHealthChecks() {
 				m.Unlock()
 			}
 			_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
+			putMemberStatusMap(states)
 		}
 
 		// Log periodic summary every 60 checks (roughly every minute with 1s interval)
@@ -698,13 +726,14 @@ func (h *HealthChecker) electNewActiveNode() {
 
 	// Broadcast the new cluster state (increment epoch and set leader) for convergence in active-passive mode
 	if h.server != nil {
-		states := make(map[string]MemberStatus)
+		states := getMemberStatusMap()
 		for id, m := range h.members.Members {
 			m.Lock()
 			states[id] = m.Status
 			m.Unlock()
 		}
 		_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, bestCandidate.ID, nil)
+		putMemberStatusMap(states)
 		h.Lock()
 		h.lastLeaderBroadcast = time.Now()
 		h.Unlock()
