@@ -21,6 +21,9 @@ type ServerReference interface {
 	// Cluster-state convergence helpers
 	GetClusterEpoch() int64
 	BroadcastClusterState(memberStates map[string]MemberStatus, epoch int64, leaderID string, leases map[string]string) error
+	// Leader getters for lease-based failover
+	GetLeaderID() string
+	GetLeaderLeaseUntil() time.Time
 }
 
 // HealthCheck represents the result of a health check
@@ -42,8 +45,10 @@ type HealthChecker struct {
 	ready               bool
 	stopped             bool // Track if we're stopped
 	server              ServerReference
-	lastClusterState    string // Track last cluster state to only log changes
-	checksWithoutChange int    // Counter for periodic status logs
+	lastClusterState    string    // Track last cluster state to only log changes
+	checksWithoutChange int       // Counter for periodic status logs
+	lastLeaderBroadcast time.Time // suppress elections briefly after leader broadcast
+	lastTick            time.Time // last time a check cycle executed
 }
 
 // NewHealthChecker creates a new health checker
@@ -137,6 +142,10 @@ func (h *HealthChecker) run() {
 
 			select {
 			case <-ticker.C:
+				// Record heartbeat tick
+				h.Lock()
+				h.lastTick = time.Now()
+				h.Unlock()
 				h.RLock()
 				if !h.ready || h.stopped {
 					h.RUnlock()
@@ -154,15 +163,25 @@ func (h *HealthChecker) run() {
 	}
 }
 
-// performHealthChecks executes health checks on all nodes and their IPs
-func (h *HealthChecker) performHealthChecks() {
+// LastTickTime returns the timestamp of the last check tick
+func (h *HealthChecker) LastTickTime() time.Time {
 	h.RLock()
 	defer h.RUnlock()
+	return h.lastTick
+}
 
+// performHealthChecks executes health checks on all nodes and their IPs
+func (h *HealthChecker) performHealthChecks() {
+	h.logger.Info("Starting health check cycle...")
+
+	h.RLock()
 	memberCount := len(h.members.Members)
 	if memberCount == 0 {
+		h.RUnlock()
+		h.logger.Warn("No members in cluster, skipping health check")
 		return // No logging needed when no members exist
 	}
+	h.RUnlock()
 
 	// Collect cluster status information for a single consolidated log
 	clusterStatus := make([]string, 0, memberCount)
@@ -171,6 +190,7 @@ func (h *HealthChecker) performHealthChecks() {
 	var statusChanges []string
 
 	// Check if we are a passive node and need to detect active node failure
+	h.RLock()
 	var localMember *Member
 	for _, m := range h.members.Members {
 		if m.IsLocal() {
@@ -178,8 +198,10 @@ func (h *HealthChecker) performHealthChecks() {
 			break
 		}
 	}
+	membersCopy := h.members.Members
+	h.RUnlock()
 
-	for _, member := range h.members.Members {
+	for _, member := range membersCopy {
 		// If this is the local node, just update its health check time
 		if member.IsLocal() {
 			member.Lock()
@@ -220,6 +242,19 @@ func (h *HealthChecker) performHealthChecks() {
 			if previousStatus != StatusUnknown {
 				statusChanges = append(statusChanges, fmt.Sprintf("%s became unreachable (was %s)",
 					member.Hostname, StatusToString(previousStatus)))
+				// Immediate convergence nudge on status change
+				if h.server != nil && previousStatus != StatusUnknown {
+					states := make(map[string]MemberStatus)
+					for id, m := range membersCopy {
+						m.Lock()
+						states[id] = m.Status
+						m.Unlock()
+					}
+					_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
+					h.Lock()
+					h.lastLeaderBroadcast = time.Now()
+					h.Unlock()
+				}
 			}
 
 			clusterStatus = append(clusterStatus, fmt.Sprintf("%s(unreachable/%s)",
@@ -234,11 +269,16 @@ func (h *HealthChecker) performHealthChecks() {
 		member.Latency = fmt.Sprintf("%.2fms", float64(responseTime.Nanoseconds())/1000000)
 
 		// Handle auto-failback for previously failed nodes
-		if wasUnknown && h.members.config.Pulse.AutoFailback {
-			switch h.members.config.Pulse.Mode {
+		h.RLock()
+		autoFailback := h.members.config.Pulse.AutoFailback
+		mode := h.members.config.Pulse.Mode
+		h.RUnlock()
+
+		if wasUnknown && autoFailback {
+			switch mode {
 			case "active-passive":
 				activeExists := false
-				for _, otherMember := range h.members.Members {
+				for _, otherMember := range membersCopy {
 					if otherMember.ID != member.ID && otherMember.Status == StatusActive {
 						activeExists = true
 						break
@@ -289,16 +329,41 @@ func (h *HealthChecker) performHealthChecks() {
 		h.logger.Infof("Cluster health: %s", currentClusterDisplayState)
 		h.lastClusterState = currentClusterStateForComparison
 		h.checksWithoutChange = 0
+
+		// Proactively broadcast updated member states so all nodes converge quickly
+		if h.server != nil {
+			states := make(map[string]MemberStatus)
+			for id, m := range membersCopy {
+				m.Lock()
+				states[id] = m.Status
+				m.Unlock()
+			}
+			_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
+			h.Lock()
+			h.lastLeaderBroadcast = time.Now()
+			h.Unlock()
+		}
 	} else {
 		// Increment counter for unchanged state
 		h.checksWithoutChange++
+
+		// Heartbeat convergence nudge every 3 checks (~3s) to advance LastResponse and align peers
+		if h.server != nil && h.checksWithoutChange%3 == 0 {
+			states := make(map[string]MemberStatus)
+			for id, m := range membersCopy {
+				m.Lock()
+				states[id] = m.Status
+				// Also advance local LastResponse to now for consistent display
+				m.LastHCResponse = time.Now()
+				m.Unlock()
+			}
+			_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
+		}
 
 		// Log periodic summary every 60 checks (roughly every minute with 1s interval)
 		if h.checksWithoutChange >= 60 {
 			h.logger.Infof("Cluster stable for 60 checks: %s", currentClusterDisplayState)
 			h.checksWithoutChange = 0
-		} else {
-			// Don't log unchanged state - only status/membership changes matter
 		}
 	}
 
@@ -312,54 +377,81 @@ func (h *HealthChecker) performHealthChecks() {
 
 	// Check for active node failure and initiate failover if needed
 	if localMember != nil {
-		h.logger.Debugf("Local member %s has status %s", localMember.Hostname, StatusToString(localMember.Status))
-		if localMember.Status == StatusPassive || localMember.Status == StatusUnknown {
-			h.logger.Debug("Local member is passive/unknown, checking for active node failure")
-			h.checkForActiveNodeFailure()
-		}
+		h.logger.Infof("Local member %s has status %s, checking for need to elect leader", localMember.Hostname, StatusToString(localMember.Status))
+		// Always check for active node failure, not just when passive
+		h.checkForActiveNodeFailure()
 	} else {
-		h.logger.Debug("No local member found, cannot check for active node failure")
+		h.logger.Warn("No local member found, cannot check for active node failure")
 	}
+}
+
+// getCurrentLeaderID returns the ID of the current active node if any
+func (h *HealthChecker) getCurrentLeaderID() string {
+	h.RLock()
+	members := h.members.Members
+	h.RUnlock()
+
+	for id, m := range members {
+		m.Lock()
+		isActive := m.Status == StatusActive
+		m.Unlock()
+		if isActive {
+			return id
+		}
+	}
+	return ""
 }
 
 // checkForActiveNodeFailure checks if the active node has failed and initiates failover
 func (h *HealthChecker) checkForActiveNodeFailure() {
-	h.logger.Debug("Checking for active node failure...")
+	h.logger.Info("Checking for active node in cluster...")
+
+	h.RLock()
+	members := h.members.Members
+	config := h.members.config
+	h.RUnlock()
 
 	// Find the active node
 	var activeMember *Member
-	for _, member := range h.members.Members {
+	for _, member := range members {
 		if member.Status == StatusActive {
 			activeMember = member
 			break
 		}
 	}
 
-	// If no active node exists, we need to elect one
+	// If no active node exists, we need to elect one immediately
 	if activeMember == nil {
-		h.logger.Warn("No active node found, initiating leader election")
+		// Trace current member statuses for diagnostics
+		var snapshot []string
+		for _, m := range members {
+			m.Lock()
+			snapshot = append(snapshot, fmt.Sprintf("%s:%s", m.Hostname, StatusToString(m.Status)))
+			m.Unlock()
+		}
+		h.logger.Warnf("No active node found in cluster! Members: %s. Initiating leader election immediately.", strings.Join(snapshot, ", "))
 		h.electNewActiveNode()
 		return
 	}
 
-	h.logger.Debugf("Active node found: %s", activeMember.Hostname)
+	h.logger.Infof("Active node found: %s", activeMember.Hostname)
 
 	// Check if the active node has been unreachable for too long
 	member := activeMember
 	member.Lock()
 	timeSinceLastResponse := time.Since(member.LastHCResponse)
 	isUnreachable := member.Status == StatusUnknown ||
-		timeSinceLastResponse > time.Duration(h.members.config.Pulse.FailOverLimit)*time.Millisecond
+		timeSinceLastResponse > time.Duration(config.Pulse.FailOverLimit)*time.Millisecond
 	hostname := member.Hostname
 	activeIPs := member.ActiveIPs
 	member.Unlock()
 
 	h.logger.Debugf("Active node %s - timeSinceLastResponse: %v, FailOverLimit: %dms, isUnreachable: %v",
-		hostname, timeSinceLastResponse, h.members.config.Pulse.FailOverLimit, isUnreachable)
+		hostname, timeSinceLastResponse, config.Pulse.FailOverLimit, isUnreachable)
 
 	if isUnreachable {
 		h.logger.Warnf("Active node %s has been unreachable for %v (limit: %dms), initiating failover",
-			hostname, timeSinceLastResponse, h.members.config.Pulse.FailOverLimit)
+			hostname, timeSinceLastResponse, config.Pulse.FailOverLimit)
 
 		// Mark the active node as unknown
 		member.Lock()
@@ -455,7 +547,7 @@ func (h *HealthChecker) electNewActiveNode() {
 			}
 		}
 
-		h.logger.Debugf("Candidate %s: score=%.2f, status=%s, latency=%s, local=%v",
+		h.logger.Infof("Election candidate %s: score=%.2f, status=%s, latency=%s, local=%v",
 			member.Hostname, score, StatusToString(status), latencyStr, isLocal)
 
 		if score > bestScore {
@@ -501,7 +593,7 @@ func (h *HealthChecker) electNewActiveNode() {
 		}
 	} else if clusterSize == 2 {
 		// 2 nodes: Use time-based tiebreaker to prevent split-brain
-		h.logger.Info("2-node cluster detected, using time-based election to prevent split-brain")
+		h.logger.Info("2-node cluster detected; preferring local if peer is Unknown/unreachable")
 
 		// In a 2-node cluster, we need to ensure only one node promotes itself
 		// Use a deterministic method: the node with the lower ID wins
@@ -513,33 +605,53 @@ func (h *HealthChecker) electNewActiveNode() {
 
 		// Find the other node
 		var otherNodeID string
+		var otherStatus MemberStatus = StatusUnknown
 		for _, member := range h.members.Members {
 			if member.ID != localNodeID {
 				otherNodeID = member.ID
+				member.Lock()
+				otherStatus = member.Status
+				member.Unlock()
 				break
 			}
 		}
 
-		// Only proceed if we're the node with the lower ID (deterministic winner)
-		if localNodeID > otherNodeID {
-			h.logger.Infof("This node (%s) has higher ID than other node (%s), deferring promotion",
-				localNodeID, otherNodeID)
-			// Wait a bit to see if the other node takes over
-			time.Sleep(2 * time.Second)
-
-			// Check if the other node has become active
-			for _, member := range h.members.Members {
-				if member.ID == otherNodeID && member.Status == StatusActive {
-					h.logger.Info("Other node has become active, aborting our promotion")
-					return
-				}
+		// If leader lease expired, immediately promote local
+		if h.server != nil {
+			leaseUntil := h.server.GetLeaderLeaseUntil()
+			h.logger.Debugf("Leader lease until: %v", leaseUntil)
+			if !leaseUntil.IsZero() && time.Now().After(leaseUntil) {
+				h.logger.Info("Leader lease expired; promoting local")
+			} else if leaseUntil.IsZero() {
+				h.logger.Info("No leader lease; promoting local")
 			}
+			if leaseUntil.IsZero() || time.Now().After(leaseUntil) {
+				otherStatus = StatusUnknown
+			}
+		}
 
-			// If we get here, the other node didn't take over, so we should
-			h.logger.Info("Other node did not become active, proceeding with promotion")
+		// If the peer is Unknown/unreachable, promote local immediately
+		if otherStatus == StatusUnknown {
+			h.logger.Info("Peer is Unknown; promoting local immediately")
 		} else {
-			h.logger.Infof("This node (%s) has lower ID than other node (%s), proceeding with promotion",
-				localNodeID, otherNodeID)
+			// Otherwise use deterministic tie-breaker: lower UUID wins
+			if localNodeID > otherNodeID {
+				h.logger.Infof("This node (%s) has higher ID than other node (%s), deferring promotion",
+					localNodeID, otherNodeID)
+				// Wait briefly to see if the other node takes over
+				time.Sleep(2 * time.Second)
+				// Abort if the other node became active
+				for _, member := range h.members.Members {
+					if member.ID == otherNodeID && member.Status == StatusActive {
+						h.logger.Info("Other node has become active, aborting our promotion")
+						return
+					}
+				}
+				h.logger.Info("Other node did not become active, proceeding with promotion")
+			} else {
+				h.logger.Infof("This node (%s) has lower ID than other node (%s), proceeding with promotion",
+					localNodeID, otherNodeID)
+			}
 		}
 	}
 	// For single node, just promote immediately
@@ -562,6 +674,9 @@ func (h *HealthChecker) electNewActiveNode() {
 			m.Unlock()
 		}
 		_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, bestCandidate.ID, nil)
+		h.Lock()
+		h.lastLeaderBroadcast = time.Now()
+		h.Unlock()
 	}
 }
 
