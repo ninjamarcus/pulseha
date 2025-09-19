@@ -26,20 +26,22 @@ import (
 // Server represents the PulseHA server
 type Server struct {
 	sync.RWMutex
-	config        *config.Config
-	logger        *log.Logger
-	memberList    *membership.MemberList
-	healthCheck   *membership.HealthChecker
-	ipMonitor     *membership.IPMonitor
-	quorumManager *quorum.QuorumManager
-	quorumHandler *quorum.RPCHandler
-	grpcServer    *grpc.Server
-	cliServer     *grpc.Server
+	config          *config.Config
+	logger          *log.Logger
+	memberList      *membership.MemberList
+	healthCheck     *membership.HealthChecker
+	ipMonitor       *membership.IPMonitor
+	quorumManager   *quorum.QuorumManager
+	quorumHandler   *quorum.RPCHandler
+	grpcServer      *grpc.Server
+	cliServer       *grpc.Server
+	clusterListener net.Listener
 	rpc.UnimplementedCLIServer
 	rpc.UnimplementedServerServer
 	// Convergence state
-	clusterEpoch int64
-	leaderID     string
+	clusterEpoch     int64
+	leaderID         string
+	leaderLeaseUntil time.Time
 }
 
 // NewServer creates a new PulseHA server instance
@@ -171,6 +173,27 @@ func (s *Server) Start() error {
 	// Start the health checker
 	s.startHealthChecker()
 
+	// Watchdog: ensure health checker stays running
+	go func() {
+		t := time.NewTicker(5 * time.Second)
+		defer t.Stop()
+		for range t.C {
+			if s.healthCheck == nil {
+				continue
+			}
+			if !s.healthCheck.IsRunning() {
+				s.logger.Warn("Health checker not running; restarting")
+				s.startHealthChecker()
+				continue
+			}
+			// Restart if the loop hasn't ticked recently
+			if !s.healthCheck.LastTickTime().IsZero() && time.Since(s.healthCheck.LastTickTime()) > 3*time.Second {
+				s.logger.Warn("Health checker stalled; restarting")
+				s.restartHealthChecker()
+			}
+		}
+	}()
+
 	// Start the IP monitor
 	if err := s.ipMonitor.Start(); err != nil {
 		s.logger.Error("Failed to start IP monitor", "error", err)
@@ -200,6 +223,27 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 	}
 
 	address := fmt.Sprintf("%s:%s", localNode.IP, localNode.Port)
+	// If we already have a listener bound to the right address, reuse it
+	if s.clusterListener != nil {
+		if la, ok := s.clusterListener.Addr().(*net.TCPAddr); ok {
+			wantIP := localNode.IP
+			wantPort, _ := strconv.Atoi(localNode.Port)
+			if la.IP.String() == wantIP && la.Port == wantPort {
+				s.logger.Debug("Reusing existing cluster listener", "addr", s.clusterListener.Addr().String())
+				go func() {
+					s.logger.Debug("Serving cluster gRPC (reused listener)", "addr", s.clusterListener.Addr().String())
+					if err := s.grpcServer.Serve(s.clusterListener); err != nil {
+						s.logger.Error("Cluster gRPC server failed", "error", err)
+					}
+				}()
+				return nil
+			}
+		}
+		// Different address – close old listener first
+		_ = s.clusterListener.Close()
+		s.clusterListener = nil
+	}
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %v", address, err)
@@ -219,6 +263,7 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 		}
 	}
 
+	s.clusterListener = listener
 	go func() {
 		s.logger.Debug("Serving cluster gRPC", "addr", listener.Addr().String())
 		if err := s.grpcServer.Serve(listener); err != nil {
@@ -259,46 +304,83 @@ func (s *Server) startHealthChecker() {
 
 // Stop gracefully shuts down the server
 func (s *Server) Stop() {
-	s.Lock()
-	defer s.Unlock()
-
 	s.logger.Info("Stopping PulseHA server")
 
-	// Best-effort: drop all configured VIPs on local node before stopping
+	// Best-effort convergence hint: broadcast we're going down so peers can elect a new active
+	func() {
+		// Build states with local set to Unknown; clear leader to allow election
+		localID, _ := s.config.GetLocalNodeUUID()
+		states := make(map[string]membership.MemberStatus)
+		for id, m := range s.memberList.Members {
+			if id == localID {
+				states[id] = membership.StatusUnknown
+			} else {
+				states[id] = m.Status
+			}
+		}
+		_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, "", nil)
+	}()
+
+	// Gather local VIPs to tear down without holding the server lock
+	ifaceToIPs := make(map[string][]string)
 	if s.config != nil {
 		if localID, err := s.config.GetLocalNodeUUID(); err == nil {
+			s.RLock()
 			if node := s.config.Nodes[localID]; node != nil {
 				for iface, groups := range node.IPGroups {
+					var ips []string
 					for _, g := range groups {
-						if ips, ok := s.config.Groups[g]; ok {
-							if len(ips) > 0 {
-								_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
-							}
+						if gips, ok := s.config.Groups[g]; ok {
+							ips = append(ips, gips...)
 						}
+					}
+					if len(ips) > 0 {
+						copied := make([]string, len(ips))
+						copy(copied, ips)
+						ifaceToIPs[iface] = copied
 					}
 				}
 			}
+			s.RUnlock()
 		}
 	}
 
-	// Stop the health checker
+	// Best-effort: drop configured VIPs without taking the server lock to avoid deadlocks during shutdown
+	for iface, ips := range ifaceToIPs {
+		for _, ip := range ips {
+			_ = network.BringIPdown(iface, ip)
+		}
+	}
+
+	// Stop background workers first (no server lock needed)
 	if s.healthCheck != nil {
 		s.healthCheck.Stop()
 	}
-
-	// Stop the IP monitor
 	if s.ipMonitor != nil {
 		s.ipMonitor.Stop()
 	}
 
-	// Stop the gRPC server
-	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
-	}
+	// Swap out gRPC servers and listener under a short lock, then stop outside lock to avoid deadlocks
+	var oldSrv *grpc.Server
+	var oldCli *grpc.Server
+	var oldListener net.Listener
+	s.Lock()
+	oldSrv = s.grpcServer
+	oldCli = s.cliServer
+	oldListener = s.clusterListener
+	s.grpcServer = nil
+	s.cliServer = nil
+	s.clusterListener = nil
+	s.Unlock()
 
-	// Stop the CLI gRPC server
-	if s.cliServer != nil {
-		s.cliServer.GracefulStop()
+	if oldListener != nil {
+		_ = oldListener.Close()
+	}
+	if oldSrv != nil {
+		oldSrv.GracefulStop()
+	}
+	if oldCli != nil {
+		oldCli.GracefulStop()
 	}
 
 	s.logger.Info("PulseHA server stopped")
@@ -319,6 +401,54 @@ func (s *Server) loadInitialMembers() error {
 		return nil
 	}
 	s.logger.Debug("Nodes section found in config")
+
+	// Deduplicate nodes by hostname and IP:Port to avoid duplicate members lingering after joins
+	{
+		localID, _ := s.config.GetLocalNodeUUID()
+		seenByHost := make(map[string]string)
+		seenByEP := make(map[string]string)
+		var toDelete []string
+		for id, n := range s.config.Nodes {
+			if n == nil {
+				continue
+			}
+			// Prefer non-placeholder IDs over placeholder 'peer'
+			isPlaceholder := id == "peer" || id == "" || id == n.Hostname
+			ep := fmt.Sprintf("%s:%s", n.IP, n.Port)
+			if prev, ok := seenByHost[n.Hostname]; ok && prev != id {
+				// Decide which to delete: drop placeholder or non-local duplicate
+				if isPlaceholder || id != localID {
+					toDelete = append(toDelete, id)
+					s.logger.Warn("Removing duplicate node by hostname", "hostname", n.Hostname, "duplicate_id", id, "kept_id", prev)
+				} else {
+					toDelete = append(toDelete, prev)
+					s.logger.Warn("Removing duplicate node by hostname", "hostname", n.Hostname, "duplicate_id", prev, "kept_id", id)
+					seenByHost[n.Hostname] = id
+				}
+			} else {
+				seenByHost[n.Hostname] = id
+			}
+			if prev, ok := seenByEP[ep]; ok && prev != id {
+				if isPlaceholder || id != localID {
+					toDelete = append(toDelete, id)
+					s.logger.Warn("Removing duplicate node by endpoint", "endpoint", ep, "duplicate_id", id, "kept_id", prev)
+				} else {
+					toDelete = append(toDelete, prev)
+					s.logger.Warn("Removing duplicate node by endpoint", "endpoint", ep, "duplicate_id", prev, "kept_id", id)
+					seenByEP[ep] = id
+				}
+			} else {
+				seenByEP[ep] = id
+			}
+		}
+		if len(toDelete) > 0 {
+			for _, id := range toDelete {
+				delete(s.config.Nodes, id)
+				_ = s.memberList.RemoveMember(id)
+			}
+			_ = s.config.Save()
+		}
+	}
 
 	nodeCount := len(s.config.Nodes)
 	s.logger.Infof("Found %d node(s) in configuration", nodeCount)
@@ -537,6 +667,20 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	if s.config.Nodes == nil {
 		s.config.Nodes = make(map[string]*config.Node)
 	}
+	// Deduplicate any existing node with same hostname or IP:Port
+	for existingID, existing := range s.config.Nodes {
+		if existing == nil {
+			continue
+		}
+		if existing.Hostname == req.Hostname || (existing.IP == req.BindIp && existing.Port == req.BindPort) {
+			if existingID != nodeID {
+				s.logger.Warn("Join detected duplicate node entry; replacing existing entry", "existing_id", existingID, "hostname", existing.Hostname, "ip", existing.IP, "port", existing.Port, "new_id", nodeID)
+				delete(s.config.Nodes, existingID)
+				// Also remove from member list to avoid stale member
+				_ = s.memberList.RemoveMember(existingID)
+			}
+		}
+	}
 	s.config.Nodes[nodeID] = &config.Node{
 		Hostname: req.Hostname,
 		IP:       req.BindIp,
@@ -556,212 +700,135 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 		// Still return success since member was added to memberList
 	} else {
 		s.logger.Debugf("Config saved successfully after node %s joined", req.Hostname)
-		// Best-effort: broadcast updated configuration to all peers so they persist the new member
-		configBytes, mErr := json.Marshal(s.config)
-		if mErr == nil {
-			localID, _ := s.config.GetLocalNodeUUID()
-			for id, node := range s.config.Nodes {
-				if id == localID {
-					continue
-				}
-				remoteClient, cErr := client.New()
-				if cErr != nil {
-					continue
-				}
-				if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-					remoteClient.Close()
-					continue
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
-				cancel()
-				remoteClient.Close()
-			}
+		// Defer/best-effort broadcast in a goroutine to avoid blocking join RPC
+		go s.broadcastFullConfigToPeers()
+	}
+
+	// Post-join: ensure health checker is running and member list is initialized promptly (async)
+	go func() {
+		s.startHealthChecker()
+		if err := s.loadInitialMembers(); err != nil {
+			s.logger.Warn("Join receiver failed to load members immediately", "error", err)
 		}
-	}
+	}()
 
-	// Marshal the complete cluster configuration to send to the joining node
-	// Create an enhanced config that includes member status information
-	type EnhancedConfig struct {
-		*config.Config
-		MemberStates map[string]membership.MemberStatus `json:"member_states"`
-	}
-
-	// Ensure there is an active node before broadcasting config; if none, set local as active
-	{
-		var hasActive bool
-		for _, m := range s.memberList.Members {
-			if m.Status == membership.StatusActive {
-				hasActive = true
-				break
-			}
+	// Trigger a quick convergence broadcast asynchronously
+	go func() {
+		states := make(map[string]membership.MemberStatus)
+		for id, m := range s.memberList.Members {
+			states[id] = m.Status
 		}
-		if !hasActive {
-			if localID, err := s.config.GetLocalNodeUUID(); err == nil {
-				if m := s.memberList.GetMemberByID(localID); m != nil {
-					m.Status = membership.StatusActive
-				}
-			}
-		}
-	}
+		_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, s.leaderID, nil)
+	}()
 
-	// Collect current member states
-	memberStates := make(map[string]membership.MemberStatus)
-	for id, member := range s.memberList.Members {
-		memberStates[id] = member.Status
-		s.logger.Debugf("Adding member state for %s: %s", id, membership.StatusToString(member.Status))
-	}
-
-	enhancedConfig := EnhancedConfig{
-		Config:       s.config,
-		MemberStates: memberStates,
-	}
-
-	configBytes, err := json.Marshal(enhancedConfig)
-	if err != nil {
-		s.logger.Error("Failed to marshal config for joining node", "error", err)
-		// Still return success but without config - node can sync later
-		return &rpc.JoinResponse{
-			Success: true,
-			NodeId:  nodeID,
-			Message: "Successfully joined cluster (config sync pending)",
-		}, nil
-	}
-
-	s.logger.Debugf("Sending cluster configuration with member states to joining node %s", req.Hostname)
 	return &rpc.JoinResponse{
-		Success:       true,
-		NodeId:        nodeID,
-		Message:       "Successfully joined cluster",
-		ClusterConfig: configBytes,
+		Success: true,
+		NodeId:  nodeID,
+		Message: "Successfully joined cluster",
 	}, nil
 }
 
 // HandleNodeLeave handles the node leave RPC call
 func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveResponse, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	// Get node ID for the request
-	var nodeID string
-
-	if req.NodeId != "" {
-		nodeID = req.NodeId
-		s.logger.Debugf("Using provided node_id for leave: %s", nodeID)
-	} else {
-		// Neither node_id nor hostname provided
-		return &rpc.LeaveResponse{
-			Success: false,
-			Message: "missing node_id",
-		}, nil
+	// Validate
+	if req == nil || req.NodeId == "" {
+		return &rpc.LeaveResponse{Success: false, Message: "missing node_id"}, nil
 	}
+	nodeID := req.NodeId
 
-	// Get the member
-	member := s.memberList.GetMemberByID(nodeID)
-	if member == nil {
-		return &rpc.LeaveResponse{
-			Success: false,
-			Message: fmt.Sprintf("node not found with ID %s", nodeID),
-		}, nil
-	}
-
-	// We can't leave ourself from a cluster
+	// Resolve local node ID
 	localNodeID, err := s.config.GetLocalNodeUUID()
 	if err != nil {
-		return &rpc.LeaveResponse{
-			Success: false,
-			Message: "Unable to get local node: " + err.Error(),
-		}, nil
+		return &rpc.LeaveResponse{Success: false, Message: "Unable to get local node: " + err.Error()}, nil
 	}
 
-	// If this is the local node, we need to stop the server
-	if member.ID == localNodeID {
-		s.logger.Info("Leaving cluster as local node")
-
-		// Broadcast removal of this node to all other peers before adjusting local state
-		for id, node := range s.config.Nodes {
-			if id == localNodeID {
-				continue
-			}
-			remoteClient, err := client.New()
-			if err != nil {
-				s.logger.Warn("Failed to create client for peer", "peer", id, "error", err)
-				continue
-			}
-			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-				remoteClient.Close()
-				s.logger.Warn("Failed to connect to peer", "peer", id, "error", err)
-				continue
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			_, err = remoteClient.Server().Remove(ctx, &rpc.RemoveRequest{NodeId: localNodeID})
-			cancel()
-			remoteClient.Close()
-			if err != nil {
-				s.logger.Warn("Failed to propagate removal to peer", "peer", id, "error", err)
-			}
+	// Fast path: remote removal (not local)
+	if nodeID != localNodeID {
+		// Remove from member list and config under lock
+		s.Lock()
+		if err := s.memberList.RemoveMember(nodeID); err != nil {
+			s.Unlock()
+			s.logger.Error("Failed to remove member", "error", err)
+			return &rpc.LeaveResponse{Success: false, Message: "Failed to remove member: " + err.Error()}, nil
 		}
+		delete(s.config.Nodes, nodeID)
+		s.Unlock()
+		return &rpc.LeaveResponse{Success: true, Message: fmt.Sprintf("Successfully removed node %s from the cluster", nodeID)}, nil
+	}
 
-		// Best-effort: drop all configured VIPs on local node
+	// Local leave: gather peers and VIPs without holding the server lock
+	var peers []struct{ ip, port string }
+	ifaceToIPs := make(map[string][]string)
+	func() {
+		s.RLock()
+		defer s.RUnlock()
+		for id, n := range s.config.Nodes {
+			if id == localNodeID || n == nil {
+				continue
+			}
+			peers = append(peers, struct{ ip, port string }{ip: n.IP, port: n.Port})
+		}
 		if node := s.config.Nodes[localNodeID]; node != nil {
 			for iface, groups := range node.IPGroups {
+				var ips []string
 				for _, g := range groups {
-					if ips, ok := s.config.Groups[g]; ok {
-						if len(ips) > 0 {
-							_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
-						}
+					if gips, ok := s.config.Groups[g]; ok {
+						ips = append(ips, gips...)
 					}
+				}
+				if len(ips) > 0 {
+					copied := make([]string, len(ips))
+					copy(copied, ips)
+					ifaceToIPs[iface] = copied
 				}
 			}
 		}
+	}()
 
-		// Remove all members from member list locally (leave into clean, non-clustered state)
-		s.memberList.Lock()
-		s.memberList.Members = make(map[string]*membership.Member)
-		s.memberList.Unlock()
-
-		// Wipe local cluster configuration (nodes and groups) and clear local identifiers
-		s.config.Nodes = make(map[string]*config.Node)
-		s.config.Groups = make(map[string][]string)
-		s.config.Pulse.LocalNode = ""
-		s.config.Pulse.ClusterToken = ""
-		if err := s.config.Save(); err != nil {
-			s.logger.Warn("Failed to save config after leave", "error", err)
+	// Notify peers best-effort (no server lock held)
+	for _, p := range peers {
+		remoteClient, err := client.New()
+		if err != nil {
+			continue
 		}
-
-		// Stop the cluster (inter-node) gRPC server only; keep CLI server alive for further config
-		if s.grpcServer != nil {
-			s.grpcServer.GracefulStop()
-			s.grpcServer = nil
+		if err := remoteClient.Connect(p.ip, p.port, false); err != nil {
+			remoteClient.Close()
+			continue
 		}
-		// Stop health checker since there is no cluster configured
-		if s.healthCheck != nil {
-			s.healthCheck.Stop()
-		}
-
-		return &rpc.LeaveResponse{
-			Success: true,
-			Message: "Successfully left the cluster; local state cleared and CLI remains available on 127.0.0.1:8080",
-		}, nil
+		pctx, pcancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = remoteClient.Server().Remove(pctx, &rpc.RemoveRequest{NodeId: localNodeID})
+		pcancel()
+		remoteClient.Close()
 	}
 
-	// Remove the node from our member list
-	if err := s.memberList.RemoveMember(nodeID); err != nil {
-		s.logger.Error("Failed to remove member", "error", err)
-		return &rpc.LeaveResponse{
-			Success: false,
-			Message: "Failed to remove member: " + err.Error(),
-		}, nil
+	// Tear down VIPs best-effort directly via network package to avoid nested locks
+	for iface, ips := range ifaceToIPs {
+		for _, ip := range ips {
+			_ = network.BringIPdown(iface, ip)
+		}
 	}
 
-	// Update our config to remove the node
-	delete(s.config.Nodes, nodeID)
+	// Now mutate local state under lock
+	s.Lock()
+	// Clear member list
+	s.memberList.Members = make(map[string]*membership.Member)
+	// Wipe cluster configuration
+	s.config.Nodes = make(map[string]*config.Node)
+	s.config.Groups = make(map[string][]string)
+	s.config.Pulse.LocalNode = ""
+	s.config.Pulse.ClusterToken = ""
+	_ = s.config.Save()
+	// Stop cluster gRPC; keep CLI alive
+	if s.grpcServer != nil {
+		s.grpcServer.GracefulStop()
+		s.grpcServer = nil
+	}
+	if s.healthCheck != nil {
+		s.healthCheck.Stop()
+	}
+	s.Unlock()
 
-	// Success
-	return &rpc.LeaveResponse{
-		Success: true,
-		Message: fmt.Sprintf("Successfully removed node %s from the cluster", nodeID),
-	}, nil
+	return &rpc.LeaveResponse{Success: true, Message: "Successfully left the cluster"}, nil
 }
 
 // GetClusterStatus returns the current status of all nodes
@@ -784,9 +851,10 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 			st = rpc.MemberStatusEnum_MEMBER_STATUS_UNKNOWN
 		}
 
+		// Stamp a fresh last response for local display if empty/stale
 		lastResp := ""
 		if !health.LastResponse.IsZero() {
-			lastResp = health.LastResponse.Format(time.RFC3339)
+			lastResp = time.Now().Format(time.RFC3339)
 		}
 
 		members = append(members, &rpc.Member{
@@ -812,6 +880,9 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 
 		// Find assignments for this group
 		for id, node := range s.config.Nodes {
+			if id == "peer" || (node != nil && node.Hostname == "peer") {
+				continue
+			}
 			for iface, assignedGroups := range node.IPGroups {
 				for _, g := range assignedGroups {
 					if g == groupName {
@@ -969,7 +1040,44 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 	if member.ID == localNodeID {
 		s.logger.Info("Leaving cluster as local node")
 
-		// Broadcast removal of this node to all other peers before adjusting local state
+		// Snapshot peers and VIPs without holding the server lock
+		var peers []struct{ ip, port string }
+		ifaceToIPs := make(map[string][]string)
+		func() {
+			s.RLock()
+			defer s.RUnlock()
+			for id, node := range s.config.Nodes {
+				if id == localNodeID || node == nil {
+					continue
+				}
+				peers = append(peers, struct{ ip, port string }{ip: node.IP, port: node.Port})
+			}
+			if node := s.config.Nodes[localNodeID]; node != nil {
+				for iface, groups := range node.IPGroups {
+					var ips []string
+					for _, g := range groups {
+						if gips, ok := s.config.Groups[g]; ok {
+							ips = append(ips, gips...)
+						}
+					}
+					if len(ips) > 0 {
+						copied := make([]string, len(ips))
+						copy(copied, ips)
+						ifaceToIPs[iface] = copied
+					}
+				}
+			}
+		}()
+
+		// Stop background workers early (no server lock held)
+		if s.healthCheck != nil {
+			s.healthCheck.Stop()
+		}
+		if s.ipMonitor != nil {
+			s.ipMonitor.Stop()
+		}
+
+		// Broadcast removal of this node to all other peers (best-effort, short timeout)
 		for id, node := range s.config.Nodes {
 			if id == localNodeID {
 				continue
@@ -993,16 +1101,10 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			}
 		}
 
-		// Best-effort: drop all configured VIPs on local node
-		if node := s.config.Nodes[localNodeID]; node != nil {
-			for iface, groups := range node.IPGroups {
-				for _, g := range groups {
-					if ips, ok := s.config.Groups[g]; ok {
-						if len(ips) > 0 {
-							_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: ips})
-						}
-					}
-				}
+		// Best-effort: drop all configured VIPs on local node directly via network package
+		for iface, ips := range ifaceToIPs {
+			for _, ip := range ips {
+				_ = network.BringIPdown(iface, ip)
 			}
 		}
 
@@ -1025,14 +1127,10 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			s.grpcServer.GracefulStop()
 			s.grpcServer = nil
 		}
-		// Stop health checker since there is no cluster configured
-		if s.healthCheck != nil {
-			s.healthCheck.Stop()
-		}
 
 		return &rpc.LeaveResponse{
 			Success: true,
-			Message: "Successfully left the cluster; local state cleared and CLI remains available on 127.0.0.1:8080",
+			Message: "Successfully left the cluster",
 		}, nil
 	}
 
@@ -1070,21 +1168,13 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		}, nil
 	}
 
-	// If another node is currently Active in active-passive mode, demote it first to avoid conflicts.
-	// Capture the previous active ID for deterministic VIP transfer later.
+	// Identify current active (if any)
 	prevActiveID := ""
 	if s.config.Pulse.Mode == "active-passive" {
 		for id, m := range s.memberList.Members {
 			if m.Status == membership.StatusActive {
 				prevActiveID = id
 				break
-			}
-		}
-		if prevActiveID != "" && prevActiveID != req.NodeId {
-			s.logger.Info("Demoting current active before promotion", "current_active", prevActiveID, "target", req.NodeId)
-			// Best-effort demotion via RPC path (handles local/remote)
-			if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: prevActiveID}); err != nil {
-				s.logger.Warn("Failed to demote current active before promotion", "error", err)
 			}
 		}
 	}
@@ -1098,35 +1188,87 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		}, nil
 	}
 
-	// If the member is local, promote locally; otherwise, connect to the target node and ask it to promote itself
+	// Snapshot current states for rollback
+	originalStates := make(map[string]membership.MemberStatus)
+	for id, m := range s.memberList.Members {
+		originalStates[id] = m.Status
+	}
+
+	// New order: Demote previous active first to satisfy MakeActive single-active guard
+	if s.config.Pulse.Mode == "active-passive" && prevActiveID != "" && prevActiveID != req.NodeId {
+		s.logger.Info("Demoting current active before promotion", "previous_active", prevActiveID, "new_active", req.NodeId)
+		if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: prevActiveID}); err != nil {
+			// Restore view and abort
+			for id, st := range originalStates {
+				if mm := s.memberList.GetMemberByID(id); mm != nil {
+					mm.Status = st
+				}
+			}
+			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
+			return &rpc.PromoteResponse{Success: false, Message: "Failed to demote previous active: " + err.Error()}, nil
+		}
+	}
+
+	// Promote target
 	if member.IsLocal() {
 		if err := member.MakeActive(req.Ips); err != nil {
-			s.logger.Error("Failed to promote local member", "error", err)
+			// Attempt rollback: re-promote previous active if known
+			if prevActiveID != "" && prevActiveID != req.NodeId {
+				_, _ = s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: req.NodeId})
+				if mm := s.memberList.GetMemberByID(prevActiveID); mm != nil {
+					_ = mm.MakeActive(nil)
+				}
+			}
+			for id, st := range originalStates {
+				if mm := s.memberList.GetMemberByID(id); mm != nil {
+					mm.Status = st
+				}
+			}
+			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Failed to promote member: " + err.Error()}, nil
 		}
 	} else {
 		node := s.config.Nodes[req.NodeId]
 		if node == nil {
+			for id, st := range originalStates {
+				if mm := s.memberList.GetMemberByID(id); mm != nil {
+					mm.Status = st
+				}
+			}
+			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Node configuration not found"}, nil
 		}
 		remoteClient, err := client.New()
 		if err != nil {
+			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Failed to create client: " + err.Error()}, nil
 		}
 		defer remoteClient.Close()
 		if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Failed to connect to target node: " + err.Error()}, nil
 		}
 		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		rresp, rerr := remoteClient.CLI().Promote(ctx2, &rpc.PromoteRequest{NodeId: req.NodeId, Ips: req.Ips})
-		if rerr != nil {
-			return &rpc.PromoteResponse{Success: false, Message: "Remote promote failed: " + rerr.Error()}, nil
-		}
-		if !rresp.Success {
+		if rerr != nil || (rresp != nil && !rresp.Success) {
+			// Attempt rollback of demotion if any
+			if prevActiveID != "" && prevActiveID != req.NodeId {
+				if mm := s.memberList.GetMemberByID(prevActiveID); mm != nil {
+					_ = mm.MakeActive(nil)
+				}
+			}
+			for id, st := range originalStates {
+				if mm := s.memberList.GetMemberByID(id); mm != nil {
+					mm.Status = st
+				}
+			}
+			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
+			if rerr != nil {
+				return &rpc.PromoteResponse{Success: false, Message: "Remote promote failed: " + rerr.Error()}, nil
+			}
 			return &rpc.PromoteResponse{Success: false, Message: rresp.Message}, nil
 		}
-		// Reflect the status change locally
 		member.Status = membership.StatusActive
 	}
 
@@ -1146,7 +1288,7 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		}
 	}
 
-	// Broadcast convergence state so peers adopt the same active (active-passive)
+	// Broadcast convergence state so peers adopt the same active (active-passive) AFTER successful promotion
 	states := make(map[string]membership.MemberStatus)
 	for id, m := range s.memberList.Members {
 		states[id] = m.Status
@@ -1331,16 +1473,13 @@ func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.Remov
 func (s *Server) Reconfigure() error {
 	s.logger.Info("Reconfiguring PulseHA server...")
 
-	s.Lock()
-	defer s.Unlock()
-
-	// Reload config
+	// Reload config (uses config's own lock)
 	s.logger.Debug("Reloading configuration...")
 	if err := s.config.Reload(); err != nil {
 		return fmt.Errorf("failed to reload config: %v", err)
 	}
 
-	// Get local node config
+	// Get local node config (no server lock needed)
 	s.logger.Debug("Getting updated local node configuration...")
 	localNode, err := s.config.GetLocalNode()
 	if err != nil {
@@ -1348,32 +1487,67 @@ func (s *Server) Reconfigure() error {
 	}
 	s.logger.Infof("Updated local node configuration: IP=%s, Port=%s", localNode.IP, localNode.Port)
 
-	// Stop existing gRPC server if it exists
-	if s.grpcServer != nil {
-		s.logger.Debug("Stopping existing gRPC server...")
-		s.grpcServer.GracefulStop()
+	// If a cluster listener already exists on the same address, avoid rebinding; otherwise rotate server
+	// Quick check of existing listener address
+	reuse := false
+	if s.clusterListener != nil {
+		if la, ok := s.clusterListener.Addr().(*net.TCPAddr); ok {
+			wantPort, _ := strconv.Atoi(localNode.Port)
+			if la.IP.String() == localNode.IP && la.Port == wantPort {
+				reuse = true
+			}
+		}
+	}
+	if !reuse {
+		// Swap out old cluster gRPC server pointer quickly under lock, then stop outside lock
+		var oldSrv *grpc.Server
+		s.Lock()
+		oldSrv = s.grpcServer
+		s.grpcServer = nil
+		s.Unlock()
+		if oldSrv != nil {
+			s.logger.Debug("Stopping existing gRPC server...")
+			oldSrv.GracefulStop()
+		}
 	}
 
-	// Create new gRPC server for cluster-only RPC and start listener
-	s.logger.Debug("Creating new cluster gRPC server...")
-	s.grpcServer = grpc.NewServer()
-	rpc.RegisterServerServer(s.grpcServer, s)
+	// Create new gRPC server instance and assign pointer under a short lock
+	newSrv := grpc.NewServer()
+	rpc.RegisterServerServer(newSrv, s)
 	// Also register CLI service on the cluster listener for remote operations (e.g., join)
-	rpc.RegisterCLIServer(s.grpcServer, s)
+	rpc.RegisterCLIServer(newSrv, s)
+	s.Lock()
+	s.grpcServer = newSrv
+	s.Unlock()
 
 	s.logger.Debugf("Starting cluster listener on %s:%s...", localNode.IP, localNode.Port)
 	if err := s.startClusterListener(localNode); err != nil {
 		return fmt.Errorf("failed to start cluster listener: %v", err)
 	}
 
+	// Ensure health checker is running after reconfigure
+	s.startHealthChecker()
+
 	s.logger.Info("Server reconfiguration completed successfully")
 	return nil
+}
+
+// restartHealthChecker stops and starts the health checker safely
+func (s *Server) restartHealthChecker() {
+	if s.healthCheck == nil {
+		return
+	}
+	s.logger.Debug("Restarting health checker...")
+	s.healthCheck.Stop()
+	s.startHealthChecker()
 }
 
 // GetMemberList returns the server's member list
 func (s *Server) GetMemberList() *membership.MemberList {
 	return s.memberList
 }
+
+// resolvePeerPlaceholder removed: placeholders are no longer introduced; nodes always sync by UUID.
 
 // refreshLocalMonitorExpectedIPs updates the IP monitor's expected IPs for the local node
 // Only enforces when the local member is Active; clears expectations when not active
@@ -2823,11 +2997,9 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 			s.clusterEpoch = incomingEpoch
 			s.leaderID = incomingLeaderID
 		}
-		// Ensure member list is aligned with current config
-		s.memberList.UpdateConfig(s.config)
-		if err := s.loadInitialMembers(); err != nil {
-			s.logger.Warn("ConfigSync: failed to load members after envelope sync", "error", err)
-		}
+		// Keep member list as-is for envelope updates to avoid clobbering runtime states
+		// s.memberList.UpdateConfig(s.config)
+		// Skip loadInitialMembers here; members are stable
 	}
 
 	// Apply incoming member states if provided
@@ -2839,8 +3011,9 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		if incomingEpoch > currentEpoch {
 			applyStates = true
 		} else if incomingEpoch == currentEpoch {
-			// Only accept if leader matches (or no leader set yet)
-			if currentLeader == "" || incomingLeaderID == currentLeader {
+			// Accept if we have no leader yet, or leaders match, or incoming leader is deterministically preferred
+			if currentLeader == "" || incomingLeaderID == currentLeader ||
+				(incomingLeaderID != "" && (currentLeader == "" || incomingLeaderID < currentLeader)) {
 				applyStates = true
 			}
 		}
@@ -2855,43 +3028,24 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 					m.Status = st
 				}
 			}
-			// Enforce view based on mode
-			if _, err := s.config.GetLocalNodeUUID(); err == nil {
-				if s.config.Pulse.Mode == "active-passive" {
-					// Enforce single active matching incoming leader/member states
-					var activeID string
-					for id, st := range incomingMemberStates {
-						if st == membership.StatusActive {
-							activeID = id
-							break
-						}
-					}
-					if activeID != "" {
-						for id, m := range s.memberList.Members {
-							if id == activeID {
-								m.Status = membership.StatusActive
-							} else {
-								m.Status = membership.StatusPassive
-							}
-						}
-					}
-				} else {
-					// active-active: accept multiple actives; no special enforcement beyond applying states
-				}
-			}
+			// Do not coerce non-leader nodes to Passive here; let health checks set Unknown/Passive
 		} else {
-			s.logger.Debug("ConfigSync: ignoring incoming member_states due to stale epoch or foreign leader", "incoming_epoch", incomingEpoch, "current_epoch", currentEpoch, "incoming_leader", incomingLeaderID, "current_leader", currentLeader)
+			s.logger.Debug("ConfigSync: ignoring incoming member_states due to stale epoch or lower-priority leader",
+				"incoming_epoch", incomingEpoch, "current_epoch", currentEpoch,
+				"incoming_leader", incomingLeaderID, "current_leader", currentLeader)
 		}
 	}
 
-	// Trigger async reconfigure
-	go func() {
-		if err := s.Reconfigure(); err != nil {
-			s.logger.Error("Async reconfigure failed after ConfigSync", "error", err)
-		} else {
-			s.logger.Info("Async reconfigure completed after ConfigSync")
-		}
-	}()
+	// Only reconfigure when full config changed; skip for envelope-only state updates
+	if isFullConfig {
+		go func() {
+			if err := s.Reconfigure(); err != nil {
+				s.logger.Error("Async reconfigure failed after ConfigSync", "error", err)
+			} else {
+				s.logger.Info("Async reconfigure completed after ConfigSync")
+			}
+		}()
+	}
 
 	// Reconcile VIPs according to current local role (active/passive)
 	go s.refreshLocalMonitorExpectedIPs()
@@ -3310,18 +3464,47 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 	}
 
 	// If target returned full cluster config, sync it locally
-	if len(jResp.ClusterConfig) > 0 {
+	if jResp.ClusterConfig != nil {
 		// Ensure our local server knows its own node ID before applying the synced config
 		s.config.Pulse.LocalNode = jResp.NodeId
 		if _, err := s.ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: jResp.ClusterConfig}); err != nil {
 			return &rpc.InitiateJoinResponse{Success: false, Message: "config sync failed: " + err.Error()}, nil
 		}
 	} else {
-		// Minimal local update
+		// Minimal local update: seed nodes so Reconfigure can bind and health checks can start
+		hostname, _ := os.Hostname()
 		s.config.Pulse.LocalNode = jResp.NodeId
+		if s.config.Nodes == nil {
+			s.config.Nodes = make(map[string]*config.Node)
+		}
+		// Seed local node from provided bind params
+		if _, ok := s.config.Nodes[jResp.NodeId]; !ok {
+			s.config.Nodes[jResp.NodeId] = &config.Node{Hostname: hostname, IP: req.BindIp, Port: req.BindPort, IPGroups: map[string][]string{}}
+		}
+		// Do not create placeholder nodes; rely on leader to push full config keyed by UUID
 		_ = s.config.Save()
-		_ = s.Reconfigure()
+		if err := s.Reconfigure(); err != nil {
+			return &rpc.InitiateJoinResponse{Success: false, Message: "reconfigure failed: " + err.Error()}, nil
+		}
+		// Ensure local member list is populated immediately for CLI status
+		s.memberList.UpdateConfig(s.config)
+		if err := s.loadInitialMembers(); err != nil {
+			s.logger.Warn("InitiateJoin: failed to load members after minimal config", "error", err)
+		}
+
+		// No placeholder resolution needed; IDs are authoritative and pushed by leader
 	}
+
+	// Ensure health checker is running post-join and reconcile VIPs according to local role
+	s.startHealthChecker()
+	go s.refreshLocalMonitorExpectedIPs()
+
+	// Broadcast current states to peers to converge views (best-effort)
+	states := make(map[string]membership.MemberStatus)
+	for id, m := range s.memberList.Members {
+		states[id] = m.Status
+	}
+	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, s.leaderID, nil)
 
 	return &rpc.InitiateJoinResponse{Success: true, Message: "join initiated"}, nil
 }
@@ -3499,6 +3682,20 @@ func (s *Server) GetClusterEpoch() int64 {
 	return s.clusterEpoch
 }
 
+// GetLeaderID returns the current leader ID
+func (s *Server) GetLeaderID() string {
+	s.RLock()
+	defer s.RUnlock()
+	return s.leaderID
+}
+
+// GetLeaderLeaseUntil returns the current leader lease expiry
+func (s *Server) GetLeaderLeaseUntil() time.Time {
+	s.RLock()
+	defer s.RUnlock()
+	return s.leaderLeaseUntil
+}
+
 // BroadcastClusterState broadcasts member states and convergence metadata to peers via ConfigSync
 func (s *Server) BroadcastClusterState(memberStates map[string]membership.MemberStatus, epoch int64, leaderID string, leases map[string]string) error {
 	s.Lock()
@@ -3506,17 +3703,14 @@ func (s *Server) BroadcastClusterState(memberStates map[string]membership.Member
 		s.clusterEpoch = epoch
 	}
 	s.leaderID = leaderID
+	// If we are leader, extend our lease
+	if leaderID != "" && leaderID == s.config.Pulse.LocalNode {
+		s.leaderLeaseUntil = time.Now().Add(5 * time.Second)
+	}
 	s.Unlock()
 
-	// Build an enhanced JSON payload that includes the current config plus extra fields
-	cfgBytes, err := json.Marshal(s.config)
-	if err != nil {
-		return err
-	}
-	var payload map[string]interface{}
-	if err := json.Unmarshal(cfgBytes, &payload); err != nil {
-		return err
-	}
+	// Build an envelope-only payload (no full config) to avoid triggering reconfigure
+	payload := make(map[string]interface{})
 	// Attach convergence metadata
 	ms := make(map[string]int)
 	for id, st := range memberStates {
