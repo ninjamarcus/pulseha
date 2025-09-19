@@ -1475,6 +1475,11 @@ func (s *Server) GetMemberList() *membership.MemberList {
 
 // resolvePeerPlaceholder removed: placeholders are no longer introduced; nodes always sync by UUID.
 
+// RefreshLocalMonitorExpectedIPs updates the IP monitor's expected IPs for the local node (public method for interface)
+func (s *Server) RefreshLocalMonitorExpectedIPs() {
+	s.refreshLocalMonitorExpectedIPs()
+}
+
 // refreshLocalMonitorExpectedIPs updates the IP monitor's expected IPs for the local node
 // Only enforces when the local member is Active; clears expectations when not active
 func (s *Server) refreshLocalMonitorExpectedIPs() {

@@ -24,6 +24,8 @@ type ServerReference interface {
 	// Leader getters for lease-based failover
 	GetLeaderID() string
 	GetLeaderLeaseUntil() time.Time
+	// IP monitor refresh
+	RefreshLocalMonitorExpectedIPs()
 }
 
 // HealthCheck represents the result of a health check
@@ -660,8 +662,37 @@ func (h *HealthChecker) electNewActiveNode() {
 	h.logger.Infof("Promoting node %s to active", bestCandidate.Hostname)
 
 	bestCandidate.Lock()
+	bestCandidateID := bestCandidate.ID
 	bestCandidate.Status = StatusActive
 	bestCandidate.Unlock()
+
+	// Assign floating IPs to the new active node
+	if h.server != nil {
+		// Get all floating IPs from config
+		h.RLock()
+		config := h.members.config
+		h.RUnlock()
+
+		var allIPs []string
+		for _, ips := range config.Groups {
+			allIPs = append(allIPs, ips...)
+		}
+
+		if len(allIPs) > 0 {
+			h.logger.Infof("Assigning %d floating IPs to new active node %s", len(allIPs), bestCandidate.Hostname)
+			if err := h.server.OrchestrateIPFailover("", bestCandidateID, allIPs); err != nil {
+				h.logger.Errorf("Failed to assign IPs to new active node: %v", err)
+			} else {
+				// Update member's active IPs tracking
+				bestCandidate.Lock()
+				bestCandidate.ActiveIPs = append([]string{}, allIPs...)
+				bestCandidate.Unlock()
+
+				// Refresh IP monitor expectations if this is the local node
+				h.server.RefreshLocalMonitorExpectedIPs()
+			}
+		}
+	}
 
 	h.logger.Infof("Leader election complete, %s is now the active node", bestCandidate.Hostname)
 
