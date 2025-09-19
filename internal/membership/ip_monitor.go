@@ -42,6 +42,8 @@ func (m *IPMonitor) Start() error {
 
 	// Start platform-specific event monitoring (pure event-driven)
 	go m.monitorLoop()
+	// Start periodic reconcile as a safety net
+	go m.periodicReconcile()
 
 	m.logger.Info("IP monitor started")
 	return nil
@@ -103,33 +105,47 @@ func (m *IPMonitor) ClearExpectedIPs(iface string) {
 
 // initializeExpectedIPs initializes the expected IPs from the current member
 func (m *IPMonitor) initializeExpectedIPs() error {
-	// Get the local member
+	// Get the local node ID
 	localNodeID, err := m.members.config.GetLocalNodeUUID()
 	if err != nil {
 		return fmt.Errorf("failed to get local node ID: %v", err)
 	}
 
+	// Resolve local member and node config
 	localMember := m.members.GetMemberByID(localNodeID)
 	if localMember == nil {
 		return fmt.Errorf("local member not found")
 	}
-
-	// Get the active IPs for the local member
-	localMember.Lock()
-	activeIPs := make([]string, len(localMember.ActiveIPs))
-	copy(activeIPs, localMember.ActiveIPs)
-	localMember.Unlock()
-
-	// Group IPs by interface (best effort via config)
-	for _, ip := range activeIPs {
-		iface, err := m.members.config.GetGroupIface(localMember.Hostname, "")
-		if err != nil {
-			m.logger.Warn("Failed to get interface for IP", "ip", ip, "error", err)
-			continue
-		}
-		m.expectedIPs[iface] = append(m.expectedIPs[iface], ip)
+	nodeCfg, ok := m.members.config.Nodes[localNodeID]
+	if !ok || nodeCfg == nil {
+		return fmt.Errorf("local node configuration not found")
 	}
 
+	// Reset expected IPs first
+	m.expectedIPs = make(map[string][]string)
+
+	// Only seed expectations when local role is Active; passives keep expectations empty
+	if localMember.Status != StatusActive {
+		m.logger.Info("IP monitor initialization: local node not Active; expected IPs left empty")
+		return nil
+	}
+
+	// Build expected IPs from group assignments in config
+	for iface, groups := range nodeCfg.IPGroups {
+		var ifaceIPs []string
+		for _, g := range groups {
+			if ips, ok := m.members.config.Groups[g]; ok {
+				ifaceIPs = append(ifaceIPs, ips...)
+			}
+		}
+		if len(ifaceIPs) > 0 {
+			ipsCopy := make([]string, len(ifaceIPs))
+			copy(ipsCopy, ifaceIPs)
+			m.expectedIPs[iface] = ipsCopy
+		}
+	}
+
+	m.logger.Info("IP monitor initialization complete", "expected_ifaces", len(m.expectedIPs))
 	return nil
 }
 

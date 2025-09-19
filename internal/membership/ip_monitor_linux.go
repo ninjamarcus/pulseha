@@ -4,7 +4,10 @@ package membership
 
 import (
 	"strings"
+	"time"
 
+	"github.com/syleron/pulseha/packages/network"
+	"github.com/syleron/pulseha/packages/utils"
 	"github.com/vishvananda/netlink"
 )
 
@@ -142,4 +145,66 @@ func (m *IPMonitor) restoreIP(iface string, ip string) {
 		return
 	}
 	m.logger.Info("IP monitor: restored expected IP", "iface", iface, "ip", ip)
+}
+
+// periodicReconcile runs a lightweight reconcile loop to enforce expected IPs
+func (m *IPMonitor) periodicReconcile() {
+	// Run every 30s; exit on stop
+	t := time.NewTicker(30 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-m.stopChan:
+			return
+		case <-t.C:
+			m.enforceExpectations()
+		}
+	}
+}
+
+// enforceExpectations ensures that the current local role and expectedIPs are reflected on interfaces
+func (m *IPMonitor) enforceExpectations() {
+	// Determine local role
+	localID, err := m.members.config.GetLocalNodeUUID()
+	if err != nil {
+		return
+	}
+	member := m.members.GetMemberByID(localID)
+	if member == nil {
+		return
+	}
+
+	m.RLock()
+	expectations := make(map[string][]string, len(m.expectedIPs))
+	for iface, ips := range m.expectedIPs {
+		cpy := make([]string, len(ips))
+		copy(cpy, ips)
+		expectations[iface] = cpy
+	}
+	m.RUnlock()
+
+	// Passive: nothing to add; actives: ensure missing are added
+	if member.Status != StatusActive {
+		return
+	}
+
+	// Bring up any missing IPs per interface
+	for iface, ips := range expectations {
+		var missing []string
+		for _, ip := range ips {
+			ipOnly, _ := utils.GetCIDR(ip)
+			if ipOnly == nil {
+				continue
+			}
+			exists, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+			if !exists || eIface != iface {
+				missing = append(missing, ip)
+			}
+		}
+		if len(missing) > 0 {
+			for _, ip := range missing {
+				_ = network.BringIPup(iface, ip)
+			}
+		}
+	}
 }
