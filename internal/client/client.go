@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/packages/security"
 	"github.com/syleron/pulseha/rpc"
@@ -188,12 +188,12 @@ func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
 		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 	if err != nil {
-		log.Errorf("GRPC client connection error: %s", err.Error())
+		log.Error("GRPC client connection error", "error", err)
 		return fmt.Errorf("could not connect to host: %v", err)
 	}
 	c.server = rpc.NewServerClient(c.Connection)
 	c.cliClient = rpc.NewCLIClient(c.Connection)
-	log.Debug("Client:Connect() Connection made to " + ip + ":" + port)
+	log.Debug("Client:Connect() Connection made", "address", ip+":"+port)
 	return nil
 }
 
@@ -207,7 +207,7 @@ func (c *Client) Close() {
 
 // Send sends an RPC command over the client connection
 func (c *Client) Send(funcName ProtoFunction, data interface{}) (interface{}, error) {
-	log.Debug("Client:Send() Sending " + funcName.String())
+	log.Debug("Client:Send() Sending", "function", funcName.String())
 	funcList := c.GetProtoFuncList()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -438,7 +438,7 @@ func (c *Client) GetClusterStatus() (*ClusterStatus, error) {
 		}
 
 		// Log the latency for debugging
-		log.Debugf("Member %s latency from RPC: %s", m.Hostname, m.Latency)
+		log.Debug("Member latency from RPC", "hostname", m.Hostname, "latency", m.Latency)
 	}
 
 	// Populate groups from server response (authoritative)

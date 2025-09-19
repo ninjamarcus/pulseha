@@ -18,7 +18,7 @@ package utils
 
 import (
 	"errors"
-	log "github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"io/ioutil"
 	"net"
 	"os"

@@ -23,7 +23,7 @@ import (
 	"os/exec"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/packages/utils"
 	"github.com/vishvananda/netlink"
 )
@@ -59,10 +59,10 @@ func SendGARP(iface, ip string) error {
 		log.Error("failed to GARP. Cannot parse CIDR")
 		return err
 	}
-	log.Debug("Sending gratuitous arp for " + cidrIP.String() + " on interface " + iface)
+	log.Debug("Sending gratuitous arp", "ip", cidrIP.String(), "interface", iface)
 	_, err = utils.Execute("arping", "-U", "-c", "5", "-I", iface, cidrIP.String())
 	if err != nil {
-		log.Warn("failed to GARP (continuing): " + err.Error())
+		log.Warn("failed to GARP (continuing)", "error", err)
 		return nil
 	}
 	return nil
@@ -96,7 +96,7 @@ func BringIPup(iface, ip string) error {
 	ipOb, _ := utils.GetCIDR(ip)
 	exists, eIface, err := CheckIfIPExists(ipOb.String())
 	if err != nil {
-		log.Debug("Network Package - BringIPup() Failed to check to see if IP exists. ", err)
+		log.Debug("Network Package - BringIPup() Failed to check to see if IP exists", "error", err)
 		return err
 	}
 	if exists {
@@ -105,16 +105,16 @@ func BringIPup(iface, ip string) error {
 			return nil
 		}
 		if err := BringIPdown(eIface, ip); err != nil {
-			log.Debug("Attempted to bring down ip "+ipOb.String()+" however it appears it wasn't up")
+			log.Debug("Attempted to bring down ip however it appears it wasn't up", "ip", ipOb.String())
 		}
 	}
 	addr, err := netlink.ParseAddr(ip)
 	if err != nil {
-		log.Debug("Network Package - BringIPup() Failed to parse addr ", err)
+		log.Debug("Network Package - BringIPup() Failed to parse addr", "error", err)
 		return errors.New("unable to bring IP up because ip address couldn't be parsed")
 	}
 	if err := netlink.AddrAdd(link, addr); err != nil {
-		log.Debug("Network Package - AddrAdd returned error: ", err)
+		log.Debug("Network Package - AddrAdd returned error", "error", err)
 		// If add failed, verify if IP is now present on target iface; treat as success
 		pexists, pIface, _ := CheckIfIPExists(ipOb.String())
 		if pexists && pIface == iface {
@@ -142,7 +142,7 @@ func BringIPdown(iface, ip string) error {
 		return nil
 	}
 	if err := netlink.AddrDel(link, addr); err != nil {
-		log.Debug("Unable to bring down ip "+ip+" on interface "+iface+". Perhaps it doesn't exist?")
+		log.Debug("Unable to bring down ip. Perhaps it doesn't exist?", "ip", ip, "interface", iface)
 		// Verify absence now; treat as success if gone
 		ipOb, _ := utils.GetCIDR(ip)
 		pexists, pIface, _ := CheckIfIPExists(ipOb.String())
@@ -181,7 +181,7 @@ func ICMPv4(Ipv4Addr string) error {
 	if strings.Contains(Ipv4Addr, "/") {
 		ipPart, _, err := net.ParseCIDR(Ipv4Addr)
 		if err != nil {
-			log.Error("Failed to parse CIDR address: ", Ipv4Addr)
+			log.Error("Failed to parse CIDR address", "address", Ipv4Addr)
 			return err
 		}
 		Ipv4Addr = ipPart.String()
@@ -193,11 +193,11 @@ func ICMPv4(Ipv4Addr string) error {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		log.Error("ICMP request failed: ", Ipv4Addr)
+		log.Error("ICMP request failed", "address", Ipv4Addr)
 		return err
 	}
 	if !strings.Contains(out.String(), "0") {
-		log.Error("ICMP request failed: ", Ipv4Addr, " ", out.String())
+		log.Error("ICMP request failed", "address", Ipv4Addr, "output", out.String())
 		return errors.New("failed to reach host")
 	}
 	return nil
@@ -235,7 +235,7 @@ func GetInterfaceNames() []string {
 	log.Debug("Network Package - GetInerfacesNames()")
 	links, err := netlink.LinkList()
 	if err != nil {
-		log.Debug("Network Package - GetInterfaceNames() Error retrieving network links via netlink. ", err)
+		log.Debug("Network Package - GetInterfaceNames() Error retrieving network links via netlink", "error", err)
 		return nil
 	}
 	var interfaceNames []string
@@ -256,7 +256,7 @@ func InterfaceExist(name string) (bool, netlink.Link) {
 	log.Debug("Network Package - InterfaceExists()")
 	link, err := netlink.LinkByName(name)
 	if err != nil {
-		log.Debug(err)
+		log.Debug("Error checking interface", "error", err)
 		return false, nil
 	}
 	return true, link
@@ -269,7 +269,7 @@ Checks to see if an IP exists on an interface already
 func CheckIfIPExists(ipAddr string) (bool, string, error) {
 	links, err := netlink.LinkList()
 	if err != nil {
-		log.Debug("Network Package - CheckIfIPEixists() Failed to get network links via netlink. ", err)
+		log.Debug("Network Package - CheckIfIPEixists() Failed to get network links via netlink", "error", err)
 		return true, "", err
 	}
 
@@ -279,7 +279,7 @@ func CheckIfIPExists(ipAddr string) (bool, string, error) {
 		// Get IP addresses for link
 		addrs, err := netlink.AddrList(link, 4)
 		if err != nil {
-			log.Debug("Network Package - CheckIfIPExists() Failed to get addresses for link via netlink. ", err)
+			log.Debug("Network Package - CheckIfIPExists() Failed to get addresses for link via netlink", "error", err)
 			return true, "", err
 		}
 		for _, addr := range addrs {

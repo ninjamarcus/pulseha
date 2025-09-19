@@ -32,7 +32,7 @@ import (
 	"path/filepath"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/packages/utils"
 )
 
@@ -46,7 +46,7 @@ func GenTLSKeys(ip string) error {
 	// Make sure we have the cert directory
 	utils.CreateFolder(CertDir)
 	// Log our action
-	log.Warning("TLS keys are missing! Generating..")
+	log.Warn("TLS keys are missing! Generating..")
 	// Check to see if we have a ca crt/key already
 	if !utils.CheckFileExists(CertDir+"/ca.crt") ||
 		!utils.CheckFileExists(CertDir+"/ca.key") {
@@ -56,12 +56,12 @@ func GenTLSKeys(ip string) error {
 	// Load the CA
 	caCert, err := utils.LoadFile(CertDir + "ca.crt")
 	if err != nil {
-		log.Error(err.Error())
+		log.Error("Error", "error", err)
 		return errors.New(err.Error())
 	}
 	caKey, err := utils.LoadFile(CertDir + "ca.key")
 	if err != nil {
-		log.Error(err.Error())
+		log.Error("Error", "error", err)
 		return errors.New(err.Error())
 	}
 	// Make sure we have values for both caCert and caKey
@@ -93,12 +93,12 @@ func GenerateCACert(ip string) {
 	// Generate new key pair
 	rootKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		log.Fatalf("generating random key: %v", err)
+		log.Fatal("generating random key", "error", err)
 	}
 	// Generate Cert Template
 	rootCertTmpl, err := certTemplate()
 	if err != nil {
-		log.Fatalf("creating cert template: %v", err)
+		log.Fatal("creating cert template", "error", err)
 	}
 	// Populate cert template
 	rootCertTmpl.IsCA = true
@@ -108,7 +108,7 @@ func GenerateCACert(ip string) {
 	// Generate cert from template and sign
 	_, rootCertPEM, err := createCert(rootCertTmpl, rootCertTmpl, &rootKey.PublicKey, rootKey)
 	if err != nil {
-		log.Fatalf("error creating cert: %v", err)
+		log.Fatal("error creating cert", "error", err)
 	}
 	// write keys
 	WriteCertFile("ca", rootCertPEM)
@@ -120,12 +120,12 @@ func GenerateCerts(ip string, caCert *x509.Certificate, caKey *rsa.PrivateKey) {
 	// Generate new key pair
 	servKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		log.Fatalf("generating random key: %v", err)
+		log.Fatal("generating random key", "error", err)
 	}
 	// Generate Cert template
 	servCertTmpl, err := certTemplate()
 	if err != nil {
-		log.Fatalf("creating cert template: %v", err)
+		log.Fatal("creating cert template", "error", err)
 	}
 	// Populate cert template
 	servCertTmpl.KeyUsage = x509.KeyUsageDigitalSignature
@@ -134,7 +134,7 @@ func GenerateCerts(ip string, caCert *x509.Certificate, caKey *rsa.PrivateKey) {
 	// Generate cert from template and sign
 	_, servCertPEM, err := createCert(servCertTmpl, caCert, &servKey.PublicKey, caKey)
 	if err != nil {
-		log.Fatalf("error creating cert: %v", err)
+		log.Fatal("error creating cert", "error", err)
 	}
 	// write keys
 	WriteCertFile(CertName, servCertPEM)

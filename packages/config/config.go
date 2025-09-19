@@ -28,7 +28,7 @@ import (
 
 	"github.com/google/uuid"
 
-	log "github.com/sirupsen/logrus"
+	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/packages/jsonHelper"
 	"github.com/syleron/pulseha/packages/utils"
 )
@@ -51,7 +51,7 @@ func init() {
 	// Fall back to user's home directory
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatalf("Failed to get user home directory: %v", err)
+		log.Fatal("Failed to get user home directory", "error", err)
 	}
 
 	CONFIG_DIR = filepath.Join(homeDir, ".pulseha")
@@ -59,10 +59,10 @@ func init() {
 
 	// Create user directory
 	if err := os.MkdirAll(CONFIG_DIR, 0755); err != nil {
-		log.Fatalf("Failed to create config directory in home directory: %v", err)
+		log.Fatal("Failed to create config directory in home directory", "error", err)
 	}
 
-	log.Warnf("Using user-local config directory: %s", CONFIG_DIR)
+	log.Warn("Using user-local config directory", "path", CONFIG_DIR)
 }
 
 type Config struct {
@@ -124,10 +124,10 @@ func New() *Config {
 
 	// Load the config
 	if err := c.Load(); err != nil {
-		log.Warnf("Failed to load config: %v", err)
+		log.Warn("Failed to load config", "error", err)
 		// Create default config
 		if err := c.SaveDefaultLocalConfig(); err != nil {
-			log.Fatalf("Failed to save default config: %v", err)
+			log.Fatal("Failed to save default config", "error", err)
 		}
 	}
 
@@ -310,7 +310,7 @@ func (c *Config) migrateConfig() {
 	// Save the migrated config if changes were made
 	if migrated {
 		if err := c.Save(); err != nil {
-			log.Warnf("Failed to save migrated config: %v", err)
+			log.Warn("Failed to save migrated config", "error", err)
 		} else {
 			log.Info("Config migrated successfully with new syslog settings")
 		}
@@ -319,7 +319,7 @@ func (c *Config) migrateConfig() {
 
 // Reload the config file into memory.
 func (c *Config) Reload() error {
-	log.WithField("component", "config").Info("Reloading PulseHA config")
+	log.Info("Reloading PulseHA config", "component", "config")
 	return c.Load()
 }
 
@@ -418,10 +418,7 @@ func (c *Config) Validate() error {
 	}
 
 	// Log interval values for debugging
-	log.Debugf("Validating intervals - HealthCheck: %d, FailOver: %d, FailOverLimit: %d",
-		c.Pulse.HealthCheckInterval,
-		c.Pulse.FailOverInterval,
-		c.Pulse.FailOverLimit)
+	log.Debug("Validating intervals", "healthcheck", c.Pulse.HealthCheckInterval, "failover", c.Pulse.FailOverInterval, "failover_limit", c.Pulse.FailOverLimit)
 
 	if c.Pulse.HealthCheckInterval < 1000 {
 		return fmt.Errorf("health check interval must be at least 1000ms (got %d)", c.Pulse.HealthCheckInterval)
@@ -540,7 +537,7 @@ func (c *Config) UpdateHostname(newHostname string) error {
 }
 
 func (c *Config) GetPluginConfig(pName string) (interface{}, error) {
-	log.Debug("Config:GetPluginConfig() Getting plugin config.. ", pName)
+	log.Debug("Getting plugin config", "plugin", pName)
 	pluginConfig := c.Plugins[pName]
 	if pluginConfig != nil {
 		return c.Plugins[pName], nil
@@ -549,7 +546,7 @@ func (c *Config) GetPluginConfig(pName string) (interface{}, error) {
 }
 
 func (c *Config) SetPluginConfig(pName string, data interface{}) error {
-	log.Debug("Config:SetPluginConfig() Setting plugin config.. ", pName)
+	log.Debug("Setting plugin config", "plugin", pName)
 	_, err := c.GetPluginConfig(pName)
 	if err != nil {
 		c.Lock()
