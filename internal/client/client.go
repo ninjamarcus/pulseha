@@ -331,7 +331,9 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 	}
 
 	// Ask local daemon to initiate join with target via dedicated RPC
-	_, err = c.CLI().InitiateJoin(context.Background(), &rpc.InitiateJoinRequest{
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	respJoin, err := c.CLI().InitiateJoin(ctx, &rpc.InitiateJoinRequest{
 		TargetHost: host,
 		TargetPort: port,
 		Token:      token,
@@ -342,17 +344,20 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 	if err != nil {
 		return fmt.Errorf("join initiate failed: %v", err)
 	}
-
-	// Deterministic confirmation: poll Status until the new node appears (or timeout)
-	deadline := time.Now().Add(20 * time.Second)
-	for {
-		if time.Now().After(deadline) {
-			return fmt.Errorf("join did not appear in cluster within 20s; retry or run 'pulsectl status'")
+	if respJoin != nil && !respJoin.Success {
+		if respJoin.Message != "" {
+			return fmt.Errorf(respJoin.Message)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		resp, sErr := c.CLI().Status(ctx, &rpc.StatusRequest{})
-		cancel()
-		if sErr == nil {
+		return fmt.Errorf("join initiate failed")
+	}
+
+	// Bounded synchronous confirmation: wait up to 20s for the node to appear locally; also confirm via remote if needed
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+		resp, sErr := c.CLI().Status(ctx2, &rpc.StatusRequest{})
+		cancel2()
+		if sErr == nil && resp != nil {
 			for _, m := range resp.Members {
 				if m.NodeId == nodeID {
 					fmt.Printf("Successfully joined cluster: %s (%s:%s) [id=%s]\n", m.Hostname, m.Ip, m.Port, m.NodeId)
@@ -360,8 +365,28 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 				}
 			}
 		}
+		// If local daemon hasn't reflected yet, confirm membership directly from the target node
+		ctx3, cancel3 := context.WithTimeout(context.Background(), 2*time.Second)
+		remoteConn, dErr := grpc.Dial(host+":"+port, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if dErr == nil {
+			remoteCLI := rpc.NewCLIClient(remoteConn)
+			rResp, rErr := remoteCLI.Status(ctx3, &rpc.StatusRequest{})
+			if rErr == nil && rResp != nil {
+				for _, m := range rResp.Members {
+					if m.NodeId == nodeID {
+						fmt.Printf("Joined cluster (confirmed by %s); local daemon will reflect shortly. Node ID: %s\n", host, nodeID)
+						remoteConn.Close()
+						cancel3()
+						return nil
+					}
+				}
+			}
+			remoteConn.Close()
+		}
+		cancel3()
 		time.Sleep(500 * time.Millisecond)
 	}
+	return fmt.Errorf("join did not complete within 20s; run 'pulsectl status' or check pulseha logs")
 }
 
 // LeaveCluster removes this node from the cluster

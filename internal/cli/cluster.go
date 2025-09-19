@@ -96,7 +96,9 @@ func newClusterLeaveCmd() *cobra.Command {
 				return err
 			}
 			defer client.Close()
-			resp, err := client.CLI().Leave(context.Background(), &rpc.LeaveRequest{})
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			resp, err := client.CLI().Leave(ctx, &rpc.LeaveRequest{})
 			if err != nil {
 				return err
 			}
