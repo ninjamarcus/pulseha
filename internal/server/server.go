@@ -26,16 +26,15 @@ import (
 // Server represents the PulseHA server
 type Server struct {
 	sync.RWMutex
-	config          *config.Config
-	logger          *log.Logger
-	memberList      *membership.MemberList
-	healthCheck     *membership.HealthChecker
-	ipMonitor       *membership.IPMonitor
-	quorumManager   *quorum.QuorumManager
-	quorumHandler   *quorum.RPCHandler
-	grpcServer      *grpc.Server
-	cliServer       *grpc.Server
-	clusterListener net.Listener
+	config        *config.Config
+	logger        *log.Logger
+	memberList    *membership.MemberList
+	healthCheck   *membership.HealthChecker
+	ipMonitor     *membership.IPMonitor
+	quorumManager *quorum.QuorumManager
+	quorumHandler *quorum.RPCHandler
+	grpcServer    *grpc.Server
+	cliServer     *grpc.Server
 	rpc.UnimplementedCLIServer
 	rpc.UnimplementedServerServer
 	// Convergence state
@@ -173,27 +172,6 @@ func (s *Server) Start() error {
 	// Start the health checker
 	s.startHealthChecker()
 
-	// Watchdog: ensure health checker stays running
-	go func() {
-		t := time.NewTicker(5 * time.Second)
-		defer t.Stop()
-		for range t.C {
-			if s.healthCheck == nil {
-				continue
-			}
-			if !s.healthCheck.IsRunning() {
-				s.logger.Warn("Health checker not running; restarting")
-				s.startHealthChecker()
-				continue
-			}
-			// Restart if the loop hasn't ticked recently
-			if !s.healthCheck.LastTickTime().IsZero() && time.Since(s.healthCheck.LastTickTime()) > 3*time.Second {
-				s.logger.Warn("Health checker stalled; restarting")
-				s.restartHealthChecker()
-			}
-		}
-	}()
-
 	// Start the IP monitor
 	if err := s.ipMonitor.Start(); err != nil {
 		s.logger.Error("Failed to start IP monitor", "error", err)
@@ -223,27 +201,6 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 	}
 
 	address := fmt.Sprintf("%s:%s", localNode.IP, localNode.Port)
-	// If we already have a listener bound to the right address, reuse it
-	if s.clusterListener != nil {
-		if la, ok := s.clusterListener.Addr().(*net.TCPAddr); ok {
-			wantIP := localNode.IP
-			wantPort, _ := strconv.Atoi(localNode.Port)
-			if la.IP.String() == wantIP && la.Port == wantPort {
-				s.logger.Debug("Reusing existing cluster listener", "addr", s.clusterListener.Addr().String())
-				go func() {
-					s.logger.Debug("Serving cluster gRPC (reused listener)", "addr", s.clusterListener.Addr().String())
-					if err := s.grpcServer.Serve(s.clusterListener); err != nil {
-						s.logger.Error("Cluster gRPC server failed", "error", err)
-					}
-				}()
-				return nil
-			}
-		}
-		// Different address – close old listener first
-		_ = s.clusterListener.Close()
-		s.clusterListener = nil
-	}
-
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %v", address, err)
@@ -263,7 +220,6 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 		}
 	}
 
-	s.clusterListener = listener
 	go func() {
 		s.logger.Debug("Serving cluster gRPC", "addr", listener.Addr().String())
 		if err := s.grpcServer.Serve(listener); err != nil {
@@ -360,22 +316,15 @@ func (s *Server) Stop() {
 		s.ipMonitor.Stop()
 	}
 
-	// Swap out gRPC servers and listener under a short lock, then stop outside lock to avoid deadlocks
+	// Swap out gRPC servers under a short lock, then stop outside lock to avoid deadlocks
 	var oldSrv *grpc.Server
 	var oldCli *grpc.Server
-	var oldListener net.Listener
 	s.Lock()
 	oldSrv = s.grpcServer
 	oldCli = s.cliServer
-	oldListener = s.clusterListener
 	s.grpcServer = nil
 	s.cliServer = nil
-	s.clusterListener = nil
 	s.Unlock()
-
-	if oldListener != nil {
-		_ = oldListener.Close()
-	}
 	if oldSrv != nil {
 		oldSrv.GracefulStop()
 	}
@@ -1487,28 +1436,15 @@ func (s *Server) Reconfigure() error {
 	}
 	s.logger.Infof("Updated local node configuration: IP=%s, Port=%s", localNode.IP, localNode.Port)
 
-	// If a cluster listener already exists on the same address, avoid rebinding; otherwise rotate server
-	// Quick check of existing listener address
-	reuse := false
-	if s.clusterListener != nil {
-		if la, ok := s.clusterListener.Addr().(*net.TCPAddr); ok {
-			wantPort, _ := strconv.Atoi(localNode.Port)
-			if la.IP.String() == localNode.IP && la.Port == wantPort {
-				reuse = true
-			}
-		}
-	}
-	if !reuse {
-		// Swap out old cluster gRPC server pointer quickly under lock, then stop outside lock
-		var oldSrv *grpc.Server
-		s.Lock()
-		oldSrv = s.grpcServer
-		s.grpcServer = nil
-		s.Unlock()
-		if oldSrv != nil {
-			s.logger.Debug("Stopping existing gRPC server...")
-			oldSrv.GracefulStop()
-		}
+	// Swap out old cluster gRPC server pointer quickly under lock, then stop outside lock
+	var oldSrv *grpc.Server
+	s.Lock()
+	oldSrv = s.grpcServer
+	s.grpcServer = nil
+	s.Unlock()
+	if oldSrv != nil {
+		s.logger.Debug("Stopping existing gRPC server...")
+		oldSrv.GracefulStop()
 	}
 
 	// Create new gRPC server instance and assign pointer under a short lock
@@ -1530,16 +1466,6 @@ func (s *Server) Reconfigure() error {
 
 	s.logger.Info("Server reconfiguration completed successfully")
 	return nil
-}
-
-// restartHealthChecker stops and starts the health checker safely
-func (s *Server) restartHealthChecker() {
-	if s.healthCheck == nil {
-		return
-	}
-	s.logger.Debug("Restarting health checker...")
-	s.healthCheck.Stop()
-	s.startHealthChecker()
 }
 
 // GetMemberList returns the server's member list
@@ -3011,9 +2937,8 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		if incomingEpoch > currentEpoch {
 			applyStates = true
 		} else if incomingEpoch == currentEpoch {
-			// Accept if we have no leader yet, or leaders match, or incoming leader is deterministically preferred
-			if currentLeader == "" || incomingLeaderID == currentLeader ||
-				(incomingLeaderID != "" && (currentLeader == "" || incomingLeaderID < currentLeader)) {
+			// Only accept if leader matches (or no leader set yet)
+			if currentLeader == "" || incomingLeaderID == currentLeader {
 				applyStates = true
 			}
 		}
