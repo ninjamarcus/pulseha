@@ -51,6 +51,8 @@ type ServerReference interface {
 	GetLeaderLeaseUntil() time.Time
 	// IP monitor refresh
 	RefreshLocalMonitorExpectedIPs()
+	// Vote broadcasting for quorum elections
+	BroadcastVoteRequest(sessionID string, voteType, subject, description string, timeoutSeconds int64) error
 }
 
 // HealthCheck represents the result of a health check
@@ -601,11 +603,20 @@ func (h *HealthChecker) electNewActiveNode() {
 	h.logger.Infof("Selected %s as best candidate for promotion (score: %.2f)",
 		bestCandidate.Hostname, bestScore)
 
-	// Determine if we should use voting based on cluster size
+	// Determine if we should use voting based on available nodes
 	clusterSize := len(h.members.Members)
-	h.logger.Debugf("Cluster size: %d nodes", clusterSize)
+	availableNodes := 0
+	for _, member := range h.members.Members {
+		member.Lock()
+		isAvailable := member.Status == StatusActive || member.Status == StatusPassive
+		member.Unlock()
+		if isAvailable {
+			availableNodes++
+		}
+	}
+	h.logger.Debugf("Cluster size: %d nodes total, %d available", clusterSize, availableNodes)
 
-	if clusterSize >= 3 {
+	if availableNodes >= 3 {
 		// 3+ nodes: Use quorum voting for decisions
 		h.logger.Info("Cluster has 3+ nodes, using quorum voting for leader election")
 
@@ -621,9 +632,9 @@ func (h *HealthChecker) electNewActiveNode() {
 			h.logger.Warn("Quorum manager not available, aborting election to prevent split-brain")
 			return
 		}
-	} else if clusterSize == 2 {
+	} else if availableNodes == 2 {
 		// 2 nodes: Use time-based tiebreaker to prevent split-brain
-		h.logger.Info("2-node cluster detected; preferring local if peer is Unknown/unreachable")
+		h.logger.Info("2 available nodes detected; preferring local if peer is Unknown/unreachable")
 
 		// In a 2-node cluster, we need to ensure only one node promotes itself
 		// Use a deterministic method: the node with the lower ID wins
@@ -683,8 +694,11 @@ func (h *HealthChecker) electNewActiveNode() {
 					localNodeID, otherNodeID)
 			}
 		}
+	} else if availableNodes == 1 {
+		// Single available node - promote immediately
+		h.logger.Info("Only 1 available node, promoting immediately")
 	}
-	// For single node, just promote immediately
+	// For any case (single node or fallthrough), just promote immediately
 
 	// Promote the best candidate to active
 	h.logger.Infof("Promoting node %s to active", bestCandidate.Hostname)
@@ -1019,93 +1033,155 @@ func (h *HealthChecker) handlePartialFailure(member *Member, failedIPs []string)
 // initiateNodeStatusVote initiates a quorum vote for a node status change
 // Returns true if the vote passes or if quorum voting is not applicable
 func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberStatus) bool {
-	h.logger.Infof("Initiating vote for node %s status change to %s", nodeID, statusToString(newStatus))
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		h.logger.Infof("Initiating vote for node %s status change to %s (attempt %d/%d)", nodeID, statusToString(newStatus), attempt, maxRetries)
 
-	// Check cluster size to determine if voting is needed
-	clusterSize := len(h.members.Members)
-	if clusterSize < 3 {
-		h.logger.Debugf("Cluster has only %d nodes, voting not required (need 3+)", clusterSize)
-		return true
-	}
-
-	// Get the server instance from the context
-	if h.server == nil {
-		h.logger.Warn("Server reference not available, cannot initiate vote")
-		return true // Default to allowing the change if we can't vote
-	}
-
-	// Get the quorum manager
-	quorumManager := h.server.GetQuorumManager()
-	if quorumManager == nil {
-		h.logger.Warn("Quorum manager not available, cannot initiate vote")
-		return true // Default to allowing the change if quorum manager is not available
-	}
-
-	// Get the node hostname for better logging
-	var hostname string
-	for _, member := range h.members.Members {
-		if member.ID == nodeID {
-			hostname = member.Hostname
-			break
+		// Check cluster size to determine if voting is needed
+		// Count only available/responding nodes for quorum calculation
+		availableNodes := 0
+		for _, member := range h.members.Members {
+			member.Lock()
+			isAvailable := member.Status == StatusActive || member.Status == StatusPassive
+			member.Unlock()
+			if isAvailable {
+				availableNodes++
+			}
 		}
-	}
 
-	// Create a descriptive subject and description for the vote
-	subject := nodeID
-	description := fmt.Sprintf("Change node %s (%s) status to %s", hostname, nodeID, statusToString(newStatus))
+		h.logger.Infof("Available nodes for voting: %d out of %d total", availableNodes, len(h.members.Members))
 
-	// Initiate the vote through the quorum manager
-	sessionID, err := quorumManager.StartVotingSession(
-		quorum.VoteTypeNodeStatus,
-		subject,
-		description,
-		30*time.Second, // 30 second timeout for votes
-	)
+		if availableNodes < 3 {
+			h.logger.Debugf("Only %d nodes available, voting not required (need 3+ available)", availableNodes)
+			return true
+		}
 
-	if err != nil {
-		h.logger.Errorf("Failed to start voting session: %v", err)
-		return true // Default to allowing the change if we can't start a vote
-	}
+		// Get the server instance from the context
+		if h.server == nil {
+			h.logger.Warn("Server reference not available, cannot initiate vote")
+			return true // Default to allowing the change if we can't vote
+		}
 
-	h.logger.Infof("Started voting session %s for node status change", sessionID)
+		// Get the quorum manager
+		quorumManager := h.server.GetQuorumManager()
+		if quorumManager == nil {
+			h.logger.Warn("Quorum manager not available, cannot initiate vote")
+			return true // Default to allowing the change if quorum manager is not available
+		}
 
-	// Get our own node ID to cast our vote
-	localNodeID, err := h.members.config.GetLocalNodeUUID()
-	if err != nil {
-		h.logger.Errorf("Failed to get local node ID: %v", err)
-	} else {
-		// Cast our own vote (we initiated it, so we vote yes)
-		err = quorumManager.CastVote(sessionID, localNodeID, quorum.VoteDecisionYes)
+		// Update the quorum manager with the current count of available nodes
+		quorumManager.UpdateNodeCount(availableNodes)
+
+		// Get the node hostname for better logging
+		var hostname string
+		for _, member := range h.members.Members {
+			if member.ID == nodeID {
+				hostname = member.Hostname
+				break
+			}
+		}
+
+		// Create a descriptive subject and description for the vote
+		subject := nodeID
+		description := fmt.Sprintf("Change node %s (%s) status to %s", hostname, nodeID, statusToString(newStatus))
+
+		// Initiate the vote through the quorum manager
+		sessionID, err := quorumManager.StartVotingSession(
+			quorum.VoteTypeNodeStatus,
+			subject,
+			description,
+			30*time.Second, // 30 second timeout for votes
+		)
+
 		if err != nil {
-			h.logger.Errorf("Failed to cast our own vote: %v", err)
+			h.logger.Errorf("Failed to start voting session: %v", err)
+			if attempt < maxRetries {
+				h.logger.Infof("Retrying in 2 seconds...")
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return true // Default to allowing the change if we can't start a vote
 		}
-	}
 
-	// Wait for the vote to complete
-	// In a production implementation, this would be asynchronous with callbacks
-	// For simplicity, we'll use a polling approach here
-	for i := 0; i < 30; i++ { // Poll for up to 30 seconds
-		time.Sleep(1 * time.Second)
+		h.logger.Infof("Started voting session %s for node status change", sessionID)
 
-		session, err := quorumManager.GetVotingSession(sessionID)
+		// Get our own node ID to cast our vote
+		localNodeID, err := h.members.config.GetLocalNodeUUID()
 		if err != nil {
-			h.logger.Errorf("Failed to get voting session: %v", err)
-			continue
+			h.logger.Errorf("Failed to get local node ID: %v", err)
+		} else {
+			// Cast our own vote (we initiated it, so we vote yes)
+			err = quorumManager.CastVote(sessionID, localNodeID, quorum.VoteDecisionYes)
+			if err != nil {
+				h.logger.Errorf("Failed to cast our own vote: %v", err)
+			}
 		}
 
-		// Check if the vote has completed
-		if session.Result != nil {
-			h.logger.Infof("Vote completed: passed=%v, quorum=%v, yes=%d, no=%d, total=%d",
-				session.Result.Passed, session.Result.QuorumMet,
-				session.Result.YesCount, session.Result.NoCount,
-				session.Result.TotalVotes)
-
-			return session.Result.Passed
+		// Broadcast the vote request to other nodes so they can participate
+		h.logger.Infof("Broadcasting vote request to cluster nodes...")
+		if err := h.server.BroadcastVoteRequest(sessionID, "node_status", subject, description, 30); err != nil {
+			h.logger.Warnf("Failed to broadcast vote request: %v", err)
+			// Continue anyway - maybe some nodes are offline but others might still vote
 		}
+
+		// Wait for the vote to complete with shorter polling interval
+		voteCompleted := false
+		for i := 0; i < 30; i++ { // Poll for up to 30 seconds
+			time.Sleep(1 * time.Second)
+
+			session, err := quorumManager.GetVotingSession(sessionID)
+			if err != nil {
+				h.logger.Errorf("Failed to get voting session: %v", err)
+				continue
+			}
+
+			// Check if the vote has completed
+			if session.Result != nil {
+				h.logger.Infof("Vote completed: passed=%v, quorum=%v, yes=%d, no=%d, total=%d",
+					session.Result.Passed, session.Result.QuorumMet,
+					session.Result.YesCount, session.Result.NoCount,
+					session.Result.TotalVotes)
+
+				voteCompleted = true
+				if session.Result.Passed && session.Result.QuorumMet {
+					return true // Vote passed
+				}
+				break // Vote failed or didn't meet quorum
+			}
+
+			// Early termination if we already have enough YES votes to guarantee passage
+			yesCount := 0
+			for _, vote := range session.Votes {
+				if vote.Decision == quorum.VoteDecisionYes {
+					yesCount++
+				}
+			}
+			if quorumManager.HasQuorum(yesCount) {
+				h.logger.Debugf("Early termination: enough YES votes received (%d)", yesCount)
+				break
+			}
+		}
+
+		if !voteCompleted {
+			h.logger.Warnf("Vote timed out on attempt %d", attempt)
+			if attempt < maxRetries {
+				h.logger.Infof("Retrying vote in 3 seconds...")
+				time.Sleep(3 * time.Second)
+				continue
+			}
+		} else {
+			// Vote completed but failed, retry if possible
+			if attempt < maxRetries {
+				h.logger.Infof("Vote failed, retrying in 5 seconds...")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+		}
+		break
 	}
 
-	h.logger.Warn("Vote timed out, defaulting to allowing the change")
-	return true // Default to allowing the change if the vote times out
+	h.logger.Warn("All vote attempts exhausted, defaulting to allowing the change")
+	return true // Default to allowing the change if all retries fail
 }
 
 // initiateIPRedistributionVote initiates a quorum vote for IP redistribution

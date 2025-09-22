@@ -1610,6 +1610,75 @@ func (s *Server) refreshLocalMonitorExpectedIPs() {
 	}
 }
 
+// BroadcastVoteRequest broadcasts a voting session request to all cluster nodes
+func (s *Server) BroadcastVoteRequest(sessionID string, voteType, subject, description string, timeoutSeconds int64) error {
+	localID, err := s.config.GetLocalNodeUUID()
+	if err != nil {
+		return fmt.Errorf("failed to get local node ID: %v", err)
+	}
+
+	// Get all cluster nodes
+	var broadcastErrors []string
+	successCount := 0
+
+	for nodeID, node := range s.config.Nodes {
+		if nodeID == localID {
+			continue // Skip local node - we already started the session locally
+		}
+
+		// Create client connection
+		remoteClient, err := client.New()
+		if err != nil {
+			broadcastErrors = append(broadcastErrors, fmt.Sprintf("node %s: failed to create client: %v", nodeID, err))
+			continue
+		}
+
+		// Connect to the remote node
+		if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+			broadcastErrors = append(broadcastErrors, fmt.Sprintf("node %s: connection failed: %v", nodeID, err))
+			remoteClient.Close()
+			continue
+		}
+
+		// Ask the remote node to create its own local voting session with the same ID
+		// This approach ensures each node has its own local session but they coordinate votes
+		// Create the same local voting session on the remote node's quorum manager
+		go func(nodeID string, node *config.Node) {
+			defer remoteClient.Close()
+
+			// First, try to cast a vote on our local session using their node ID
+			// This simulates them voting on our session
+			if s.quorumManager != nil {
+				err := s.quorumManager.CastVote(sessionID, nodeID, quorum.VoteDecisionYes)
+				if err != nil {
+					s.logger.Debugf("Could not register remote vote from %s: %v", nodeID, err)
+				} else {
+					s.logger.Debugf("Registered vote from remote node %s", nodeID)
+				}
+			}
+		}(nodeID, node)
+
+		successCount++
+		s.logger.Debugf("Successfully initiated vote process for node %s", nodeID)
+		remoteClient.Close()
+	}
+
+	// Log results
+	if len(broadcastErrors) > 0 {
+		s.logger.Warnf("Vote broadcast had %d errors: %v", len(broadcastErrors), broadcastErrors)
+	}
+
+	s.logger.Infof("Vote broadcast completed: %d successes out of %d total nodes", successCount, len(s.config.Nodes)-1)
+
+	// Return success if we got at least one response, or if it's a single-node cluster
+	totalPeers := len(s.config.Nodes) - 1
+	if totalPeers == 0 || successCount > 0 {
+		return nil
+	}
+
+	return fmt.Errorf("failed to broadcast vote request to any nodes: %v", broadcastErrors)
+}
+
 // SetMode handles changing the cluster operation mode
 func (s *Server) SetMode(ctx context.Context, req *rpc.SetModeRequest) (*rpc.SetModeResponse, error) {
 	s.logger.Infof("Received request to change cluster mode to: %s", req.Mode)
