@@ -1180,8 +1180,9 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 		break
 	}
 
-	h.logger.Warn("All vote attempts exhausted, defaulting to allowing the change")
-	return true // Default to allowing the change if all retries fail
+	h.logger.Error("All vote attempts failed after %d retries, aborting election to prevent split-brain", maxRetries)
+	h.logger.Error("Manual intervention required - check network connectivity, node health, or use 'pulsectl promote' to force promotion after investigation")
+	return false // Block promotion to prevent split-brain scenarios
 }
 
 // initiateIPRedistributionVote initiates a quorum vote for IP redistribution
@@ -1229,8 +1230,8 @@ func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
 	)
 
 	if err != nil {
-		h.logger.Errorf("Failed to start voting session: %v", err)
-		return true // Default to allowing the change if we can't start a vote
+		h.logger.Errorf("Failed to start IP redistribution voting session: %v", err)
+		return false // Block redistribution if we can't establish proper voting
 	}
 
 	h.logger.Infof("Started voting session %s for IP redistribution", sessionID)
@@ -1270,8 +1271,8 @@ func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
 		}
 	}
 
-	h.logger.Warn("Vote timed out, defaulting to allowing the IP redistribution")
-	return true // Default to allowing the change if the vote times out
+	h.logger.Warn("IP redistribution vote timed out, blocking redistribution to maintain consistency")
+	return false // Block redistribution if voting fails to maintain cluster consistency
 }
 
 // Helper function to convert MemberStatus to string
