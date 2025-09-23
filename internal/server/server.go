@@ -1660,7 +1660,7 @@ func (s *Server) BroadcastVoteRequest(sessionID string, voteType, subject, descr
 
 		successCount++
 		s.logger.Debugf("Successfully initiated vote process for node %s", nodeID)
-		remoteClient.Close()
+		// Note: remoteClient.Close() is now handled by the goroutine's defer statement
 	}
 
 	// Log results

@@ -201,7 +201,7 @@ func (h *HealthChecker) LastTickTime() time.Time {
 
 // performHealthChecks executes health checks on all nodes and their IPs
 func (h *HealthChecker) performHealthChecks() {
-	h.logger.Info("Starting health check cycle...")
+	h.logger.Debug("Starting health check cycle...")
 
 	h.RLock()
 	memberCount := len(h.members.Members)
@@ -254,8 +254,10 @@ func (h *HealthChecker) performHealthChecks() {
 
 		// Check node connectivity
 		startTime := time.Now()
+		h.logger.Infof("About to check connectivity for %s (IP:%s Port:%s)", member.Hostname, member.IP, member.Port)
 		isReachable := h.checkNodeConnectivity(member)
 		responseTime := time.Since(startTime)
+		h.logger.Infof("Connectivity check result for %s: reachable=%v, responseTime=%v", member.Hostname, isReachable, responseTime)
 
 		member.Lock()
 		member.LastHCResponse = time.Now()
@@ -409,11 +411,21 @@ func (h *HealthChecker) performHealthChecks() {
 
 	// Check for active node failure and initiate failover if needed
 	if localMember != nil {
-		h.logger.Infof("Local member %s has status %s, checking for need to elect leader", localMember.Hostname, StatusToString(localMember.Status))
+		h.logger.Debug("Local member %s has status %s, checking for active node failure", localMember.Hostname, StatusToString(localMember.Status))
 		// Always check for active node failure, not just when passive
 		h.checkForActiveNodeFailure()
 	} else {
-		h.logger.Warn("No local member found, cannot check for active node failure")
+		// Debug why no local member found
+		h.RLock()
+		localNodeID, err := h.members.config.GetLocalNodeUUID()
+		memberCount := len(h.members.Members)
+		var memberIDs []string
+		for id := range h.members.Members {
+			memberIDs = append(memberIDs, id)
+		}
+		h.RUnlock()
+		h.logger.Warnf("No local member found! LocalNodeID=%s (err=%v), MemberCount=%d, MemberIDs=%v",
+			localNodeID, err, memberCount, memberIDs)
 	}
 }
 
@@ -446,7 +458,10 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 	// Find the active node
 	var activeMember *Member
 	for _, member := range members {
-		if member.Status == StatusActive {
+		member.Lock()
+		isActive := member.Status == StatusActive
+		member.Unlock()
+		if isActive {
 			activeMember = member
 			break
 		}
@@ -722,16 +737,21 @@ func (h *HealthChecker) electNewActiveNode() {
 
 		if len(allIPs) > 0 {
 			h.logger.Infof("Assigning %d floating IPs to new active node %s", len(allIPs), bestCandidate.Hostname)
+
+			// Update member's active IPs tracking BEFORE actually assigning IPs
+			bestCandidate.Lock()
+			bestCandidate.ActiveIPs = append([]string{}, allIPs...)
+			bestCandidate.Unlock()
+
+			// Refresh IP monitor expectations BEFORE bringing up IPs to prevent race condition
+			h.server.RefreshLocalMonitorExpectedIPs()
+
 			if err := h.server.OrchestrateIPFailover("", bestCandidateID, allIPs); err != nil {
 				h.logger.Errorf("Failed to assign IPs to new active node: %v", err)
-			} else {
-				// Update member's active IPs tracking
+				// If assignment failed, clear the ActiveIPs we optimistically set
 				bestCandidate.Lock()
-				bestCandidate.ActiveIPs = append([]string{}, allIPs...)
+				bestCandidate.ActiveIPs = nil
 				bestCandidate.Unlock()
-
-				// Refresh IP monitor expectations if this is the local node
-				h.server.RefreshLocalMonitorExpectedIPs()
 			}
 		}
 	}
@@ -768,6 +788,7 @@ func (h *HealthChecker) findActiveNode() *Member {
 func (h *HealthChecker) checkNodeConnectivity(member *Member) bool {
 	// Use member's stored IP and Port directly (no config lookup needed)
 	if member.IP == "" || member.Port == "" {
+		h.logger.Warnf("Node %s has empty IP (%s) or Port (%s)", member.Hostname, member.IP, member.Port)
 		return false
 	}
 
@@ -776,9 +797,11 @@ func (h *HealthChecker) checkNodeConnectivity(member *Member) bool {
 	conn, err := net.DialTimeout("tcp", address, 500*time.Millisecond)
 	if err == nil {
 		conn.Close()
+		h.logger.Debugf("Health check succeeded for %s (%s)", member.Hostname, address)
 		return true
 	}
 
+	h.logger.Warnf("Health check failed for %s (%s): %v", member.Hostname, address, err)
 	return false
 }
 
