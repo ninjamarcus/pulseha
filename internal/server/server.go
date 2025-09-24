@@ -1212,7 +1212,16 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	}
 
 	// New order: Demote previous active first to satisfy MakeActive single-active guard
-	if s.config.Pulse.Mode == "active-passive" && prevActiveID != "" && prevActiveID != req.NodeId {
+	// Skip demotion if this is a remote-initiated promotion where the target node is local
+	// In remote promotion, the initiating node already handles demotion to prevent circular calls
+	shouldDemote := s.config.Pulse.Mode == "active-passive" && prevActiveID != "" && prevActiveID != req.NodeId
+
+	// If the target node is local but we're NOT the previous active, this indicates
+	// a remote promotion where another node initiated the promotion of this local node
+	localNodeID, _ := s.config.GetLocalNodeUUID()
+	isTargetNodePromotion := member.IsLocal() && prevActiveID != localNodeID
+
+	if shouldDemote && !isTargetNodePromotion {
 		s.logger.Info("Demoting current active before promotion", "previous_active", prevActiveID, "new_active", req.NodeId)
 		if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: prevActiveID}); err != nil {
 			// Restore view and abort
@@ -1224,6 +1233,8 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Failed to demote previous active: " + err.Error()}, nil
 		}
+	} else if shouldDemote && isTargetNodePromotion {
+		s.logger.Info("Skipping demotion in remote-initiated promotion (initiator already handled demotion)", "previous_active", prevActiveID, "new_active", req.NodeId)
 	}
 
 	// Promote target

@@ -10,6 +10,12 @@ import (
 	"github.com/syleron/pulseha/packages/config"
 )
 
+// Constants for session history management
+const (
+	maxHistorySize = 100                // Maximum number of sessions to keep in history
+	historyTTL     = 24 * time.Hour    // Sessions older than this are removed
+)
+
 // VoteType represents the type of vote being cast
 type VoteType string
 
@@ -63,14 +69,26 @@ type VotingSessionResult struct {
 	CompletedAt time.Time // When the voting completed
 }
 
+// CompactSessionHistory stores minimal session data for history (uses ~16 bytes vs ~1KB)
+type CompactSessionHistory struct {
+	Type        uint8  // VoteType as uint8 (0=NodeStatus, 1=IPRedistribution, 2=ConfigChange)
+	Passed      uint8  // 0=failed, 1=passed, 2=no_quorum
+	YesCount    uint8  // Number of yes votes
+	NoCount     uint8  // Number of no votes
+	TotalVotes  uint8  // Total votes cast
+	CompletedAt uint32 // Unix timestamp (4 bytes vs 24 bytes for time.Time)
+	_           [6]byte // Padding to align to 16 bytes
+}
+
 // QuorumManager handles quorum-based voting for cluster decisions
 type QuorumManager struct {
 	sync.RWMutex
-	config         *config.Config
-	logger         *log.Logger
-	activeSessions map[string]*VotingSession
-	sessionHistory map[string]*VotingSession
-	nodeCount      int // Total number of nodes in the cluster
+	config            *config.Config
+	logger            *log.Logger
+	activeSessions    map[string]*VotingSession
+	sessionHistory    map[string]*VotingSession        // Keep recent full sessions for debugging
+	compactHistory    []CompactSessionHistory          // Efficient long-term history
+	nodeCount         int                              // Total number of nodes in the cluster
 }
 
 // NewQuorumManager creates a new quorum manager instance
@@ -80,6 +98,7 @@ func NewQuorumManager(cfg *config.Config, logger *log.Logger) *QuorumManager {
 		logger:         logger,
 		activeSessions: make(map[string]*VotingSession),
 		sessionHistory: make(map[string]*VotingSession),
+		compactHistory: make([]CompactSessionHistory, 0, maxHistorySize),
 		nodeCount:      len(cfg.Nodes),
 	}
 }
@@ -316,6 +335,126 @@ func (q *QuorumManager) concludeVotingSessionLocked(sessionID string) {
 
 	q.logger.Infof("Concluded voting session %s: passed=%v, quorum=%v, yes=%d, no=%d, total=%d",
 		sessionID, passed, quorumMet, yesCount, noCount, totalVotes)
+
+	// Store in compact history and manage memory efficiently
+	q.storeCompactHistoryLocked(session)
+	q.manageHistoryMemoryLocked()
+}
+
+// voteTypeToUint8 converts VoteType to uint8 for compact storage
+func voteTypeToUint8(vt VoteType) uint8 {
+	switch vt {
+	case VoteTypeNodeStatus:
+		return 0
+	case VoteTypeIPRedistribution:
+		return 1
+	case VoteTypeConfigChange:
+		return 2
+	default:
+		return 0
+	}
+}
+
+// storeCompactHistoryLocked stores session in compact format
+func (q *QuorumManager) storeCompactHistoryLocked(session *VotingSession) {
+	if session.Result == nil {
+		return
+	}
+
+	compact := CompactSessionHistory{
+		Type:        voteTypeToUint8(session.Type),
+		YesCount:    uint8(session.Result.YesCount),
+		NoCount:     uint8(session.Result.NoCount),
+		TotalVotes:  uint8(session.Result.TotalVotes),
+		CompletedAt: uint32(session.Result.CompletedAt.Unix()),
+	}
+
+	// Set result status
+	if !session.Result.QuorumMet {
+		compact.Passed = 2 // no_quorum
+	} else if session.Result.Passed {
+		compact.Passed = 1 // passed
+	} else {
+		compact.Passed = 0 // failed
+	}
+
+	q.compactHistory = append(q.compactHistory, compact)
+}
+
+// manageHistoryMemoryLocked keeps memory usage reasonable
+func (q *QuorumManager) manageHistoryMemoryLocked() {
+	// Keep only recent full sessions (for debugging)
+	if len(q.sessionHistory) > 10 {
+		// Remove oldest entries, keep newest 10
+		count := 0
+		for sessionID := range q.sessionHistory {
+			if count >= len(q.sessionHistory)-10 {
+				break
+			}
+			delete(q.sessionHistory, sessionID)
+			count++
+		}
+	}
+
+	// Limit compact history size (each entry is only ~16 bytes)
+	if len(q.compactHistory) > maxHistorySize {
+		// Remove oldest entries, keep newest maxHistorySize
+		copy(q.compactHistory, q.compactHistory[len(q.compactHistory)-maxHistorySize:])
+		q.compactHistory = q.compactHistory[:maxHistorySize]
+	}
+}
+
+// cleanupHistoryLocked removes old sessions from history to prevent memory leaks
+// Caller must hold the write lock
+func (q *QuorumManager) cleanupHistoryLocked() {
+	now := time.Now()
+
+	// First pass: remove sessions older than TTL
+	for sessionID, session := range q.sessionHistory {
+		if session.Result != nil && now.Sub(session.Result.CompletedAt) > historyTTL {
+			delete(q.sessionHistory, sessionID)
+		}
+	}
+
+	// Second pass: if still over size limit, remove oldest sessions
+	if len(q.sessionHistory) <= maxHistorySize {
+		return
+	}
+
+	// Collect sessions with completion times for sorting
+	type sessionAge struct {
+		id          string
+		completedAt time.Time
+	}
+
+	var sessions []sessionAge
+	for id, session := range q.sessionHistory {
+		if session.Result != nil {
+			sessions = append(sessions, sessionAge{
+				id:          id,
+				completedAt: session.Result.CompletedAt,
+			})
+		}
+	}
+
+	// Sort by completion time (oldest first)
+	for i := 0; i < len(sessions)-1; i++ {
+		for j := i + 1; j < len(sessions); j++ {
+			if sessions[i].completedAt.After(sessions[j].completedAt) {
+				sessions[i], sessions[j] = sessions[j], sessions[i]
+			}
+		}
+	}
+
+	// Remove oldest sessions until we're under the limit
+	sessionsToRemove := len(q.sessionHistory) - maxHistorySize
+	for i := 0; i < sessionsToRemove && i < len(sessions); i++ {
+		delete(q.sessionHistory, sessions[i].id)
+	}
+
+	if sessionsToRemove > 0 {
+		q.logger.Debugf("Cleaned up %d old voting sessions from history", sessionsToRemove)
+	}
 }
 
 // Start starts the quorum manager

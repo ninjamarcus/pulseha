@@ -288,6 +288,9 @@ func (m *MemberList) RemoveMember(id string) error {
 			}
 		}
 
+		// TODO: Add selective connection cleanup - connections needed for voting
+		// member.Close()
+
 		// Remove member
 		delete(m.Members, id)
 		return nil
@@ -304,6 +307,9 @@ func (m *MemberList) RemoveMember(id string) error {
 					m.logger.Error("Failed to redistribute IPs for removed member", "hostname", member.Hostname, "error", err)
 				}
 			}
+
+			// TODO: Add selective connection cleanup - connections needed for voting
+			// member.Close()
 
 			// Remove member
 			delete(m.Members, member.ID)

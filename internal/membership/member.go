@@ -98,6 +98,19 @@ func (m *Member) initializeClient() error {
 	return nil
 }
 
+// Close properly closes the member's client connection to prevent memory leaks
+// Only call this when the member is being permanently removed from the cluster
+func (m *Member) Close() {
+	m.Lock()
+	defer m.Unlock()
+
+	if m.Client != nil && m.Client.Connection != nil {
+		m.logger.Debug(fmt.Sprintf("Closing client connection for member %s (permanent removal)", m.Hostname))
+		m.Client.Connection.Close()
+		m.Client = nil
+	}
+}
+
 // MakeActive promotes a member to fully active state (active-passive mode)
 func (m *Member) MakeActive(ips []string) error {
 	m.Lock()
