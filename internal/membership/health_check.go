@@ -254,10 +254,10 @@ func (h *HealthChecker) performHealthChecks() {
 
 		// Check node connectivity
 		startTime := time.Now()
-		h.logger.Infof("About to check connectivity for %s (IP:%s Port:%s)", member.Hostname, member.IP, member.Port)
+		h.logger.Debugf("About to check connectivity for %s (IP:%s Port:%s)", member.Hostname, member.IP, member.Port)
 		isReachable := h.checkNodeConnectivity(member)
 		responseTime := time.Since(startTime)
-		h.logger.Infof("Connectivity check result for %s: reachable=%v, responseTime=%v", member.Hostname, isReachable, responseTime)
+		h.logger.Debugf("Connectivity check result for %s: reachable=%v, responseTime=%v", member.Hostname, isReachable, responseTime)
 
 		member.Lock()
 		member.LastHCResponse = time.Now()
@@ -448,7 +448,6 @@ func (h *HealthChecker) getCurrentLeaderID() string {
 
 // checkForActiveNodeFailure checks if the active node has failed and initiates failover
 func (h *HealthChecker) checkForActiveNodeFailure() {
-	h.logger.Info("Checking for active node in cluster...")
 
 	h.RLock()
 	members := h.members.Members
@@ -457,31 +456,27 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 
 	// Find the active node
 	var activeMember *Member
+	var memberStatuses []string
 	for _, member := range members {
 		member.Lock()
 		isActive := member.Status == StatusActive
+		status := StatusToString(member.Status)
+		memberStatuses = append(memberStatuses, fmt.Sprintf("%s:%s", member.Hostname, status))
 		member.Unlock()
 		if isActive {
 			activeMember = member
-			break
 		}
 	}
 
+
 	// If no active node exists, we need to elect one immediately
 	if activeMember == nil {
-		// Trace current member statuses for diagnostics
-		var snapshot []string
-		for _, m := range members {
-			m.Lock()
-			snapshot = append(snapshot, fmt.Sprintf("%s:%s", m.Hostname, StatusToString(m.Status)))
-			m.Unlock()
-		}
-		h.logger.Warnf("No active node found in cluster! Members: %s. Initiating leader election immediately.", strings.Join(snapshot, ", "))
+		h.logger.Error("No active node found in cluster, initiating leader election")
 		h.electNewActiveNode()
 		return
 	}
 
-	h.logger.Infof("Active node found: %s", activeMember.Hostname)
+	h.logger.Debugf("Active node found: %s", activeMember.Hostname)
 
 	// Check if the active node has been unreachable for too long
 	member := activeMember
@@ -532,20 +527,67 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 	}
 }
 
-// electNewActiveNode elects a new active node from available passive nodes
+// electNewActiveNode elects a new active node using robust voting with guaranteed fallback
 func (h *HealthChecker) electNewActiveNode() {
-	h.logger.Info("Starting leader election for new active node")
+	h.logger.Info("Starting leader election")
 
-	// Find the best candidate based on priority:
-	// 1. Local node (if passive/unknown)
-	// 2. Node with best latency
-	// 3. Node that was last known to be active (for faster recovery)
+	localNodeID, err := h.members.config.GetLocalNodeUUID()
+	if err != nil {
+		h.logger.Error("Failed to get local node ID for election")
+		return
+	}
 
+	// Step 1: Only lowest ID node initiates to prevent multiple elections
+	coordinatorID := h.findElectionCoordinator()
+	if localNodeID != coordinatorID {
+		h.logger.Debug("Deferring election to coordinator node")
+		// Wait for coordinator with timeout, then use fallback
+		h.waitForCoordinatorElection()
+		return
+	}
+
+	h.logger.Info("This node is election coordinator")
+
+	// Step 2: Select best candidate
+	bestCandidate := h.selectBestCandidate()
+	if bestCandidate == nil {
+		h.logger.Error("No eligible candidates found for election")
+		return
+	}
+
+	h.logger.Infof("Selected candidate for election: %s", bestCandidate.Hostname)
+
+	// Step 3: Try voting first, with guaranteed fallback
+	if h.attemptVotingElection(bestCandidate) {
+		h.logger.Info("Voting election succeeded")
+	} else {
+		h.logger.Info("Voting failed, using fallback promotion")
+		h.fallbackPromotion(bestCandidate)
+	}
+}
+
+// findElectionCoordinator returns the ID of the node that should coordinate elections
+func (h *HealthChecker) findElectionCoordinator() string {
+	var coordinatorID string
+	for nodeID, member := range h.members.Members {
+		member.Lock()
+		status := member.Status
+		member.Unlock()
+
+		// Only consider available nodes
+		if status == StatusPassive || status == StatusUnknown {
+			if coordinatorID == "" || nodeID < coordinatorID {
+				coordinatorID = nodeID
+			}
+		}
+	}
+	return coordinatorID
+}
+
+// selectBestCandidate finds the best node to promote to active
+func (h *HealthChecker) selectBestCandidate() *Member {
 	var bestCandidate *Member
-	var bestScore float64 = -1 // Higher score is better
-
-	// Also track the last known active node's timestamp for tie-breaking
-	var lastActiveTime time.Time
+	var bestScore float64 = -1
 
 	for _, member := range h.members.Members {
 		member.Lock()
@@ -555,177 +597,151 @@ func (h *HealthChecker) electNewActiveNode() {
 		isLocal := member.IsLocal()
 		member.Unlock()
 
-		// Skip if already active or truly unreachable
+		// Skip if already active
 		if status == StatusActive {
 			continue
 		}
 
-		// Calculate a score for this candidate
+		// Calculate score
 		score := float64(0)
 
-		// Local node gets highest priority (score +100)
-		if isLocal && (status == StatusPassive || status == StatusUnknown) {
-			score += 100
-		}
-
-		// Passive nodes get priority over unknown (score +50)
+		// Base score by status
 		if status == StatusPassive {
 			score += 50
 		} else if status == StatusUnknown {
-			score += 25 // Still eligible but lower priority
+			score += 25
 		} else {
-			continue // Skip non-eligible nodes
+			continue
 		}
 
-		// Better latency increases score (max +10 for 0ms, decreases with latency)
+		// Small local preference
+		if isLocal {
+			score += 5
+		}
+
+		// Latency score
 		if latencyStr != "N/A" && latencyStr != "" {
 			if lat, err := time.ParseDuration(strings.TrimSuffix(latencyStr, "ms") + "ms"); err == nil {
-				// Score based on latency (10 points for 0ms, decreasing to 0 for 1000ms+)
-				latencyScore := math.Max(0, 10-(float64(lat.Milliseconds())/100))
+				latencyScore := math.Max(0, 20-(float64(lat.Milliseconds())/50))
 				score += latencyScore
 			}
 		}
 
-		// Recent response time adds small bonus (for tie-breaking)
+		// Recent response bonus
 		if !lastResponse.IsZero() {
 			recency := time.Since(lastResponse)
 			if recency < 5*time.Second {
-				score += 5
+				score += 10
 			}
 		}
 
-		h.logger.Infof("Election candidate %s: score=%.2f, status=%s, latency=%s, local=%v",
-			member.Hostname, score, StatusToString(status), latencyStr, isLocal)
+		// Deterministic tie-breaker
+		for i, b := range member.ID {
+			if i >= 4 {
+				break
+			}
+			score += float64(b) / 1000.0
+		}
+
+		h.logger.Debugf("Candidate %s: score=%.2f, status=%s",
+			member.Hostname, score, StatusToString(status))
 
 		if score > bestScore {
 			bestCandidate = member
 			bestScore = score
-			lastActiveTime = lastResponse
-		} else if score == bestScore && !lastResponse.IsZero() {
-			// Tie-breaker: choose node with more recent activity
-			if lastResponse.After(lastActiveTime) {
-				bestCandidate = member
-				lastActiveTime = lastResponse
-			}
 		}
 	}
 
-	if bestCandidate == nil {
-		h.logger.Error("No eligible nodes available for promotion to active")
-		return
+	return bestCandidate
+}
+
+// waitForCoordinatorElection waits for coordinator to complete election, with timeout fallback
+func (h *HealthChecker) waitForCoordinatorElection() {
+	timeout := time.After(15 * time.Second)
+	checkInterval := time.NewTicker(2 * time.Second)
+	defer checkInterval.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			h.logger.Warn("Coordinator election timeout, using emergency fallback")
+			h.emergencyFallback()
+			return
+		case <-checkInterval.C:
+			// Check if coordinator succeeded
+			for _, member := range h.members.Members {
+				member.Lock()
+				status := member.Status
+				member.Unlock()
+				if status == StatusActive {
+					h.logger.Debug("Coordinator election completed successfully")
+					return
+				}
+			}
+		}
 	}
+}
 
-	h.logger.Infof("Selected %s as best candidate for promotion (score: %.2f)",
-		bestCandidate.Hostname, bestScore)
+// attemptVotingElection tries the voting system with timeout
+func (h *HealthChecker) attemptVotingElection(candidate *Member) bool {
+	h.logger.Debug("Attempting voting-based election")
 
-	// Determine if we should use voting based on available nodes
-	clusterSize := len(h.members.Members)
-	availableNodes := 0
+	// Count available nodes for voting
+	availableCount := 0
 	for _, member := range h.members.Members {
 		member.Lock()
-		isAvailable := member.Status == StatusActive || member.Status == StatusPassive
+		status := member.Status
 		member.Unlock()
-		if isAvailable {
-			availableNodes++
+		if status == StatusPassive || status == StatusUnknown {
+			availableCount++
 		}
 	}
-	h.logger.Debugf("Cluster size: %d nodes total, %d available", clusterSize, availableNodes)
 
-	if availableNodes >= 3 {
-		// 3+ nodes: Use quorum voting for decisions
-		h.logger.Info("Cluster has 3+ nodes, using quorum voting for leader election")
-
-		// Check if quorum manager is available
-		if h.server != nil && h.server.GetQuorumManager() != nil {
-			voteResult := h.initiateNodeStatusVote(bestCandidate.ID, StatusActive)
-			if !voteResult {
-				h.logger.Warn("Quorum vote failed for promoting node to active, aborting election")
-				return
-			}
-			h.logger.Info("Quorum vote passed, proceeding with promotion")
-		} else {
-			h.logger.Warn("Quorum manager not available, aborting election to prevent split-brain")
-			return
-		}
-	} else if availableNodes == 2 {
-		// 2 nodes: Use time-based tiebreaker to prevent split-brain
-		h.logger.Info("2 available nodes detected; preferring local if peer is Unknown/unreachable")
-
-		// In a 2-node cluster, we need to ensure only one node promotes itself
-		// Use a deterministic method: the node with the lower ID wins
-		localNodeID, err := h.members.config.GetLocalNodeUUID()
-		if err != nil {
-			h.logger.Errorf("Failed to get local node ID: %v", err)
-			return
-		}
-
-		// Find the other node
-		var otherNodeID string
-		var otherStatus MemberStatus = StatusUnknown
-		for _, member := range h.members.Members {
-			if member.ID != localNodeID {
-				otherNodeID = member.ID
-				member.Lock()
-				otherStatus = member.Status
-				member.Unlock()
-				break
-			}
-		}
-
-		// If leader lease expired, immediately promote local
-		if h.server != nil {
-			leaseUntil := h.server.GetLeaderLeaseUntil()
-			h.logger.Debugf("Leader lease until: %v", leaseUntil)
-			if !leaseUntil.IsZero() && time.Now().After(leaseUntil) {
-				h.logger.Info("Leader lease expired; promoting local")
-			} else if leaseUntil.IsZero() {
-				h.logger.Info("No leader lease; promoting local")
-			}
-			if leaseUntil.IsZero() || time.Now().After(leaseUntil) {
-				otherStatus = StatusUnknown
-			}
-		}
-
-		// If the peer is Unknown/unreachable, promote local immediately
-		if otherStatus == StatusUnknown {
-			h.logger.Info("Peer is Unknown; promoting local immediately")
-		} else {
-			// Otherwise use deterministic tie-breaker: lower UUID wins
-			if localNodeID > otherNodeID {
-				h.logger.Infof("This node (%s) has higher ID than other node (%s), deferring promotion",
-					localNodeID, otherNodeID)
-				// Wait briefly to see if the other node takes over
-				time.Sleep(2 * time.Second)
-				// Abort if the other node became active
-				for _, member := range h.members.Members {
-					if member.ID == otherNodeID && member.Status == StatusActive {
-						h.logger.Info("Other node has become active, aborting our promotion")
-						return
-					}
-				}
-				h.logger.Info("Other node did not become active, proceeding with promotion")
-			} else {
-				h.logger.Infof("This node (%s) has lower ID than other node (%s), proceeding with promotion",
-					localNodeID, otherNodeID)
-			}
-		}
-	} else if availableNodes == 1 {
-		// Single available node - promote immediately
-		h.logger.Info("Only 1 available node, promoting immediately")
+	if availableCount < 3 {
+		h.logger.Debug("Less than 3 nodes available, skipping voting")
+		return false
 	}
-	// For any case (single node or fallthrough), just promote immediately
 
-	// Promote the best candidate to active
-	h.logger.Infof("Promoting node %s to active", bestCandidate.Hostname)
+	// Try existing quorum voting with short timeout
+	h.logger.Debug("Starting quorum vote with timeout")
+	if h.server != nil && h.server.GetQuorumManager() != nil {
+		// Use existing voting but with timeout monitoring
+		done := make(chan bool, 1)
+		go func() {
+			result := h.initiateNodeStatusVote(candidate.ID, StatusActive)
+			done <- result
+		}()
 
-	bestCandidate.Lock()
-	bestCandidateID := bestCandidate.ID
-	bestCandidate.Status = StatusActive
-	bestCandidate.Unlock()
+		// Wait for vote or timeout
+		select {
+		case result := <-done:
+			if result {
+				h.logger.Debug("Voting succeeded")
+				return true
+			}
+			h.logger.Debug("Voting failed")
+			return false
+		case <-time.After(8 * time.Second):
+			h.logger.Debug("Voting timed out")
+			return false
+		}
+	}
 
-	// Assign floating IPs to the new active node
+	return false
+}
+
+// fallbackPromotion directly promotes a candidate when voting fails
+func (h *HealthChecker) fallbackPromotion(candidate *Member) {
+	h.logger.Infof("Promoting %s to active using fallback", candidate.Hostname)
+
+	// Direct promotion without voting
+	candidate.Lock()
+	candidate.Status = StatusActive
+	candidateID := candidate.ID
+	candidate.Unlock()
+
+	// Assign floating IPs
 	if h.server != nil {
-		// Get all floating IPs from config
 		h.RLock()
 		config := h.members.config
 		h.RUnlock()
@@ -736,41 +752,31 @@ func (h *HealthChecker) electNewActiveNode() {
 		}
 
 		if len(allIPs) > 0 {
-			h.logger.Infof("Assigning %d floating IPs to new active node %s", len(allIPs), bestCandidate.Hostname)
+			h.logger.Infof("Assigning %d floating IPs to %s", len(allIPs), candidate.Hostname)
 
-			// Update member's active IPs tracking BEFORE actually assigning IPs
-			bestCandidate.Lock()
-			bestCandidate.ActiveIPs = append([]string{}, allIPs...)
-			bestCandidate.Unlock()
+			candidate.Lock()
+			candidate.ActiveIPs = append([]string{}, allIPs...)
+			candidate.Unlock()
 
-			// Refresh IP monitor expectations BEFORE bringing up IPs to prevent race condition
 			h.server.RefreshLocalMonitorExpectedIPs()
-
-			if err := h.server.OrchestrateIPFailover("", bestCandidateID, allIPs); err != nil {
-				h.logger.Errorf("Failed to assign IPs to new active node: %v", err)
-				// If assignment failed, clear the ActiveIPs we optimistically set
-				bestCandidate.Lock()
-				bestCandidate.ActiveIPs = nil
-				bestCandidate.Unlock()
+			if err := h.server.OrchestrateIPFailover("", candidateID, allIPs); err != nil {
+				h.logger.Errorf("Fallback IP assignment failed: %v", err)
 			}
 		}
 	}
 
-	h.logger.Infof("Leader election complete, %s is now the active node", bestCandidate.Hostname)
+	h.logger.Infof("Fallback promotion complete: %s is now active", candidate.Hostname)
+}
 
-	// Broadcast the new cluster state (increment epoch and set leader) for convergence in active-passive mode
-	if h.server != nil {
-		states := getMemberStatusMap()
-		for id, m := range h.members.Members {
-			m.Lock()
-			states[id] = m.Status
-			m.Unlock()
-		}
-		_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, bestCandidate.ID, nil)
-		putMemberStatusMap(states)
-		h.Lock()
-		h.lastLeaderBroadcast = time.Now()
-		h.Unlock()
+// emergencyFallback handles the case where even coordinator fails
+func (h *HealthChecker) emergencyFallback() {
+	h.logger.Warn("Emergency fallback: promoting best available candidate")
+
+	candidate := h.selectBestCandidate()
+	if candidate != nil {
+		h.fallbackPromotion(candidate)
+	} else {
+		h.logger.Error("Emergency fallback failed: no candidates available")
 	}
 }
 

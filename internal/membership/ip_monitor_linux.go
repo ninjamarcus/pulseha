@@ -98,19 +98,37 @@ func (m *IPMonitor) monitorLoop() {
 				continue
 			}
 
-			// Address removed: restore expected IPs
+			// Address removed: restore expected IPs ONLY if we're currently Active
 			if len(expected) == 0 {
+				m.logger.Debug("IP monitor: no expected IPs for removed address", "removedIP", changedIP, "iface", iface)
 				continue
 			}
 
-			// If an expected IP was removed, immediately restore
+			// Re-check current node status before attempting restore
+			localID, err2 := m.members.config.GetLocalNodeUUID()
+			if err2 != nil {
+				m.logger.Debug("IP monitor: failed to get local node ID for restore check", "error", err2)
+				continue
+			}
+			currentMember := m.members.GetMemberByID(localID)
+			if currentMember == nil {
+				m.logger.Debug("IP monitor: local member not found for restore check")
+				continue
+			}
+
+			if currentMember.Status != StatusActive {
+				m.logger.Info("IP monitor: IP removed but node is not Active, NOT restoring", "ip", changedIP, "status", currentMember.Status, "iface", iface)
+				continue
+			}
+
+			// If an expected IP was removed and we're Active, immediately restore
 			for _, exp := range expected {
 				ipOnly := exp
 				if strings.Contains(exp, "/") {
 					ipOnly = strings.Split(exp, "/")[0]
 				}
 				if ipOnly == changedIP {
-					m.logger.Warn("IP monitor: expected IP removed; restoring", "ip", exp, "iface", iface)
+					m.logger.Warn("IP monitor: expected IP removed from Active node; restoring", "ip", exp, "iface", iface, "status", currentMember.Status)
 					m.restoreIP(iface, exp)
 					break
 				}
@@ -121,11 +139,15 @@ func (m *IPMonitor) monitorLoop() {
 
 // restoreIP attempts to restore an IP that was unexpectedly removed on Linux
 func (m *IPMonitor) restoreIP(iface string, ip string) {
+	m.logger.Debug("IP monitor restore: starting restore", "iface", iface, "ip", ip)
+
 	link, err := netlink.LinkByName(iface)
 	if err != nil {
-		m.logger.Error("IP monitor: failed to get link", "iface", iface, "error", err)
+		m.logger.Error("IP monitor restore: failed to get link", "iface", iface, "error", err)
 		return
 	}
+	m.logger.Debug("IP monitor restore: got netlink interface", "iface", iface)
+
 	// Determine CIDR if missing
 	cidr := ip
 	if !strings.Contains(ip, "/") {
@@ -134,17 +156,21 @@ func (m *IPMonitor) restoreIP(iface string, ip string) {
 		} else {
 			cidr = ip + "/32"
 		}
+		m.logger.Debug("IP monitor restore: added CIDR notation", "originalIP", ip, "cidr", cidr)
 	}
+
 	addr, err := netlink.ParseAddr(cidr)
 	if err != nil {
-		m.logger.Error("IP monitor: failed to parse addr", "cidr", cidr, "error", err)
+		m.logger.Error("IP monitor restore: failed to parse addr", "cidr", cidr, "error", err)
 		return
 	}
+	m.logger.Debug("IP monitor restore: parsed address", "cidr", cidr)
+
 	if err := netlink.AddrAdd(link, addr); err != nil {
-		m.logger.Error("IP monitor: failed to add addr", "cidr", cidr, "error", err)
+		m.logger.Error("IP monitor restore: failed to add addr", "cidr", cidr, "iface", iface, "error", err)
 		return
 	}
-	m.logger.Info("IP monitor: restored expected IP", "iface", iface, "ip", ip)
+	m.logger.Info("IP monitor restore: successfully restored expected IP", "iface", iface, "ip", ip)
 }
 
 // periodicReconcile runs a lightweight reconcile loop to enforce expected IPs
@@ -183,8 +209,24 @@ func (m *IPMonitor) enforceExpectations() {
 	}
 	m.RUnlock()
 
-	// Passive: nothing to add; actives: ensure missing are added
+	// Passive: remove all floating IPs; Active: ensure missing are added
 	if member.Status != StatusActive {
+		// Remove any floating IPs that shouldn't be on passive nodes
+		for iface, ips := range expectations {
+			for _, ip := range ips {
+				ipOnly, _ := utils.GetCIDR(ip)
+				if ipOnly == nil {
+					continue
+				}
+				exists, foundIface, _ := network.CheckIfIPExists(ipOnly.String())
+				if exists && foundIface == iface {
+					m.logger.Info("IP monitor: removing floating IP from passive node", "ip", ip, "iface", iface)
+					if err := network.BringIPdown(iface, ip); err != nil {
+						m.logger.Warn("IP monitor: failed to remove floating IP from passive node", "ip", ip, "iface", iface, "error", err)
+					}
+				}
+			}
+		}
 		return
 	}
 

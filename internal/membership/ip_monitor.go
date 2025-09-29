@@ -6,6 +6,9 @@ import (
 	"sync"
 
 	log "github.com/charmbracelet/log"
+	"github.com/syleron/pulseha/packages/config"
+	"github.com/syleron/pulseha/packages/network"
+	"github.com/syleron/pulseha/packages/utils"
 )
 
 // IPMonitor monitors IP addresses on interfaces and ensures they match the expected configuration
@@ -49,6 +52,16 @@ func (m *IPMonitor) Start() error {
 	return nil
 }
 
+// TriggerEnforce performs an immediate expectations check asynchronously.
+func (m *IPMonitor) TriggerEnforce() {
+	select {
+	case <-m.stopChan:
+		return
+	default:
+		go m.enforceExpectations()
+	}
+}
+
 // Stop stops the IP monitor
 func (m *IPMonitor) Stop() {
 	m.stopOnce.Do(func() {
@@ -68,6 +81,7 @@ func (m *IPMonitor) UpdateExpectedIPs(iface string, ips []string) {
 
 	m.expectedIPs[iface] = ipsCopy
 	m.logger.Info("Updated expected IPs", "iface", iface, "ips", ips)
+	m.TriggerEnforce()
 }
 
 // RemoveExpectedIPs removes IPs from the expected list for an interface
@@ -92,6 +106,7 @@ func (m *IPMonitor) RemoveExpectedIPs(iface string, ips []string) {
 
 	m.expectedIPs[iface] = updated
 	m.logger.Info("Removed IPs from interface", "iface", iface, "remaining", updated)
+	m.TriggerEnforce()
 }
 
 // ClearExpectedIPs removes all expected IPs for an interface
@@ -101,52 +116,142 @@ func (m *IPMonitor) ClearExpectedIPs(iface string) {
 
 	delete(m.expectedIPs, iface)
 	m.logger.Info("Cleared all expected IPs", "iface", iface)
+	m.TriggerEnforce()
+}
+
+// GetExpectedIPs returns the expected IPs for an interface (read-only copy)
+func (m *IPMonitor) GetExpectedIPs(iface string) []string {
+	m.RLock()
+	defer m.RUnlock()
+
+	if ips, exists := m.expectedIPs[iface]; exists {
+		// Return a copy to prevent external modification
+		result := make([]string, len(ips))
+		copy(result, ips)
+		return result
+	}
+	return []string{}
 }
 
 // initializeExpectedIPs initializes the expected IPs from the current member
 func (m *IPMonitor) initializeExpectedIPs() error {
+	m.logger.Debug("IP monitor: starting initializeExpectedIPs")
+
 	// Get the local node ID
 	localNodeID, err := m.members.config.GetLocalNodeUUID()
 	if err != nil {
+		m.logger.Error("IP monitor init: failed to get local node ID", "error", err)
 		return fmt.Errorf("failed to get local node ID: %v", err)
 	}
+	m.logger.Debug("IP monitor init: got local node ID", "nodeID", localNodeID)
 
 	// Resolve local member and node config
 	localMember := m.members.GetMemberByID(localNodeID)
 	if localMember == nil {
+		m.logger.Error("IP monitor init: local member not found", "nodeID", localNodeID)
 		return fmt.Errorf("local member not found")
 	}
+	m.logger.Debug("IP monitor init: found local member", "status", localMember.Status)
+
 	nodeCfg, ok := m.members.config.Nodes[localNodeID]
 	if !ok || nodeCfg == nil {
+		m.logger.Error("IP monitor init: local node configuration not found", "nodeID", localNodeID)
 		return fmt.Errorf("local node configuration not found")
 	}
+	m.logger.Debug("IP monitor init: found node config", "ipGroups", nodeCfg.IPGroups)
 
 	// Reset expected IPs first
 	m.expectedIPs = make(map[string][]string)
+	m.logger.Debug("IP monitor init: reset expected IPs map")
 
-	// Only seed expectations when local role is Active; passives keep expectations empty
-	if localMember.Status != StatusActive {
-		m.logger.Info("IP monitor initialization: local node not Active; expected IPs left empty")
-		return nil
-	}
-
-	// Build expected IPs from group assignments in config
-	for iface, groups := range nodeCfg.IPGroups {
-		var ifaceIPs []string
-		for _, g := range groups {
-			if ips, ok := m.members.config.Groups[g]; ok {
-				ifaceIPs = append(ifaceIPs, ips...)
+	if localMember.Status == StatusActive {
+		m.logger.Info("IP monitor init: node is Active, setting up expected IPs")
+		// Build expected IPs from group assignments in config
+		for iface, groups := range nodeCfg.IPGroups {
+			var ifaceIPs []string
+			m.logger.Debug("IP monitor init: processing interface", "iface", iface, "groups", groups)
+			for _, g := range groups {
+				if ips, ok := m.members.config.Groups[g]; ok {
+					ifaceIPs = append(ifaceIPs, ips...)
+					m.logger.Debug("IP monitor init: added IPs from group", "group", g, "ips", ips)
+				} else {
+					m.logger.Warn("IP monitor init: group not found in config", "group", g)
+				}
+			}
+			if len(ifaceIPs) > 0 {
+				ipsCopy := make([]string, len(ifaceIPs))
+				copy(ipsCopy, ifaceIPs)
+				m.expectedIPs[iface] = ipsCopy
+				m.logger.Info("IP monitor init: set expected IPs for interface", "iface", iface, "ips", ipsCopy)
 			}
 		}
-		if len(ifaceIPs) > 0 {
-			ipsCopy := make([]string, len(ifaceIPs))
-			copy(ipsCopy, ifaceIPs)
-			m.expectedIPs[iface] = ipsCopy
+		m.logger.Info("IP monitor initialization complete for Active node", "expected_ifaces", len(m.expectedIPs), "expectedIPs", m.expectedIPs)
+	} else {
+		// If we're not active, ensure no expected IPs and clean up any floating IPs
+		m.logger.Info("IP monitor init: node is not Active, cleaning up floating IPs", "status", localMember.Status)
+		m.cleanupFloatingIPsOnRestart(nodeCfg)
+		m.logger.Info("IP monitor initialization complete for non-Active node", "status", localMember.Status, "expected_ifaces", 0)
+	}
+
+	m.TriggerEnforce()
+	m.logger.Debug("IP monitor: initializeExpectedIPs complete")
+	return nil
+}
+
+// cleanupFloatingIPsOnRestart removes any floating IPs that might be left over from before restart
+func (m *IPMonitor) cleanupFloatingIPsOnRestart(nodeCfg *config.Node) {
+	m.logger.Debug("IP monitor cleanup: starting cleanup for non-Active node")
+
+	// Build list of all floating IPs that this node could potentially manage
+	var allFloatingIPs []string
+	for ifaceName, groups := range nodeCfg.IPGroups {
+		m.logger.Debug("IP monitor cleanup: checking interface", "iface", ifaceName, "groups", groups)
+		for _, group := range groups {
+			if ips, ok := m.members.config.Groups[group]; ok {
+				allFloatingIPs = append(allFloatingIPs, ips...)
+				m.logger.Debug("IP monitor cleanup: found IPs in group", "group", group, "ips", ips)
+			} else {
+				m.logger.Debug("IP monitor cleanup: group not found", "group", group)
+			}
 		}
 	}
 
-	m.logger.Info("IP monitor initialization complete", "expected_ifaces", len(m.expectedIPs))
-	return nil
+	if len(allFloatingIPs) == 0 {
+		m.logger.Info("IP monitor cleanup: no floating IPs to check")
+		return
+	}
+
+	m.logger.Info("IP monitor cleanup: checking for floating IPs to clean up", "count", len(allFloatingIPs), "ips", allFloatingIPs)
+
+	// Check each floating IP and remove if found on any interface
+	for _, ip := range allFloatingIPs {
+		m.logger.Debug("IP monitor cleanup: checking IP", "ip", ip)
+
+		// Extract IP without CIDR if needed
+		ipOnly := ip
+		if cidr, err := utils.GetCIDR(ip); err == nil && cidr != nil {
+			ipOnly = cidr.String()
+		}
+
+		exists, iface, err := network.CheckIfIPExists(ipOnly)
+		if err != nil {
+			m.logger.Debug("IP monitor cleanup: error checking IP existence", "ip", ip, "error", err)
+			continue
+		}
+
+		if exists {
+			m.logger.Info("IP monitor cleanup: found floating IP on interface, removing", "ip", ip, "iface", iface)
+			if err := network.BringIPdown(iface, ip); err != nil {
+				m.logger.Warn("IP monitor cleanup: failed to remove floating IP", "ip", ip, "iface", iface, "error", err)
+			} else {
+				m.logger.Info("IP monitor cleanup: successfully removed floating IP", "ip", ip, "iface", iface)
+			}
+		} else {
+			m.logger.Debug("IP monitor cleanup: floating IP not found on any interface", "ip", ip)
+		}
+	}
+
+	m.logger.Debug("IP monitor cleanup: cleanup complete")
 }
 
 // monitor loop is provided by platform-specific file (e.g., ip_monitor_linux.go)
