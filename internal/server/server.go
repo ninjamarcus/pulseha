@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +107,8 @@ type Server struct {
 	// Convergence state
 	clusterEpoch     int64
 	leaderID         string
+	// Rate limiting for refresh calls
+	lastRefresh      time.Time
 	leaderLeaseUntil time.Time
 }
 
@@ -116,19 +120,16 @@ func NewServer(cfg *config.Config, logger *log.Logger, memberList *membership.Me
 	// Create the quorum RPC handler
 	quorumHandler := quorum.NewRPCHandler(quorumMgr, logger)
 
-	// Create IP monitor
+	// Create IP monitor - re-enabled with clean architectural separation from health checker
 	ipMonitor := membership.NewIPMonitor(memberList, logger)
-
-	// Set IP monitor reference in member list
 	memberList.SetIPMonitor(ipMonitor)
-
 	// Create server
 	s := &Server{
 		config:        cfg,
 		logger:        logger,
 		memberList:    memberList,
 		healthCheck:   healthCheck,
-		ipMonitor:     ipMonitor,
+		ipMonitor:     ipMonitor, // Re-enabled with clean architectural separation
 		quorumManager: quorumMgr,
 		quorumHandler: quorumHandler,
 		clusterEpoch:  0,
@@ -237,7 +238,7 @@ func (s *Server) Start() error {
 	// Start the health checker
 	s.startHealthChecker()
 
-	// Start the IP monitor
+	// Start the IP monitor - re-enabled with clean architectural separation from health checker
 	if err := s.ipMonitor.Start(); err != nil {
 		s.logger.Error("Failed to start IP monitor", "error", err)
 		// Continue anyway, as this is not critical
@@ -519,11 +520,15 @@ func (s *Server) loadInitialMembers() error {
 					} else {
 						// Multi-node cluster - start as passive, election will determine active
 						member.Status = membership.StatusPassive
+						// Clear ActiveIPs for passive nodes to prevent health check loops
+						member.ActiveIPs = nil
 						s.logger.Infof("Setting local node %s as Passive (election will determine active)", id)
 					}
 				} else {
 					// Active-active mode - start as passive
 					member.Status = membership.StatusPassive
+					// Clear ActiveIPs for passive nodes to prevent health check loops
+					member.ActiveIPs = nil
 					s.logger.Infof("Setting local node %s as Passive in active-active mode", id)
 				}
 			} else {
@@ -738,10 +743,38 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 		putStatusMap(states)
 	}()
 
+	// Marshal the full cluster configuration to send to the joining node
+	s.logger.Info("JOIN: Preparing cluster configuration for joining node", "nodeID", nodeID)
+	configBytes, err := json.Marshal(s.config)
+	if err != nil {
+		s.logger.Error("JOIN: Failed to marshal cluster config for join response", "error", err)
+		// Still allow join even if config sync fails - it will sync later
+		configBytes = nil
+	} else {
+		s.logger.Info("JOIN: Successfully marshaled cluster config", "configSize", len(configBytes))
+		// Log a preview of the config
+		var preview map[string]interface{}
+		if err := json.Unmarshal(configBytes, &preview); err == nil {
+			if nodes, ok := preview["nodes"].(map[string]interface{}); ok {
+				s.logger.Info("JOIN: Config contains nodes", "nodeCount", len(nodes))
+				for id := range nodes {
+					s.logger.Info("JOIN: Config includes node", "nodeID", id)
+				}
+			}
+		}
+	}
+
+	s.logger.Info("JOIN: Sending JoinResponse to joining node",
+		"success", true,
+		"nodeID", nodeID,
+		"configIncluded", configBytes != nil,
+		"configSize", len(configBytes))
+
 	return &rpc.JoinResponse{
-		Success: true,
-		NodeId:  nodeID,
-		Message: "Successfully joined cluster",
+		Success:       true,
+		NodeId:        nodeID,
+		Message:       "Successfully joined cluster",
+		ClusterConfig: configBytes,
 	}, nil
 }
 
@@ -995,8 +1028,9 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 	}
 	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, nodeID, nil)
 
-	// Post-promotion: reconcile VIPs on local node
-	go s.refreshLocalMonitorExpectedIPs()
+	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation after promotion
+	// The BroadcastClusterState above will trigger health checker updates that handle VIP assignments
+	// go s.refreshLocalMonitorExpectedIPs()
 
 	// Success
 	return &rpc.PromoteResponse{
@@ -1323,8 +1357,9 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	}
 	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, req.NodeId, nil)
 
-	// Post-promotion: reconcile VIPs on local node
-	go s.refreshLocalMonitorExpectedIPs()
+	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation after promotion
+	// The BroadcastClusterState above will trigger health checker updates that handle VIP assignments
+	// go s.refreshLocalMonitorExpectedIPs()
 
 	// Success
 	return &rpc.PromoteResponse{
@@ -1556,69 +1591,187 @@ func (s *Server) GetMemberList() *membership.MemberList {
 
 // RefreshLocalMonitorExpectedIPs updates the IP monitor's expected IPs for the local node (public method for interface)
 func (s *Server) RefreshLocalMonitorExpectedIPs() {
+	s.logger.Info("REFRESH: RefreshLocalMonitorExpectedIPs called")
+
+	// Add call stack to understand what's triggering continuous refreshes
+	if s.logger != nil {
+		// Get caller information to trace what's calling this function
+		_, file, line, ok := runtime.Caller(1)
+		if ok {
+			// Get just the filename without the full path
+			parts := strings.Split(file, "/")
+			filename := parts[len(parts)-1]
+			s.logger.Info("REFRESH: Called from", "file", filename, "line", line)
+		}
+
+		// Get a stack trace to understand the full call chain
+		buf := make([]byte, 1024)
+		n := runtime.Stack(buf, false)
+		stackTrace := string(buf[:n])
+		// Log just the first few lines to avoid overwhelming the logs
+		lines := strings.Split(stackTrace, "\n")
+		if len(lines) > 10 {
+			lines = lines[:10]
+		}
+		s.logger.Debug("REFRESH: Call stack trace", "stack", strings.Join(lines, "\n"))
+	}
+
 	s.refreshLocalMonitorExpectedIPs()
+	s.logger.Debug("REFRESH: RefreshLocalMonitorExpectedIPs completed")
 }
 
 // refreshLocalMonitorExpectedIPs updates the IP monitor's expected IPs for the local node
 // Only enforces when the local member is Active; clears expectations when not active
 func (s *Server) refreshLocalMonitorExpectedIPs() {
+	s.logger.Debug("REFRESH: Starting refreshLocalMonitorExpectedIPs")
+	s.logger.Error("REFRESH_DEBUG_2025_ERROR: This function WAS CALLED with latest code")
+
 	if s.ipMonitor == nil {
+		s.logger.Debug("REFRESH: IP monitor is nil, skipping")
 		return
 	}
+
+	// Get current local node status
 	localID, err := s.config.GetLocalNodeUUID()
 	if err != nil {
+		s.logger.Error("REFRESH: Failed to get local node ID", "error", err)
 		return
 	}
+
 	member := s.memberList.GetMemberByID(localID)
 	node := s.config.Nodes[localID]
 	if member == nil || node == nil {
+		s.logger.Error("REFRESH: Member or node config not found", "member", member != nil, "node", node != nil)
 		return
 	}
+
+	s.logger.Info("REFRESH: Processing node", "nodeID", localID, "status", membership.StatusToString(member.Status))
 
 	if member.Status != membership.StatusActive {
-		for iface := range node.IPGroups {
-			s.ipMonitor.ClearExpectedIPs(iface)
-		}
-		// Actively drop configured floating IPs on passive role
-		for iface, groups := range node.IPGroups {
-			for _, g := range groups {
-				if ips, ok := s.config.Groups[g]; ok {
-					for _, ip := range ips {
-						_, _ = s.BringDownIP(context.Background(), &rpc.DownIpRequest{Iface: iface, Ips: []string{ip}})
-					}
-				}
-			}
+		// For passive nodes, trigger enforcement to clean up any floating IPs
+		s.logger.Info("REFRESH: Node is not Active, cleanup needed", "status", membership.StatusToString(member.Status))
+		if s.ipMonitor != nil {
+			s.logger.Debug("REFRESH: Calling TriggerEnforce for passive node cleanup")
+			s.ipMonitor.TriggerEnforce()
+		} else {
+			s.logger.Debug("REFRESH: IP monitor disabled, skipping cleanup TriggerEnforce")
+			// Since IP monitor is disabled, call network functions directly for cleanup
+			s.cleanupFloatingIPsDirectly(node)
 		}
 		return
 	}
 
+	s.logger.Info("REFRESH: Node is Active, setting up expected IPs", "status", membership.StatusToString(member.Status))
 	for iface := range node.IPGroups {
 		var ifaceIPs []string
+		s.logger.Debug("REFRESH: Processing interface", "iface", iface, "groups", node.IPGroups[iface])
 		for _, g := range node.IPGroups[iface] {
 			if ips, ok := s.config.Groups[g]; ok {
 				ifaceIPs = append(ifaceIPs, ips...)
+				s.logger.Debug("REFRESH: Added IPs from group", "group", g, "ips", ips)
+			} else {
+				s.logger.Warn("REFRESH: Group not found in config", "group", g)
 			}
 		}
 		s.ipMonitor.ClearExpectedIPs(iface)
 		if len(ifaceIPs) > 0 {
+			s.logger.Info("REFRESH: Updating expected IPs for Active node", "iface", iface, "ips", ifaceIPs)
 			s.ipMonitor.UpdateExpectedIPs(iface, ifaceIPs)
 			// Proactively bring up any missing expected IPs on this interface
 			var missing []string
 			for _, ip := range ifaceIPs {
 				ipOnly, _ := utils.GetCIDR(ip)
 				if ipOnly == nil {
+					s.logger.Debug("REFRESH: Skipping invalid IP", "ip", ip)
 					continue
 				}
 				exists, existingIface, _ := network.CheckIfIPExists(ipOnly.String())
+				s.logger.Debug("REFRESH: IP existence check for Active node", "ip", ipOnly.String(), "exists", exists, "existingIface", existingIface, "targetIface", iface)
 				if !exists || existingIface != iface {
 					missing = append(missing, ip)
+					s.logger.Debug("REFRESH: IP is missing and will be brought up", "ip", ip)
 				}
 			}
 			if len(missing) > 0 {
-				_, _ = s.BringUpIP(context.Background(), &rpc.UpIpRequest{Iface: iface, Ips: missing})
+				s.logger.Info("REFRESH: Bringing up missing IPs on Active node", "iface", iface, "missingIPs", missing, "status", membership.StatusToString(member.Status))
+				_, err := s.BringUpIP(context.Background(), &rpc.UpIpRequest{Iface: iface, Ips: missing})
+				if err != nil {
+					s.logger.Error("REFRESH: Failed to bring up missing IPs", "error", err, "iface", iface, "ips", missing)
+				} else {
+					s.logger.Info("REFRESH: Successfully brought up missing IPs", "iface", iface, "ips", missing)
+				}
+			} else {
+				s.logger.Debug("REFRESH: No missing IPs for interface", "iface", iface)
+			}
+		} else {
+			s.logger.Debug("REFRESH: No IPs configured for interface", "iface", iface)
+		}
+	}
+
+	// IP monitor is disabled, so no TriggerEnforce call
+	if s.ipMonitor != nil {
+		s.logger.Debug("REFRESH: Calling TriggerEnforce on IP monitor")
+		s.ipMonitor.TriggerEnforce()
+	} else {
+		s.logger.Debug("REFRESH: IP monitor disabled, skipping TriggerEnforce")
+	}
+	s.logger.Debug("REFRESH: Completed refreshLocalMonitorExpectedIPs")
+}
+
+// cleanupFloatingIPsDirectly removes floating IPs directly using network calls (used when IP monitor is disabled)
+func (s *Server) cleanupFloatingIPsDirectly(node *config.Node) {
+	s.logger.Debug("CLEANUP: Starting direct floating IP cleanup for non-Active node")
+
+	// Build list of all floating IPs that this node could potentially manage
+	var allFloatingIPs []string
+	for ifaceName, groups := range node.IPGroups {
+		s.logger.Debug("CLEANUP: Checking interface", "iface", ifaceName, "groups", groups)
+		for _, group := range groups {
+			if ips, ok := s.config.Groups[group]; ok {
+				allFloatingIPs = append(allFloatingIPs, ips...)
+				s.logger.Debug("CLEANUP: Found IPs in group", "group", group, "ips", ips)
+			} else {
+				s.logger.Debug("CLEANUP: Group not found", "group", group)
 			}
 		}
 	}
+
+	if len(allFloatingIPs) == 0 {
+		s.logger.Info("CLEANUP: No floating IPs to check")
+		return
+	}
+
+	s.logger.Info("CLEANUP: Checking for floating IPs to clean up", "count", len(allFloatingIPs), "ips", allFloatingIPs)
+
+	// Check each floating IP and remove if found on any interface
+	for _, ip := range allFloatingIPs {
+		s.logger.Debug("CLEANUP: Checking IP", "ip", ip)
+
+		// Extract IP without CIDR if needed
+		ipOnly := ip
+		if cidr, err := utils.GetCIDR(ip); err == nil && cidr != nil {
+			ipOnly = cidr.String()
+		}
+
+		exists, iface, err := network.CheckIfIPExists(ipOnly)
+		if err != nil {
+			s.logger.Debug("CLEANUP: Error checking IP existence", "ip", ip, "error", err)
+			continue
+		}
+
+		if exists {
+			s.logger.Info("CLEANUP: Found floating IP on interface, removing", "ip", ip, "iface", iface)
+			if err := network.BringIPdown(iface, ip); err != nil {
+				s.logger.Warn("CLEANUP: Failed to remove floating IP", "ip", ip, "iface", iface, "error", err)
+			} else {
+				s.logger.Info("CLEANUP: Successfully removed floating IP", "ip", ip, "iface", iface)
+			}
+		} else {
+			s.logger.Debug("CLEANUP: Floating IP not found on any interface", "ip", ip)
+		}
+	}
+
+	s.logger.Debug("CLEANUP: Direct floating IP cleanup complete")
 }
 
 // BroadcastVoteRequest broadcasts a voting session request to all cluster nodes
@@ -2256,8 +2409,9 @@ func (s *Server) AssignGroupToNode(ctx context.Context, req *rpc.AssignGroupRequ
 	// Broadcast updated config to peers
 	go s.broadcastFullConfigToPeers()
 
-	// Reconcile VIPs according to local role (ensures active brings up missing IPs after assignment)
-	go s.refreshLocalMonitorExpectedIPs()
+	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation after config changes
+	// The broadcastFullConfigToPeers above will trigger config updates that activate health checker logic
+	// go s.refreshLocalMonitorExpectedIPs()
 
 	// If assigning on the local node, refresh expected IPs for this interface
 	if s.ipMonitor != nil {
@@ -2375,8 +2529,9 @@ func (s *Server) UnassignGroupFromNode(ctx context.Context, req *rpc.UnassignGro
 	// Broadcast updated config to peers
 	go s.broadcastFullConfigToPeers()
 
-	// Reconcile VIPs according to local role (ensures passives drop after unassignment)
-	go s.refreshLocalMonitorExpectedIPs()
+	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation after config changes
+	// The broadcastFullConfigToPeers above will trigger config updates that activate health checker logic
+	// go s.refreshLocalMonitorExpectedIPs()
 
 	// If unassigning on the local node, refresh expected IPs for this interface
 	if s.ipMonitor != nil {
@@ -2874,9 +3029,10 @@ func (s *Server) GetQuorumManager() *quorum.QuorumManager {
 
 // ConfigSync handles configuration synchronization between nodes
 func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*rpc.ConfigSyncResponse, error) {
-	s.logger.Debug("Received configuration sync request")
+	s.logger.Info("CONFIG_SYNC: Received configuration sync request", "configSize", len(req.Config))
 
 	if req.Config == nil {
+		s.logger.Warn("CONFIG_SYNC: No configuration data provided")
 		return &rpc.ConfigSyncResponse{
 			Success: false,
 			Message: "no configuration data provided",
@@ -2890,7 +3046,16 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 	if raw != nil {
 		if _, ok := raw["pulseha"]; ok {
 			isFullConfig = true
+			s.logger.Info("CONFIG_SYNC: Detected full config format (has pulseha root)")
+		} else {
+			s.logger.Info("CONFIG_SYNC: Detected envelope format (no pulseha root)")
 		}
+		// Log what keys are present
+		var keys []string
+		for k := range raw {
+			keys = append(keys, k)
+		}
+		s.logger.Info("CONFIG_SYNC: Config contains keys", "keys", keys)
 	}
 
 	// Optionally read member states and convergence metadata if present (EnhancedConfig)
@@ -3054,27 +3219,47 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		}
 
 		// Persist and update our configuration
+		s.logger.Info("CONFIG_SYNC: Saving synchronized configuration")
 		if err := newConfig.Save(); err != nil {
-			s.logger.Error("Failed to save synchronized configuration", "error", err)
+			s.logger.Error("CONFIG_SYNC: Failed to save synchronized configuration", "error", err)
 			s.Unlock()
 			return &rpc.ConfigSyncResponse{
 				Success: false,
 				Message: fmt.Sprintf("failed to save synchronized configuration: %v", err),
 			}, nil
 		}
+		s.logger.Info("CONFIG_SYNC: Configuration saved successfully")
+
+		// Log what nodes are in the new config
+		s.logger.Info("CONFIG_SYNC: New config contains nodes", "nodeCount", len(newConfig.Nodes))
+		for id, node := range newConfig.Nodes {
+			s.logger.Info("CONFIG_SYNC: Node in new config",
+				"nodeID", id,
+				"hostname", node.Hostname,
+				"ip", node.IP,
+				"port", node.Port)
+		}
+
 		s.config = newConfig
 		s.Unlock()
 
 		// Update convergence metadata if newer
 		if incomingEpoch > s.clusterEpoch {
+			s.logger.Info("CONFIG_SYNC: Updating cluster epoch",
+				"oldEpoch", s.clusterEpoch,
+				"newEpoch", incomingEpoch,
+				"leaderID", incomingLeaderID)
 			s.clusterEpoch = incomingEpoch
 			s.leaderID = incomingLeaderID
 		}
 
 		// Immediately refresh member list from new configuration so peers become visible
+		s.logger.Info("CONFIG_SYNC: Updating member list with new config")
 		s.memberList.UpdateConfig(s.config)
+
+		s.logger.Info("CONFIG_SYNC: Loading initial members")
 		if err := s.loadInitialMembers(); err != nil {
-			s.logger.Warn("ConfigSync: failed to load members after sync", "error", err)
+			s.logger.Error("CONFIG_SYNC: Failed to load members after sync", "error", err)
 		}
 	} else {
 		// Envelope-only update: do NOT overwrite config; just apply incoming states and metadata
@@ -3107,11 +3292,34 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 				s.clusterEpoch = incomingEpoch
 				s.leaderID = incomingLeaderID
 			}
+
+			// Capture LOCAL node's status before applying incoming states
+			localID, err := s.config.GetLocalNodeUUID()
+			var oldLocalStatus membership.MemberStatus
+			var hadLocalMember bool
+			if err == nil {
+				if localMember := s.memberList.GetMemberByID(localID); localMember != nil {
+					oldLocalStatus = localMember.Status
+					hadLocalMember = true
+				}
+			}
+
 			for id, st := range incomingMemberStates {
 				if m := s.memberList.GetMemberByID(id); m != nil {
 					m.Status = st
 				}
 			}
+
+			// Check if LOCAL node transitioned to Active - if so, bring up VIPs
+			// This handles the case where a node learns it's Active from ConfigSync (e.g., after restart during election)
+			// Only triggers on state CHANGE, not continuous heartbeats, so no GARP storm risk
+			if hadLocalMember && oldLocalStatus != membership.StatusActive {
+				if newLocalMember := s.memberList.GetMemberByID(localID); newLocalMember != nil && newLocalMember.Status == membership.StatusActive {
+					s.logger.Info("ConfigSync: LOCAL node transitioned to Active, triggering VIP setup", "oldStatus", membership.StatusToString(oldLocalStatus), "newStatus", "Active")
+					go s.refreshLocalMonitorExpectedIPs()
+				}
+			}
+
 			// Do not coerce non-leader nodes to Passive here; let health checks set Unknown/Passive
 		} else {
 			s.logger.Debug("ConfigSync: ignoring incoming member_states due to stale epoch or lower-priority leader",
@@ -3131,8 +3339,9 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		}()
 	}
 
-	// Reconcile VIPs according to current local role (active/passive)
-	go s.refreshLocalMonitorExpectedIPs()
+	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation
+	// The continuous ConfigSync operations were creating a feedback loop with excessive refresh calls
+	// go s.refreshLocalMonitorExpectedIPs()
 
 	return &rpc.ConfigSyncResponse{
 		Success: true,
@@ -3427,13 +3636,21 @@ func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIp
 			}
 		}
 
+		// Inform monitor of expectation before manipulations
+		if s.ipMonitor != nil {
+			s.ipMonitor.UpdateExpectedIPs(req.Iface, []string{ip})
+		}
+
 		// Pre-check if already present
-		ipOnly, _ := utils.GetCIDR(ip)
+		ipOnly, ipNet := utils.GetCIDR(ip)
+		s.logger.Warn("DEBUG: GetCIDR result", "inputIP", ip, "ipOnly", ipOnly, "ipNet", ipNet)
 		if ipOnly != nil {
-			ex, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+			ex, eIface, checkErr := network.CheckIfIPExists(ipOnly.String())
+			s.logger.Warn("DEBUG: CheckIfIPExists for IP", "ip", ipOnly.String(), "exists", ex, "iface", eIface, "targetIface", req.Iface, "error", checkErr)
 			if ex {
 				if eIface == req.Iface {
 					// Already present on desired interface: send GARP and continue
+					s.logger.Info("IP already exists on target interface, skipping", "ip", ip, "iface", req.Iface)
 					_ = network.SendGARP(req.Iface, ip)
 					continue
 				}
@@ -3441,12 +3658,22 @@ func (s *Server) BringUpIP(ctx context.Context, req *rpc.UpIpRequest) (*rpc.UpIp
 				_ = network.BringIPdown(eIface, ip)
 			}
 		}
-
 		if err := network.BringIPup(req.Iface, ip); err != nil {
 			// If add failed, recheck if it is now present on target iface (treat as success)
 			if ipOnly != nil {
 				ex, eIface, _ := network.CheckIfIPExists(ipOnly.String())
 				if ex && eIface == req.Iface {
+					s.logger.Info("BringUpIP: IP assignment failed but IP is now present on target interface", "ip", ip, "iface", req.Iface)
+					_ = network.SendGARP(req.Iface, ip)
+					continue
+				}
+			}
+			// Additional fallback check - this prevents the emergency loop
+			s.logger.Warn("BringUpIP failed, doing final verification", "iface", req.Iface, "ip", ip, "error", err)
+			if ipOnly != nil {
+				ex, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+				if ex && eIface == req.Iface {
+					s.logger.Info("BringUpIP: Final check confirms IP is present on target interface, treating as success")
 					_ = network.SendGARP(req.Iface, ip)
 					continue
 				}
@@ -3476,6 +3703,10 @@ func (s *Server) BringDownIP(ctx context.Context, req *rpc.DownIpRequest) (*rpc.
 				s.logger.Warn("BringDownIP skipping invalid IP", "ip", ip)
 				continue
 			}
+		}
+
+		if s.ipMonitor != nil {
+			s.ipMonitor.RemoveExpectedIPs(req.Iface, []string{ip})
 		}
 
 		if err := network.BringIPdown(req.Iface, ip); err != nil {
@@ -3539,22 +3770,58 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 		BindIp:   req.BindIp,
 		BindPort: bindPort,
 	}
+	s.logger.Info("INITIATE_JOIN: Sending join request to target",
+		"targetHost", req.TargetHost,
+		"targetPort", targetPort,
+		"nodeID", nodeID,
+		"bindIP", req.BindIp,
+		"bindPort", bindPort)
+
 	jResp, jErr := remoteClient.CLI().Join(context.Background(), joinReq)
 	if jErr != nil {
+		s.logger.Error("INITIATE_JOIN: Join request failed", "error", jErr)
 		return &rpc.InitiateJoinResponse{Success: false, Message: "join request failed: " + jErr.Error()}, nil
 	}
 	if !jResp.Success {
+		s.logger.Warn("INITIATE_JOIN: Join request returned failure", "message", jResp.Message)
 		return &rpc.InitiateJoinResponse{Success: false, Message: jResp.Message}, nil
 	}
 
+	s.logger.Info("INITIATE_JOIN: Join request successful",
+		"nodeID", jResp.NodeId,
+		"message", jResp.Message,
+		"configReceived", jResp.ClusterConfig != nil,
+		"configSize", len(jResp.ClusterConfig))
+
 	// If target returned full cluster config, sync it locally
 	if jResp.ClusterConfig != nil {
+		s.logger.Info("INITIATE_JOIN: Received cluster config from target, syncing locally")
+
+		// Log what's in the config
+		var preview map[string]interface{}
+		if err := json.Unmarshal(jResp.ClusterConfig, &preview); err == nil {
+			if nodes, ok := preview["nodes"].(map[string]interface{}); ok {
+				s.logger.Info("INITIATE_JOIN: Received config contains nodes", "nodeCount", len(nodes))
+				for id := range nodes {
+					s.logger.Info("INITIATE_JOIN: Config includes node", "nodeID", id)
+				}
+			}
+		}
+
 		// Ensure our local server knows its own node ID before applying the synced config
 		s.config.Pulse.LocalNode = jResp.NodeId
-		if _, err := s.ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: jResp.ClusterConfig}); err != nil {
-			return &rpc.InitiateJoinResponse{Success: false, Message: "config sync failed: " + err.Error()}, nil
+		s.logger.Info("INITIATE_JOIN: Set local node ID", "localNodeID", jResp.NodeId)
+
+		syncResp, syncErr := s.ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: jResp.ClusterConfig})
+		if syncErr != nil {
+			s.logger.Error("INITIATE_JOIN: Config sync failed", "error", syncErr)
+			return &rpc.InitiateJoinResponse{Success: false, Message: "config sync failed: " + syncErr.Error()}, nil
 		}
+		s.logger.Info("INITIATE_JOIN: Config sync completed",
+			"success", syncResp.Success,
+			"message", syncResp.Message)
 	} else {
+		s.logger.Warn("INITIATE_JOIN: No cluster config received from target, using minimal local update")
 		// Minimal local update: seed nodes so Reconfigure can bind and health checks can start
 		hostname, _ := os.Hostname()
 		s.config.Pulse.LocalNode = jResp.NodeId
@@ -3581,7 +3848,9 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 
 	// Ensure health checker is running post-join and reconcile VIPs according to local role
 	s.startHealthChecker()
-	go s.refreshLocalMonitorExpectedIPs()
+	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation after join
+	// The startHealthChecker above will trigger health check logic that handles VIP assignments
+	// go s.refreshLocalMonitorExpectedIPs()
 
 	// Broadcast current states to peers to converge views (best-effort)
 	states := make(map[string]membership.MemberStatus)

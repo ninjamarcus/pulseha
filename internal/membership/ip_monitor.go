@@ -54,10 +54,13 @@ func (m *IPMonitor) Start() error {
 
 // TriggerEnforce performs an immediate expectations check asynchronously.
 func (m *IPMonitor) TriggerEnforce() {
+	m.logger.Debug("TRIGGER: TriggerEnforce called")
 	select {
 	case <-m.stopChan:
+		m.logger.Debug("TRIGGER: Skipping enforce - monitor stopped")
 		return
 	default:
+		m.logger.Debug("TRIGGER: Launching enforceExpectations goroutine")
 		go m.enforceExpectations()
 	}
 }

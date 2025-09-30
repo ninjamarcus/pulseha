@@ -190,15 +190,21 @@ func (m *IPMonitor) periodicReconcile() {
 
 // enforceExpectations ensures that the current local role and expectedIPs are reflected on interfaces
 func (m *IPMonitor) enforceExpectations() {
+	m.logger.Debug("ENFORCE: Starting enforceExpectations")
+
 	// Determine local role
 	localID, err := m.members.config.GetLocalNodeUUID()
 	if err != nil {
+		m.logger.Error("ENFORCE: Failed to get local node ID", "error", err)
 		return
 	}
 	member := m.members.GetMemberByID(localID)
 	if member == nil {
+		m.logger.Error("ENFORCE: Local member not found", "nodeID", localID)
 		return
 	}
+
+	m.logger.Info("ENFORCE: Current node status and expectations", "nodeID", localID, "status", StatusToString(member.Status))
 
 	m.RLock()
 	expectations := make(map[string][]string, len(m.expectedIPs))
@@ -207,46 +213,94 @@ func (m *IPMonitor) enforceExpectations() {
 		copy(cpy, ips)
 		expectations[iface] = cpy
 	}
+	expectationsCopy := make(map[string][]string)
+	for k, v := range expectations {
+		expectationsCopy[k] = v
+	}
 	m.RUnlock()
+	m.logger.Info("ENFORCE: Current expectations", "expectations", expectationsCopy)
 
 	// Passive: remove all floating IPs; Active: ensure missing are added
 	if member.Status != StatusActive {
-		// Remove any floating IPs that shouldn't be on passive nodes
-		for iface, ips := range expectations {
-			for _, ip := range ips {
-				ipOnly, _ := utils.GetCIDR(ip)
-				if ipOnly == nil {
-					continue
-				}
-				exists, foundIface, _ := network.CheckIfIPExists(ipOnly.String())
-				if exists && foundIface == iface {
-					m.logger.Info("IP monitor: removing floating IP from passive node", "ip", ip, "iface", iface)
-					if err := network.BringIPdown(iface, ip); err != nil {
-						m.logger.Warn("IP monitor: failed to remove floating IP from passive node", "ip", ip, "iface", iface, "error", err)
+		m.logger.Info("ENFORCE: Node is not Active, removing floating IPs", "status", StatusToString(member.Status))
+
+		// CRITICAL: Passive nodes must remove ALL cluster floating IPs, not just expected IPs
+		// This prevents split-brain IP conflicts when a node loses active status
+		// Build a complete list of all floating IPs from cluster groups
+		allClusterIPs := make(map[string][]string) // iface -> IPs
+
+		// Get local node config to know which interfaces map to which groups
+		localNodeCfg, ok := m.members.config.Nodes[localID]
+		if ok && localNodeCfg != nil && localNodeCfg.IPGroups != nil {
+			for iface, groups := range localNodeCfg.IPGroups {
+				for _, groupName := range groups {
+					if groupIPs, exists := m.members.config.Groups[groupName]; exists {
+						allClusterIPs[iface] = append(allClusterIPs[iface], groupIPs...)
 					}
 				}
 			}
 		}
+
+		m.logger.Info("ENFORCE: Passive node checking all cluster IPs for cleanup", "clusterIPs", allClusterIPs)
+
+		// Remove any cluster floating IPs found on this passive node
+		for iface, ips := range allClusterIPs {
+			m.logger.Debug("ENFORCE: Checking interface for cleanup", "iface", iface, "clusterIPs", ips)
+			for _, ip := range ips {
+				ipOnly, _ := utils.GetCIDR(ip)
+				if ipOnly == nil {
+					m.logger.Debug("ENFORCE: Skipping invalid IP", "ip", ip)
+					continue
+				}
+				exists, foundIface, _ := network.CheckIfIPExists(ipOnly.String())
+				m.logger.Debug("ENFORCE: IP existence check", "ip", ipOnly.String(), "exists", exists, "foundIface", foundIface, "targetIface", iface)
+				if exists && foundIface == iface {
+					m.logger.Warn("ENFORCE: Removing stale floating IP from passive node", "ip", ip, "iface", iface, "status", StatusToString(member.Status))
+					if err := network.BringIPdown(iface, ip); err != nil {
+						m.logger.Error("ENFORCE: Failed to remove floating IP from passive node", "ip", ip, "iface", iface, "error", err)
+					} else {
+						m.logger.Info("ENFORCE: Successfully removed floating IP from passive node", "ip", ip, "iface", iface)
+					}
+				} else {
+					m.logger.Debug("ENFORCE: IP not found on target interface (nothing to remove)", "ip", ip, "exists", exists, "foundIface", foundIface)
+				}
+			}
+		}
+		m.logger.Info("ENFORCE: Completed cleanup for passive node")
 		return
 	}
 
-	// Bring up any missing IPs per interface
+	// Active node: bring up missing IPs
+	m.logger.Info("ENFORCE: Node is Active, ensuring expected IPs are present", "status", StatusToString(member.Status))
 	for iface, ips := range expectations {
 		var missing []string
+		m.logger.Debug("ENFORCE: Checking interface for missing IPs", "iface", iface, "expectedIPs", ips)
 		for _, ip := range ips {
 			ipOnly, _ := utils.GetCIDR(ip)
 			if ipOnly == nil {
+				m.logger.Debug("ENFORCE: Skipping invalid IP", "ip", ip)
 				continue
 			}
 			exists, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+			m.logger.Debug("ENFORCE: IP existence check for Active node", "ip", ipOnly.String(), "exists", exists, "foundIface", eIface, "targetIface", iface)
 			if !exists || eIface != iface {
 				missing = append(missing, ip)
+				m.logger.Debug("ENFORCE: IP is missing and needs to be brought up", "ip", ip, "exists", exists, "foundIface", eIface)
 			}
 		}
 		if len(missing) > 0 {
+			m.logger.Info("ENFORCE: Bringing up missing IPs on Active node", "iface", iface, "missingIPs", missing, "status", StatusToString(member.Status))
 			for _, ip := range missing {
-				_ = network.BringIPup(iface, ip)
+				m.logger.Info("ENFORCE: About to bring up IP on Active node", "ip", ip, "iface", iface, "status", StatusToString(member.Status))
+				if err := network.BringIPup(iface, ip); err != nil {
+					m.logger.Error("ENFORCE: Failed to bring up IP on Active node", "ip", ip, "iface", iface, "error", err)
+				} else {
+					m.logger.Info("ENFORCE: Successfully brought up IP on Active node", "ip", ip, "iface", iface)
+				}
 			}
+		} else {
+			m.logger.Debug("ENFORCE: No missing IPs for interface", "iface", iface)
 		}
 	}
+	m.logger.Debug("ENFORCE: Completed enforceExpectations")
 }

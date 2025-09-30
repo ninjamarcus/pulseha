@@ -201,7 +201,7 @@ func (h *HealthChecker) LastTickTime() time.Time {
 
 // performHealthChecks executes health checks on all nodes and their IPs
 func (h *HealthChecker) performHealthChecks() {
-	h.logger.Debug("Starting health check cycle...")
+	h.logger.Debug("HEALTH_CHECK: Starting health check cycle...")
 
 	h.RLock()
 	memberCount := len(h.members.Members)
@@ -358,12 +358,14 @@ func (h *HealthChecker) performHealthChecks() {
 
 	// Only log if the cluster state has changed (ignoring latency variations)
 	if currentClusterStateForComparison != h.lastClusterState {
-		h.logger.Infof("Cluster health: %s", currentClusterDisplayState)
+		h.logger.Infof("HEALTH_CHECK: Cluster state changed - %s", currentClusterDisplayState)
+		h.logger.Debug("HEALTH_CHECK: Previous state was", "lastState", h.lastClusterState)
 		h.lastClusterState = currentClusterStateForComparison
 		h.checksWithoutChange = 0
 
 		// Proactively broadcast updated member states so all nodes converge quickly
 		if h.server != nil {
+			h.logger.Debug("HEALTH_CHECK: Broadcasting cluster state due to health check changes")
 			states := getMemberStatusMap()
 			for id, m := range membersCopy {
 				m.Lock()
@@ -375,6 +377,7 @@ func (h *HealthChecker) performHealthChecks() {
 			h.Lock()
 			h.lastLeaderBroadcast = time.Now()
 			h.Unlock()
+			h.logger.Debug("HEALTH_CHECK: Cluster state broadcast completed")
 		}
 	} else {
 		// Increment counter for unchanged state
@@ -382,6 +385,7 @@ func (h *HealthChecker) performHealthChecks() {
 
 		// Heartbeat convergence nudge every 3 checks (~3s) to advance LastResponse and align peers
 		if h.server != nil && h.checksWithoutChange%3 == 0 {
+			h.logger.Debug("HEALTH_CHECK: Performing heartbeat convergence nudge", "checksWithoutChange", h.checksWithoutChange)
 			states := getMemberStatusMap()
 			for id, m := range membersCopy {
 				m.Lock()
@@ -392,6 +396,7 @@ func (h *HealthChecker) performHealthChecks() {
 			}
 			_ = h.server.BroadcastClusterState(states, h.server.GetClusterEpoch()+1, h.getCurrentLeaderID(), nil)
 			putMemberStatusMap(states)
+			h.logger.Debug("HEALTH_CHECK: Heartbeat convergence broadcast completed")
 		}
 
 		// Log periodic summary every 60 checks (roughly every minute with 1s interval)
@@ -411,7 +416,7 @@ func (h *HealthChecker) performHealthChecks() {
 
 	// Check for active node failure and initiate failover if needed
 	if localMember != nil {
-		h.logger.Debug("Local member %s has status %s, checking for active node failure", localMember.Hostname, StatusToString(localMember.Status))
+		h.logger.Debug("HEALTH_CHECK: Local member has status, checking for active node failure", "hostname", localMember.Hostname, "status", StatusToString(localMember.Status))
 		// Always check for active node failure, not just when passive
 		h.checkForActiveNodeFailure()
 	} else {
@@ -448,6 +453,7 @@ func (h *HealthChecker) getCurrentLeaderID() string {
 
 // checkForActiveNodeFailure checks if the active node has failed and initiates failover
 func (h *HealthChecker) checkForActiveNodeFailure() {
+	h.logger.Debug("ACTIVE_CHECK: Starting active node failure check")
 
 	h.RLock()
 	members := h.members.Members
@@ -471,12 +477,12 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 
 	// If no active node exists, we need to elect one immediately
 	if activeMember == nil {
-		h.logger.Error("No active node found in cluster, initiating leader election")
+		h.logger.Error("ACTIVE_CHECK: No active node found in cluster, initiating leader election")
 		h.electNewActiveNode()
 		return
 	}
 
-	h.logger.Debugf("Active node found: %s", activeMember.Hostname)
+	h.logger.Debug("ACTIVE_CHECK: Active node found", "hostname", activeMember.Hostname, "nodeID", activeMember.ID)
 
 	// Check if the active node has been unreachable for too long
 	member := activeMember
@@ -488,12 +494,10 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 	activeIPs := member.ActiveIPs
 	member.Unlock()
 
-	h.logger.Debugf("Active node %s - timeSinceLastResponse: %v, FailOverLimit: %dms, isUnreachable: %v",
-		hostname, timeSinceLastResponse, config.Pulse.FailOverLimit, isUnreachable)
+	h.logger.Debug("ACTIVE_CHECK: Active node health status", "hostname", hostname, "timeSinceLastResponse", timeSinceLastResponse, "failOverLimit", config.Pulse.FailOverLimit, "isUnreachable", isUnreachable)
 
 	if isUnreachable {
-		h.logger.Warnf("Active node %s has been unreachable for %v (limit: %dms), initiating failover",
-			hostname, timeSinceLastResponse, config.Pulse.FailOverLimit)
+		h.logger.Warn("ACTIVE_CHECK: Active node has been unreachable, initiating failover", "hostname", hostname, "timeSinceLastResponse", timeSinceLastResponse, "failOverLimit", config.Pulse.FailOverLimit)
 
 		// Mark the active node as unknown
 		member.Lock()
@@ -503,6 +507,7 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 		member.Unlock()
 
 		// Elect a new active node and transfer IPs
+		h.logger.Info("ACTIVE_CHECK: Starting leader election due to failed active node", "failedNode", hostname)
 		h.electNewActiveNode()
 
 		// Transfer the failed node's IPs to the new active using server IP helpers
@@ -527,9 +532,9 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 	}
 }
 
-// electNewActiveNode elects a new active node using robust voting with guaranteed fallback
+// electNewActiveNode elects a new active node using deterministic backoff to prevent races
 func (h *HealthChecker) electNewActiveNode() {
-	h.logger.Info("Starting leader election")
+	h.logger.Info("ELECTION: Starting leader election process")
 
 	localNodeID, err := h.members.config.GetLocalNodeUUID()
 	if err != nil {
@@ -537,32 +542,97 @@ func (h *HealthChecker) electNewActiveNode() {
 		return
 	}
 
-	// Step 1: Only lowest ID node initiates to prevent multiple elections
-	coordinatorID := h.findElectionCoordinator()
-	if localNodeID != coordinatorID {
-		h.logger.Debug("Deferring election to coordinator node")
-		// Wait for coordinator with timeout, then use fallback
-		h.waitForCoordinatorElection()
+	// Step 1: Calculate deterministic backoff delay to prevent simultaneous elections
+	backoffDelay, isCoordinator := h.calculateElectionBackoffWithRole(localNodeID)
+
+	if !isCoordinator {
+		// Non-coordinators are purely passive and never promote themselves
+		// This follows industry standard (keepalived/VRRP) where backups only monitor
+		// If coordinator fails, next health check cycle will elect new coordinator
+		h.logger.Info("ELECTION: This node is not the coordinator, monitoring for active node appearance", "monitorDuration", backoffDelay+(10*time.Second))
+
+		// Monitor for active node with polling
+		deadline := time.Now().Add(backoffDelay + (10 * time.Second))
+		pollInterval := 1 * time.Second
+
+		for time.Now().Before(deadline) {
+			time.Sleep(pollInterval)
+
+			if h.findActiveNode() != nil {
+				h.logger.Info("ELECTION: Active node appeared, election succeeded")
+				return
+			}
+		}
+
+		h.logger.Warn("ELECTION: No active node appeared within timeout. Coordinator may have failed during election. Next health check cycle will recalculate coordinator.")
 		return
 	}
 
-	h.logger.Info("This node is election coordinator")
+	// Only coordinators reach this point
+	h.logger.Info("ELECTION: This node is the coordinator, proceeding with election immediately")
+
+	if backoffDelay > 0 {
+		// Coordinator applies minimal delay to allow cluster state to stabilize
+		h.logger.Infof("ELECTION: Coordinator applying brief stabilization delay: %v", backoffDelay)
+		time.Sleep(backoffDelay)
+
+		// Check if active node appeared during delay
+		if h.findActiveNode() != nil {
+			h.logger.Info("ELECTION: Active node appeared during stabilization, aborting election")
+			return
+		}
+	}
+
+	h.logger.Info("ELECTION: Coordinator proceeding with election")
 
 	// Step 2: Select best candidate
 	bestCandidate := h.selectBestCandidate()
 	if bestCandidate == nil {
-		h.logger.Error("No eligible candidates found for election")
+		h.logger.Error("ELECTION: No eligible candidates found")
 		return
 	}
 
-	h.logger.Infof("Selected candidate for election: %s", bestCandidate.Hostname)
+	h.logger.Infof("ELECTION: Selected candidate: %s", bestCandidate.Hostname)
 
-	// Step 3: Try voting first, with guaranteed fallback
+	// Step 3: Try voting first, then promote directly if voting fails
 	if h.attemptVotingElection(bestCandidate) {
-		h.logger.Info("Voting election succeeded")
+		h.logger.Info("ELECTION: Voting election succeeded, promoting candidate")
+		// Explicitly set status after successful voting
+		bestCandidate.Lock()
+		bestCandidate.Status = StatusActive
+		bestCandidate.Unlock()
+		h.logger.Infof("ELECTION: Promoted %s to Active after successful vote", bestCandidate.Hostname)
+
+		// Trigger IP refresh to bring up VIPs after successful voting
+		if h.server != nil {
+			h.logger.Info("HEALTH_CHECK: Triggering IP refresh after voting success to bring up VIPs")
+			h.server.RefreshLocalMonitorExpectedIPs()
+		}
 	} else {
-		h.logger.Info("Voting failed, using fallback promotion")
-		h.fallbackPromotion(bestCandidate)
+		h.logger.Info("ELECTION: Voting failed, checking if active node appeared before direct promotion")
+
+		// CRITICAL: Re-check if an active node appeared while we were voting
+		// This prevents multiple nodes from promoting themselves simultaneously
+		if activeNode := h.findActiveNode(); activeNode != nil {
+			h.logger.Info("ELECTION: Active node appeared during voting, aborting promotion", "activeNode", activeNode.Hostname)
+			return
+		}
+
+		h.logger.Info("ELECTION: No active node found, promoting candidate directly")
+		// Since we've already coordinated with deterministic backoff, this node
+		// is the designated winner and can promote the candidate directly
+		bestCandidate.Lock()
+		bestCandidate.Status = StatusActive
+		bestCandidate.Unlock()
+		h.logger.Infof("ELECTION: Promoted %s to Active", bestCandidate.Hostname)
+
+		// Trigger IP refresh to bring up VIPs after promotion
+		// This is needed because we disabled automatic refresh in ConfigSync to prevent GARP storms
+		// but we still need to bring up VIPs when a node becomes Active after failover
+		if h.server != nil {
+			h.logger.Info("HEALTH_CHECK: Triggering IP refresh after promotion to bring up VIPs")
+			h.server.RefreshLocalMonitorExpectedIPs()
+		}
 	}
 }
 
@@ -730,51 +800,37 @@ func (h *HealthChecker) attemptVotingElection(candidate *Member) bool {
 	return false
 }
 
-// fallbackPromotion directly promotes a candidate when voting fails
-func (h *HealthChecker) fallbackPromotion(candidate *Member) {
-	h.logger.Infof("Promoting %s to active using fallback", candidate.Hostname)
-
-	// Direct promotion without voting
-	candidate.Lock()
-	candidate.Status = StatusActive
-	candidateID := candidate.ID
-	candidate.Unlock()
-
-	// Assign floating IPs
-	if h.server != nil {
-		h.RLock()
-		config := h.members.config
-		h.RUnlock()
-
-		var allIPs []string
-		for _, ips := range config.Groups {
-			allIPs = append(allIPs, ips...)
-		}
-
-		if len(allIPs) > 0 {
-			h.logger.Infof("Assigning %d floating IPs to %s", len(allIPs), candidate.Hostname)
-
-			candidate.Lock()
-			candidate.ActiveIPs = append([]string{}, allIPs...)
-			candidate.Unlock()
-
-			h.server.RefreshLocalMonitorExpectedIPs()
-			if err := h.server.OrchestrateIPFailover("", candidateID, allIPs); err != nil {
-				h.logger.Errorf("Fallback IP assignment failed: %v", err)
-			}
-		}
-	}
-
-	h.logger.Infof("Fallback promotion complete: %s is now active", candidate.Hostname)
-}
 
 // emergencyFallback handles the case where even coordinator fails
 func (h *HealthChecker) emergencyFallback() {
-	h.logger.Warn("Emergency fallback: promoting best available candidate")
+	h.logger.Warn("Emergency fallback: checking if this node should coordinate")
 
+	// Use the same deterministic coordination as main election
+	localNodeID, err := h.members.config.GetLocalNodeUUID()
+	if err != nil {
+		h.logger.Error("Emergency fallback: Failed to get local node ID", "error", err)
+		return
+	}
+
+	coordinatorID := h.findElectionCoordinator()
+	if coordinatorID != localNodeID {
+		h.logger.Info("Emergency fallback: Another node should coordinate", "coordinator", coordinatorID, "local", localNodeID)
+		return
+	}
+
+	h.logger.Info("Emergency fallback: This node is coordinator, promoting best candidate")
 	candidate := h.selectBestCandidate()
 	if candidate != nil {
-		h.fallbackPromotion(candidate)
+		candidate.Lock()
+		candidate.Status = StatusActive
+		candidate.Unlock()
+		h.logger.Infof("Emergency fallback: Promoted %s to Active", candidate.Hostname)
+
+		// Trigger IP refresh to bring up VIPs after emergency promotion
+		if h.server != nil {
+			h.logger.Info("HEALTH_CHECK: Triggering IP refresh after emergency fallback to bring up VIPs")
+			h.server.RefreshLocalMonitorExpectedIPs()
+		}
 	} else {
 		h.logger.Error("Emergency fallback failed: no candidates available")
 	}
@@ -1080,7 +1136,41 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 
 		h.logger.Infof("Available nodes for voting: %d out of %d total", availableNodes, len(h.members.Members))
 
-		if availableNodes < 3 {
+		if availableNodes == 1 {
+			h.logger.Infof("Only 1 node available, becoming active immediately")
+			return true
+		} else if availableNodes == 2 {
+			// 2-node fallback: use deterministic ID-based tie-breaking
+			h.logger.Infof("Exactly 2 nodes available, using deterministic tie-breaking")
+			if newStatus == StatusActive {
+				// Find the other available node
+				localNodeID, err := h.members.config.GetLocalNodeUUID()
+				if err != nil {
+					h.logger.Error("Failed to get local node ID for tie-breaking", "error", err)
+					return false
+				}
+				var otherNodeID string
+				for _, member := range h.members.Members {
+					member.Lock()
+					isAvailable := member.Status == StatusActive || member.Status == StatusPassive
+					memberID := member.ID
+					member.Unlock()
+					if isAvailable && memberID != localNodeID {
+						otherNodeID = memberID
+						break
+					}
+				}
+				if otherNodeID == "" {
+					h.logger.Info("No other available node found, allowing Active promotion")
+					return true
+				}
+				// Deterministic rule: smaller node ID wins
+				shouldWin := localNodeID < otherNodeID
+				h.logger.Infof("2-node tie-breaking: local=%s, other=%s, shouldWin=%v", localNodeID, otherNodeID, shouldWin)
+				return shouldWin
+			}
+			return true // Allow non-Active status changes
+		} else if availableNodes < 3 {
 			h.logger.Debugf("Only %d nodes available, voting not required (need 3+ available)", availableNodes)
 			return true
 		}
@@ -1214,6 +1304,7 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 	return false // Block promotion to prevent split-brain scenarios
 }
 
+
 // initiateIPRedistributionVote initiates a quorum vote for IP redistribution
 // Returns true if the vote passes or if quorum voting is not applicable
 func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
@@ -1302,6 +1393,67 @@ func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
 
 	h.logger.Warn("IP redistribution vote timed out, blocking redistribution to maintain consistency")
 	return false // Block redistribution if voting fails to maintain cluster consistency
+}
+
+// calculateElectionBackoff returns a deterministic delay to prevent simultaneous elections
+// Lower node IDs (lexicographically) get shorter delays to ensure election ordering
+// calculateElectionBackoffWithRole returns delay and whether this node is the election coordinator
+func (h *HealthChecker) calculateElectionBackoffWithRole(localNodeID string) (time.Duration, bool) {
+	h.logger.Debug("BACKOFF: Calculating election backoff delay and coordinator role")
+
+	// Get list of all available nodes that could participate in election
+	var availableNodes []string
+	for _, member := range h.members.Members {
+		member.Lock()
+		status := member.Status
+		nodeID := member.ID
+		member.Unlock()
+
+		// Only consider nodes that could potentially become active and are reachable
+		if status == StatusPassive {
+			availableNodes = append(availableNodes, nodeID)
+		}
+	}
+
+	if len(availableNodes) <= 1 {
+		h.logger.Debug("BACKOFF: Only one available node, this node is coordinator")
+		return 0, true
+	}
+
+	// Sort node IDs to ensure deterministic ordering
+	sort.Strings(availableNodes)
+
+	// Find our position in the sorted list
+	position := -1
+	for i, nodeID := range availableNodes {
+		if nodeID == localNodeID {
+			position = i
+			break
+		}
+	}
+
+	if position == -1 {
+		h.logger.Warn("BACKOFF: Local node not found in available nodes list, using fallback")
+		return 10 * time.Second, false
+	}
+
+	// Position 0 is the coordinator
+	isCoordinator := (position == 0)
+
+	// Calculate delay:
+	// - Coordinator: 0s delay (proceeds immediately after quick stability check)
+	// - Non-coordinators: position * 4 seconds (to give coordinator time to complete)
+	var delay time.Duration
+	if isCoordinator {
+		delay = 0
+	} else {
+		delay = time.Duration(position) * 4 * time.Second
+	}
+
+	h.logger.Infof("BACKOFF: Node %s is position %d of %d available nodes, delay: %v, coordinator: %v",
+		localNodeID, position+1, len(availableNodes), delay, isCoordinator)
+
+	return delay, isCoordinator
 }
 
 // Helper function to convert MemberStatus to string
