@@ -104,6 +104,7 @@ func main() {
 		logger.Fatal("Failed to start server", "error", err)
 	}
 
+
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR2)

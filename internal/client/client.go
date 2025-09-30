@@ -228,9 +228,10 @@ func (c *Client) CLI() rpc.CLIClient {
 
 // ClusterStatus represents the current state of the cluster
 type ClusterStatus struct {
-	Members []Member    `json:"members"`
-	Groups  []GroupInfo `json:"groups"`
-	Mode    string      `json:"mode"`
+	Members       []Member    `json:"members"`
+	Groups        []GroupInfo `json:"groups"`
+	Mode          string      `json:"mode"`
+	ClusterHealth string      `json:"cluster_health"`
 }
 
 type Member struct {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,9 @@ func NewStatusCmd() *cobra.Command {
 			if convErr != nil {
 				return convErr
 			}
+
+			// Calculate cluster health status
+			status.ClusterHealth = calculateClusterHealth(status.Members)
 
 			if jsonOutput {
 				output, err := json.MarshalIndent(status, "", "  ")
@@ -97,10 +101,38 @@ func translateStatusResponse(resp *rpc.StatusResponse) (*client.ClusterStatus, e
 	return status, nil
 }
 
+func calculateClusterHealth(members []client.Member) string {
+	if len(members) == 0 {
+		return "down"
+	}
+
+	activeCount := 0
+	totalCount := len(members)
+
+	for _, member := range members {
+		if member.Status == "Active" || member.Status == "Passive" {
+			activeCount++
+		}
+	}
+
+	if activeCount == 0 {
+		return "down"
+	} else if activeCount == totalCount {
+		return "online"
+	} else {
+		return "degraded"
+	}
+}
+
 func printClusterStatus(status *client.ClusterStatus) error {
-	fmt.Printf("\nCluster Status:\n")
+	fmt.Printf("\nCluster Status: %s\n", status.ClusterHealth)
 	fmt.Printf("Mode: %s\n", status.Mode)
 	fmt.Printf("==============\n")
+
+	// Sort members by hostname for consistent ordering
+	sort.Slice(status.Members, func(i, j int) bool {
+		return status.Members[i].Hostname < status.Members[j].Hostname
+	})
 
 	// Print node information
 	fmt.Printf("\nNodes:\n")

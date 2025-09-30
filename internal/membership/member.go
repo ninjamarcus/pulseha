@@ -9,6 +9,7 @@ import (
 	"github.com/syleron/pulseha/packages/client"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/packages/network"
+	"github.com/syleron/pulseha/packages/utils"
 	"github.com/syleron/pulseha/rpc"
 )
 
@@ -232,16 +233,27 @@ func (m *Member) bringUpIPsLocally(iface string, ips []string) error {
 
 // BringDownIPs brings down the specified IPs on this member based on configuration
 func (m *Member) BringDownIPs(ips []string) error {
+	// For passive nodes, prevent continuous BringDownIP calls that cause loops
+	m.Lock()
+	isLocal := m.IsLocal()
+	status := m.Status
+	m.Unlock()
+
 	ifaceToIPs, err := m.groupIPsByInterface(ips)
 	if err != nil {
 		return err
 	}
 
-	if m.IsLocal() {
+	if isLocal {
 		for iface, ipList := range ifaceToIPs {
 			// Update the IP monitor if available
 			if m.memberList != nil && m.memberList.ipMonitor != nil {
 				m.memberList.ipMonitor.RemoveExpectedIPs(iface, ipList)
+			}
+
+			if status != StatusActive {
+				m.logger.Debug("Passive local node defers bring-down to monitor", "iface", iface, "ips", ipList)
+				continue
 			}
 
 			for _, ip := range ipList {
@@ -344,9 +356,34 @@ func (m *Member) RemoveIPs(ips []string) {
 	// Update active IPs
 	m.ActiveIPs = newActiveIPs
 
-	// Bring them down according to configuration
-	if err := m.BringDownIPs(ips); err != nil {
-		m.logger.Error("Failed to bring down IPs", "error", err)
+	// Only try to bring down IPs that are actually present on the interface
+	if m.IsLocal() {
+		// Check which IPs actually exist on local interfaces before trying to bring them down
+		var ipsToRemove []string
+		for _, ip := range ips {
+			// Extract IP without CIDR if needed
+			ipOnly := ip
+			if cidr, _ := utils.GetCIDR(ip); cidr != nil {
+				ipOnly = cidr.String()
+			}
+			exists, _, err := network.CheckIfIPExists(ipOnly)
+			if err == nil && exists {
+				ipsToRemove = append(ipsToRemove, ip)
+			}
+		}
+		// Only call BringDownIPs if there are actually IPs to remove
+		if len(ipsToRemove) > 0 {
+			if err := m.BringDownIPs(ipsToRemove); err != nil {
+				m.logger.Error("Failed to bring down IPs", "error", err)
+			}
+		} else {
+			m.logger.Debug("No IPs found on interface to remove", "ips", ips)
+		}
+	} else {
+		// Remote node - trust the health checker and try to bring them down anyway
+		if err := m.BringDownIPs(ips); err != nil {
+			m.logger.Error("Failed to bring down IPs", "error", err)
+		}
 	}
 }
 
