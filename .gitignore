@@ -45,3 +45,14 @@ plugins/netcore/bin/
 .idea/
 
 go.sum
+
+# Build artifacts in root
+/pulsectl
+/pulseha
+/pulseha-debug
+
+# Debug test files
+debug_*
+
+# IDE
+.vscode/
