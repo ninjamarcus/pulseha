@@ -122,12 +122,11 @@ func (m *Member) MakeActive(ips []string) error {
 		return fmt.Errorf("cannot make fully active in %s mode", m.config.Pulse.Mode)
 	}
 
-	// Check if another node is already active
-	for _, member := range m.memberList.Members {
-		if member.ID != m.ID && member.Status == StatusActive {
-			return fmt.Errorf("another node is already active in active-passive mode")
-		}
-	}
+	// Note: We removed the check for another active node here because:
+	// 1. The Promote() handler (server.go) already handles demotion of the previous active
+	// 2. This check was causing a race condition in remote promotions where the demotion
+	//    state hadn't propagated to the target node yet
+	// 3. Single-active enforcement is maintained by the Promote() handler's demotion logic
 
 	m.Status = StatusActive
 	m.ActiveIPs = ips
