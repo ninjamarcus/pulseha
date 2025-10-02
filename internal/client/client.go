@@ -370,19 +370,18 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		ctx3, cancel3 := context.WithTimeout(context.Background(), 2*time.Second)
 		remoteConn, dErr := grpc.Dial(host+":"+port, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if dErr == nil {
+			defer remoteConn.Close()
 			remoteCLI := rpc.NewCLIClient(remoteConn)
 			rResp, rErr := remoteCLI.Status(ctx3, &rpc.StatusRequest{})
 			if rErr == nil && rResp != nil {
 				for _, m := range rResp.Members {
 					if m.NodeId == nodeID {
 						fmt.Printf("Joined cluster (confirmed by %s); local daemon will reflect shortly. Node ID: %s\n", host, nodeID)
-						remoteConn.Close()
 						cancel3()
 						return nil
 					}
 				}
 			}
-			remoteConn.Close()
 		}
 		cancel3()
 		time.Sleep(500 * time.Millisecond)
