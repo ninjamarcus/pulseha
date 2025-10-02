@@ -105,11 +105,14 @@ type Server struct {
 	rpc.UnimplementedCLIServer
 	rpc.UnimplementedServerServer
 	// Convergence state
-	clusterEpoch     int64
-	leaderID         string
+	clusterEpoch int64
+	leaderID     string
 	// Rate limiting for refresh calls
 	lastRefresh      time.Time
 	leaderLeaseUntil time.Time
+	// Connection pool for peer clients
+	peerClients map[string]*client.Client
+	clientMutex sync.RWMutex
 }
 
 // NewServer creates a new PulseHA server instance
@@ -134,6 +137,7 @@ func NewServer(cfg *config.Config, logger *log.Logger, memberList *membership.Me
 		quorumHandler: quorumHandler,
 		clusterEpoch:  0,
 		leaderID:      "",
+		peerClients:   make(map[string]*client.Client), // Initialize connection pool
 	}
 
 	// Set server reference in health checker
@@ -383,6 +387,9 @@ func (s *Server) Stop() {
 	if s.ipMonitor != nil {
 		s.ipMonitor.Stop()
 	}
+
+	// Close all peer connections to prevent goroutine leak
+	s.closePeerClients()
 
 	// Swap out gRPC servers under a short lock, then stop outside lock to avoid deadlocks
 	var oldSrv *grpc.Server
@@ -841,14 +848,13 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 		if err != nil {
 			continue
 		}
+		defer remoteClient.Close()
 		if err := remoteClient.Connect(p.ip, p.port, false); err != nil {
-			remoteClient.Close()
 			continue
 		}
 		pctx, pcancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, _ = remoteClient.Server().Remove(pctx, &rpc.RemoveRequest{NodeId: localNodeID})
 		pcancel()
-		remoteClient.Close()
 	}
 
 	// Tear down VIPs best-effort directly via network package to avoid nested locks
@@ -1138,15 +1144,14 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 				s.logger.Warn("Failed to create client for peer", "peer", id, "error", err)
 				continue
 			}
+			defer remoteClient.Close()
 			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-				remoteClient.Close()
 				s.logger.Warn("Failed to connect to peer", "peer", id, "error", err)
 				continue
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			_, err = remoteClient.Server().Remove(ctx, &rpc.RemoveRequest{NodeId: localNodeID})
 			cancel()
-			remoteClient.Close()
 			if err != nil {
 				s.logger.Warn("Failed to propagate removal to peer", "peer", id, "error", err)
 			}
@@ -1807,8 +1812,8 @@ func (s *Server) BroadcastVoteRequest(sessionID string, voteType, subject, descr
 		// Ask the remote node to create its own local voting session with the same ID
 		// This approach ensures each node has its own local session but they coordinate votes
 		// Create the same local voting session on the remote node's quorum manager
-		go func(nodeID string, node *config.Node) {
-			defer remoteClient.Close()
+		go func(nodeID string, node *config.Node, rc *client.Client) {
+			defer rc.Close()
 
 			// First, try to cast a vote on our local session using their node ID
 			// This simulates them voting on our session
@@ -1820,7 +1825,7 @@ func (s *Server) BroadcastVoteRequest(sessionID string, voteType, subject, descr
 					s.logger.Debugf("Registered vote from remote node %s", nodeID)
 				}
 			}
-		}(nodeID, node)
+		}(nodeID, node, remoteClient)
 
 		successCount++
 		s.logger.Debugf("Successfully initiated vote process for node %s", nodeID)
@@ -2121,10 +2126,10 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 							warnings = append(warnings, fmt.Sprintf("Failed to create client for node %s: %v", node.Hostname, err))
 							continue
 						}
+						defer remoteClient.Close()
 
 						// Connect to remote node
 						if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-							remoteClient.Close()
 							warnings = append(warnings, fmt.Sprintf("Failed to connect to node %s: %v", node.Hostname, err))
 							continue
 						}
@@ -2134,7 +2139,6 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 							Iface: iface,
 							Ips:   []string{ipToUse},
 						})
-						remoteClient.Close()
 
 						if err != nil {
 							warnings = append(warnings, fmt.Sprintf("Failed to bring up IP %s on node %s: %v", ipToUse, node.Hostname, err))
@@ -2287,10 +2291,10 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 							warnings = append(warnings, fmt.Sprintf("Failed to create client for node %s: %v", node.Hostname, err))
 							continue
 						}
+						defer remoteClient.Close()
 
 						// Connect to remote node
 						if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-							remoteClient.Close()
 							warnings = append(warnings, fmt.Sprintf("Failed to connect to node %s: %v", node.Hostname, err))
 							continue
 						}
@@ -2300,7 +2304,6 @@ func (s *Server) RemoveIPFromGroup(ctx context.Context, req *rpc.RemoveIPFromGro
 							Iface: iface,
 							Ips:   []string{foundExactIP},
 						})
-						remoteClient.Close()
 
 						if err != nil {
 							warnings = append(warnings, fmt.Sprintf("Failed to bring down IP %s on node %s: %v", foundExactIP, node.Hostname, err))
@@ -2942,18 +2945,13 @@ func (s *Server) Token(ctx context.Context, req *rpc.TokenRequest) (*rpc.TokenRe
 			if id == localID {
 				continue
 			}
-			remoteClient, err := client.New()
+			remoteClient, err := s.getPeerClient(id, node)
 			if err != nil {
-				continue
-			}
-			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-				remoteClient.Close()
 				continue
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
 			cancel()
-			remoteClient.Close()
 		}
 	}
 
@@ -3503,15 +3501,14 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 					s.logger.Warn("Resync: failed to create client for peer", "peer", id, "error", err)
 					continue
 				}
+				defer remoteClient.Close()
 				if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-					remoteClient.Close()
 					s.logger.Warn("Resync: failed to connect to peer", "peer", id, "error", err)
 					continue
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				resp, err := remoteClient.CLI().Status(ctx, &rpc.StatusRequest{})
 				cancel()
-				remoteClient.Close()
 				if err != nil || resp == nil {
 					s.logger.Warn("Resync: failed to get status from peer", "peer", id, "error", err)
 					continue
@@ -3584,18 +3581,13 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 								if peerID == localID {
 									continue
 								}
-								remoteClient, err := client.New()
+								remoteClient, err := s.getPeerClient(peerID, node)
 								if err != nil {
-									continue
-								}
-								if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-									remoteClient.Close()
 									continue
 								}
 								ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 								_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
 								cancel()
-								remoteClient.Close()
 							}
 						}
 					}
@@ -4049,6 +4041,56 @@ func (s *Server) GetLeaderLeaseUntil() time.Time {
 	return s.leaderLeaseUntil
 }
 
+// getPeerClient gets or creates a gRPC connection to a peer node (thread-safe with connection pooling)
+func (s *Server) getPeerClient(peerID string, node *config.Node) (*client.Client, error) {
+	// Try to get existing connection with read lock
+	s.clientMutex.RLock()
+	c, exists := s.peerClients[peerID]
+	s.clientMutex.RUnlock()
+
+	if exists && c != nil && c.Connection != nil {
+		return c, nil // Reuse existing connection
+	}
+
+	// Need to create new connection - acquire write lock
+	s.clientMutex.Lock()
+	defer s.clientMutex.Unlock()
+
+	// Double-check after acquiring write lock (another goroutine may have created it)
+	if c, exists := s.peerClients[peerID]; exists && c != nil && c.Connection != nil {
+		return c, nil
+	}
+
+	// Create new client and connection
+	remoteClient, err := client.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client: %w", err)
+	}
+
+	if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
+		remoteClient.Close()
+		return nil, fmt.Errorf("failed to connect to %s:%s: %w", node.IP, node.Port, err)
+	}
+
+	s.peerClients[peerID] = remoteClient
+	s.logger.Debug("Created new peer connection", "peerID", peerID, "address", node.IP+":"+node.Port)
+	return remoteClient, nil
+}
+
+// closePeerClients closes all peer client connections (should be called during shutdown)
+func (s *Server) closePeerClients() {
+	s.clientMutex.Lock()
+	defer s.clientMutex.Unlock()
+
+	for peerID, c := range s.peerClients {
+		if c != nil {
+			c.Close()
+			s.logger.Debug("Closed peer connection", "peerID", peerID)
+		}
+	}
+	s.peerClients = make(map[string]*client.Client)
+}
+
 // BroadcastClusterState broadcasts member states and convergence metadata to peers via ConfigSync
 func (s *Server) BroadcastClusterState(memberStates map[string]membership.MemberStatus, epoch int64, leaderID string, leases map[string]string) error {
 	s.Lock()
@@ -4083,24 +4125,20 @@ func (s *Server) BroadcastClusterState(memberStates map[string]membership.Member
 	// Apply locally via the same path to ensure consistency
 	_, _ = s.ConfigSync(context.Background(), &rpc.ConfigSyncRequest{Config: enhancedBytes})
 
-	// Broadcast to peers best-effort
+	// Broadcast to peers best-effort using connection pool
 	localID, _ := s.config.GetLocalNodeUUID()
 	for peerID, node := range s.config.Nodes {
 		if peerID == localID {
 			continue
 		}
-		remoteClient, err := client.New()
+		remoteClient, err := s.getPeerClient(peerID, node)
 		if err != nil {
-			continue
-		}
-		if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-			remoteClient.Close()
+			// Connection failed, skip this peer
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: enhancedBytes})
 		cancel()
-		remoteClient.Close()
 	}
 	return nil
 }
@@ -4115,17 +4153,12 @@ func (s *Server) broadcastFullConfigToPeers() {
 		if id == localID {
 			continue
 		}
-		remoteClient, err := client.New()
+		remoteClient, err := s.getPeerClient(id, node)
 		if err != nil {
-			continue
-		}
-		if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-			remoteClient.Close()
 			continue
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		_, _ = remoteClient.Server().ConfigSync(ctx, &rpc.ConfigSyncRequest{Config: configBytes})
 		cancel()
-		remoteClient.Close()
 	}
 }
