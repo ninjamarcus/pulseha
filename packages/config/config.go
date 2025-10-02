@@ -152,9 +152,9 @@ func New() *Config {
 	return c
 }
 
-// GetConfig - Returns a copy of the config
-func (c *Config) GetConfig() Config {
-	return *c
+// GetConfig - Returns a pointer to the config (not a copy to avoid copying mutex)
+func (c *Config) GetConfig() *Config {
+	return c
 }
 
 // NodeCount - Returns the total number of nodes in the configured cluster
