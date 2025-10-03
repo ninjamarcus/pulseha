@@ -1098,7 +1098,11 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 		s.logger.Info("Leaving cluster as local node")
 
 		// Snapshot peers and VIPs without holding the server lock
-		var peers []struct{ ip, port string }
+		var peers []struct{
+			id   string
+			ip   string
+			port string
+		}
 		ifaceToIPs := make(map[string][]string)
 		func() {
 			s.RLock()
@@ -1107,7 +1111,11 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 				if id == localNodeID || node == nil {
 					continue
 				}
-				peers = append(peers, struct{ ip, port string }{ip: node.IP, port: node.Port})
+				peers = append(peers, struct{
+					id   string
+					ip   string
+					port string
+				}{id: id, ip: node.IP, port: node.Port})
 			}
 			if node := s.config.Nodes[localNodeID]; node != nil {
 				for iface, groups := range node.IPGroups {
@@ -1126,35 +1134,67 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 			}
 		}()
 
-		// Stop background workers early (no server lock held)
+		// Deterministic removal: contact a peer to coordinate the cluster-wide removal
+		// This ensures all nodes are updated before we leave
+		var coordinated bool
+		var lastErr error
+		for _, peer := range peers {
+			s.logger.Info("Requesting cluster-coordinated removal", "coordinator", peer.id)
+			remoteClient, err := client.New()
+			if err != nil {
+				s.logger.Warn("Failed to create client for coordinator", "peer", peer.id, "error", err)
+				lastErr = err
+				continue
+			}
+			if err := remoteClient.Connect(peer.ip, peer.port, false); err != nil {
+				s.logger.Warn("Failed to connect to coordinator", "peer", peer.id, "error", err)
+				remoteClient.Close()
+				lastErr = err
+				continue
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			resp, err := remoteClient.Server().CoordinateRemoval(ctx, &rpc.CoordinateRemovalRequest{NodeId: localNodeID})
+			cancel()
+			remoteClient.Close()
+
+			if err != nil {
+				s.logger.Warn("Failed to coordinate removal with peer", "peer", peer.id, "error", err)
+				lastErr = err
+				continue
+			}
+
+			if !resp.Success {
+				s.logger.Warn("Peer rejected removal coordination", "peer", peer.id, "message", resp.Message)
+				lastErr = fmt.Errorf("removal rejected: %s", resp.Message)
+				continue
+			}
+
+			s.logger.Info("Cluster-coordinated removal successful", "coordinator", peer.id, "updated_nodes", resp.UpdatedNodes)
+			coordinated = true
+			break
+		}
+
+		// If coordination failed with all peers, fail the leave operation
+		if !coordinated {
+			if lastErr != nil {
+				return &rpc.LeaveResponse{
+					Success: false,
+					Message: fmt.Sprintf("Failed to coordinate cluster removal: %v", lastErr),
+				}, nil
+			}
+			return &rpc.LeaveResponse{
+				Success: false,
+				Message: "No peers available to coordinate removal",
+			}, nil
+		}
+
+		// Stop background workers after successful coordination
 		if s.healthCheck != nil {
 			s.healthCheck.Stop()
 		}
 		if s.ipMonitor != nil {
 			s.ipMonitor.Stop()
-		}
-
-		// Broadcast removal of this node to all other peers (best-effort, short timeout)
-		for id, node := range s.config.Nodes {
-			if id == localNodeID {
-				continue
-			}
-			remoteClient, err := client.New()
-			if err != nil {
-				s.logger.Warn("Failed to create client for peer", "peer", id, "error", err)
-				continue
-			}
-			defer remoteClient.Close()
-			if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
-				s.logger.Warn("Failed to connect to peer", "peer", id, "error", err)
-				continue
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			_, err = remoteClient.Server().Remove(ctx, &rpc.RemoveRequest{NodeId: localNodeID})
-			cancel()
-			if err != nil {
-				s.logger.Warn("Failed to propagate removal to peer", "peer", id, "error", err)
-			}
 		}
 
 		// Best-effort: drop all configured VIPs on local node directly via network package
@@ -1534,6 +1574,131 @@ func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.Remov
 	return &rpc.RemoveResponse{
 		Success: true,
 		Message: fmt.Sprintf("Successfully removed node %s from the cluster", req.NodeId),
+	}, nil
+}
+
+// CoordinateRemoval handles a coordinated node removal request.
+// The coordinator broadcasts the removal to all other cluster members
+// and waits for confirmation before responding. This ensures deterministic
+// cluster-wide config consistency.
+func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemovalRequest) (*rpc.CoordinateRemovalResponse, error) {
+	s.logger.Info("Received coordinated removal request", "node_id", req.NodeId)
+
+	if req.NodeId == "" {
+		return &rpc.CoordinateRemovalResponse{
+			Success: false,
+			Message: "node_id is required",
+		}, nil
+	}
+
+	// First, remove from our own member list and config
+	member := s.memberList.GetMemberByID(req.NodeId)
+	if member == nil {
+		return &rpc.CoordinateRemovalResponse{
+			Success: false,
+			Message: fmt.Sprintf("Node not found with ID: %s", req.NodeId),
+		}, nil
+	}
+
+	// Remove locally
+	if err := s.memberList.RemoveMember(member.ID); err != nil {
+		s.logger.Error("Failed to remove member locally", "error", err)
+		return &rpc.CoordinateRemovalResponse{
+			Success: false,
+			Message: "Failed to remove member: " + err.Error(),
+		}, nil
+	}
+
+	delete(s.config.Nodes, member.ID)
+
+	if err := s.config.Save(); err != nil {
+		s.logger.Error("Failed to save config after local removal", "error", err)
+		return &rpc.CoordinateRemovalResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save local config: %v", err),
+		}, nil
+	}
+
+	// Now broadcast the removal to all other peers
+	var updatedCount int32
+	var failedNodes []string
+	localNodeID, _ := s.config.GetLocalNodeUUID()
+
+	// Get all peers (excluding the node being removed and ourselves)
+	s.RLock()
+	var peers []struct {
+		id   string
+		ip   string
+		port string
+	}
+	for id, node := range s.config.Nodes {
+		if id == req.NodeId || id == localNodeID || node == nil {
+			continue
+		}
+		peers = append(peers, struct {
+			id   string
+			ip   string
+			port string
+		}{id: id, ip: node.IP, port: node.Port})
+	}
+	s.RUnlock()
+
+	// Broadcast removal to all peers
+	for _, peer := range peers {
+		s.logger.Info("Broadcasting removal to peer", "peer_id", peer.id)
+		remoteClient, err := client.New()
+		if err != nil {
+			s.logger.Warn("Failed to create client for peer", "peer", peer.id, "error", err)
+			failedNodes = append(failedNodes, peer.id)
+			continue
+		}
+
+		if err := remoteClient.Connect(peer.ip, peer.port, false); err != nil {
+			s.logger.Warn("Failed to connect to peer", "peer", peer.id, "error", err)
+			remoteClient.Close()
+			failedNodes = append(failedNodes, peer.id)
+			continue
+		}
+
+		pctx, pcancel := context.WithTimeout(context.Background(), 5*time.Second)
+		resp, err := remoteClient.Server().Remove(pctx, &rpc.RemoveRequest{NodeId: req.NodeId})
+		pcancel()
+		remoteClient.Close()
+
+		if err != nil {
+			s.logger.Warn("Failed to send removal to peer", "peer", peer.id, "error", err)
+			failedNodes = append(failedNodes, peer.id)
+			continue
+		}
+
+		if !resp.Success {
+			s.logger.Warn("Peer rejected removal", "peer", peer.id, "message", resp.Message)
+			failedNodes = append(failedNodes, peer.id)
+			continue
+		}
+
+		s.logger.Info("Peer successfully removed node", "peer", peer.id)
+		updatedCount++
+	}
+
+	// Count ourselves as updated
+	updatedCount++
+
+	// Determine success: if any peer failed, report partial success
+	if len(failedNodes) > 0 {
+		return &rpc.CoordinateRemovalResponse{
+			Success:      false,
+			Message:      fmt.Sprintf("Removal partially completed: %d nodes updated, %d failed", updatedCount, len(failedNodes)),
+			UpdatedNodes: updatedCount,
+			FailedNodes:  failedNodes,
+		}, nil
+	}
+
+	return &rpc.CoordinateRemovalResponse{
+		Success:      true,
+		Message:      fmt.Sprintf("Node %s successfully removed from all %d cluster members", req.NodeId, updatedCount),
+		UpdatedNodes: updatedCount,
+		FailedNodes:  []string{},
 	}, nil
 }
 

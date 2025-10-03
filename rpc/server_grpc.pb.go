@@ -860,6 +860,7 @@ const (
 	Server_HealthCheck_FullMethodName        = "/rpc.Server/HealthCheck"
 	Server_Logs_FullMethodName               = "/rpc.Server/Logs"
 	Server_Remove_FullMethodName             = "/rpc.Server/Remove"
+	Server_CoordinateRemoval_FullMethodName  = "/rpc.Server/CoordinateRemoval"
 	Server_StartVotingSession_FullMethodName = "/rpc.Server/StartVotingSession"
 	Server_CastVote_FullMethodName           = "/rpc.Server/CastVote"
 	Server_GetVotingResult_FullMethodName    = "/rpc.Server/GetVotingResult"
@@ -881,6 +882,7 @@ type ServerClient interface {
 	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 	Logs(ctx context.Context, in *LogsRequest, opts ...grpc.CallOption) (*LogsResponse, error)
 	Remove(ctx context.Context, in *RemoveRequest, opts ...grpc.CallOption) (*RemoveResponse, error)
+	CoordinateRemoval(ctx context.Context, in *CoordinateRemovalRequest, opts ...grpc.CallOption) (*CoordinateRemovalResponse, error)
 	// Quorum voting methods
 	StartVotingSession(ctx context.Context, in *StartVotingSessionRequest, opts ...grpc.CallOption) (*StartVotingSessionResponse, error)
 	CastVote(ctx context.Context, in *CastVoteRequest, opts ...grpc.CallOption) (*CastVoteResponse, error)
@@ -965,6 +967,16 @@ func (c *serverClient) Remove(ctx context.Context, in *RemoveRequest, opts ...gr
 	return out, nil
 }
 
+func (c *serverClient) CoordinateRemoval(ctx context.Context, in *CoordinateRemovalRequest, opts ...grpc.CallOption) (*CoordinateRemovalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CoordinateRemovalResponse)
+	err := c.cc.Invoke(ctx, Server_CoordinateRemoval_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *serverClient) StartVotingSession(ctx context.Context, in *StartVotingSessionRequest, opts ...grpc.CallOption) (*StartVotingSessionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StartVotingSessionResponse)
@@ -1011,6 +1023,7 @@ type ServerServer interface {
 	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
 	Logs(context.Context, *LogsRequest) (*LogsResponse, error)
 	Remove(context.Context, *RemoveRequest) (*RemoveResponse, error)
+	CoordinateRemoval(context.Context, *CoordinateRemovalRequest) (*CoordinateRemovalResponse, error)
 	// Quorum voting methods
 	StartVotingSession(context.Context, *StartVotingSessionRequest) (*StartVotingSessionResponse, error)
 	CastVote(context.Context, *CastVoteRequest) (*CastVoteResponse, error)
@@ -1045,6 +1058,9 @@ func (UnimplementedServerServer) Logs(context.Context, *LogsRequest) (*LogsRespo
 }
 func (UnimplementedServerServer) Remove(context.Context, *RemoveRequest) (*RemoveResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Remove not implemented")
+}
+func (UnimplementedServerServer) CoordinateRemoval(context.Context, *CoordinateRemovalRequest) (*CoordinateRemovalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CoordinateRemoval not implemented")
 }
 func (UnimplementedServerServer) StartVotingSession(context.Context, *StartVotingSessionRequest) (*StartVotingSessionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartVotingSession not implemented")
@@ -1202,6 +1218,24 @@ func _Server_Remove_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Server_CoordinateRemoval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CoordinateRemovalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ServerServer).CoordinateRemoval(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Server_CoordinateRemoval_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ServerServer).CoordinateRemoval(ctx, req.(*CoordinateRemovalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Server_StartVotingSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartVotingSessionRequest)
 	if err := dec(in); err != nil {
@@ -1290,6 +1324,10 @@ var Server_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Remove",
 			Handler:    _Server_Remove_Handler,
+		},
+		{
+			MethodName: "CoordinateRemoval",
+			Handler:    _Server_CoordinateRemoval_Handler,
 		},
 		{
 			MethodName: "StartVotingSession",

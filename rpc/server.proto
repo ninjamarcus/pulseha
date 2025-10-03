@@ -73,6 +73,7 @@ service Server {
     rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {}
     rpc Logs(LogsRequest) returns (LogsResponse) {}
     rpc Remove(RemoveRequest) returns (RemoveResponse) {}
+    rpc CoordinateRemoval(CoordinateRemovalRequest) returns (CoordinateRemovalResponse) {}
     // Quorum voting methods
     rpc StartVotingSession(StartVotingSessionRequest) returns (StartVotingSessionResponse) {}
     rpc CastVote(CastVoteRequest) returns (CastVoteResponse) {}
@@ -216,6 +217,20 @@ message RemoveRequest {
 message RemoveResponse {
     bool success = 1;
     string message = 2;
+}
+
+// CoordinateRemoval Request/Response
+// Used when a node wants to leave the cluster in a deterministic way.
+// The coordinator ensures all cluster members remove the node before responding.
+message CoordinateRemovalRequest {
+    string node_id = 1;  // The node ID requesting to leave
+}
+
+message CoordinateRemovalResponse {
+    bool success = 1;
+    string message = 2;
+    int32 updated_nodes = 3;  // Number of nodes successfully updated
+    repeated string failed_nodes = 4;  // Node IDs that failed to update
 }
 
 // Mode Management Request/Response

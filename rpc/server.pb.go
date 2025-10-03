@@ -1488,6 +1488,121 @@ func (x *RemoveResponse) GetMessage() string {
 	return ""
 }
 
+// CoordinateRemoval Request/Response
+// Used when a node wants to leave the cluster in a deterministic way.
+// The coordinator ensures all cluster members remove the node before responding.
+type CoordinateRemovalRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"` // The node ID requesting to leave
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CoordinateRemovalRequest) Reset() {
+	*x = CoordinateRemovalRequest{}
+	mi := &file_rpc_server_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CoordinateRemovalRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CoordinateRemovalRequest) ProtoMessage() {}
+
+func (x *CoordinateRemovalRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_server_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CoordinateRemovalRequest.ProtoReflect.Descriptor instead.
+func (*CoordinateRemovalRequest) Descriptor() ([]byte, []int) {
+	return file_rpc_server_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *CoordinateRemovalRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type CoordinateRemovalResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	UpdatedNodes  int32                  `protobuf:"varint,3,opt,name=updated_nodes,json=updatedNodes,proto3" json:"updated_nodes,omitempty"` // Number of nodes successfully updated
+	FailedNodes   []string               `protobuf:"bytes,4,rep,name=failed_nodes,json=failedNodes,proto3" json:"failed_nodes,omitempty"`     // Node IDs that failed to update
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CoordinateRemovalResponse) Reset() {
+	*x = CoordinateRemovalResponse{}
+	mi := &file_rpc_server_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CoordinateRemovalResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CoordinateRemovalResponse) ProtoMessage() {}
+
+func (x *CoordinateRemovalResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_rpc_server_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CoordinateRemovalResponse.ProtoReflect.Descriptor instead.
+func (*CoordinateRemovalResponse) Descriptor() ([]byte, []int) {
+	return file_rpc_server_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *CoordinateRemovalResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *CoordinateRemovalResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *CoordinateRemovalResponse) GetUpdatedNodes() int32 {
+	if x != nil {
+		return x.UpdatedNodes
+	}
+	return 0
+}
+
+func (x *CoordinateRemovalResponse) GetFailedNodes() []string {
+	if x != nil {
+		return x.FailedNodes
+	}
+	return nil
+}
+
 // Mode Management Request/Response
 type SetModeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1498,7 +1613,7 @@ type SetModeRequest struct {
 
 func (x *SetModeRequest) Reset() {
 	*x = SetModeRequest{}
-	mi := &file_rpc_server_proto_msgTypes[23]
+	mi := &file_rpc_server_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1510,7 +1625,7 @@ func (x *SetModeRequest) String() string {
 func (*SetModeRequest) ProtoMessage() {}
 
 func (x *SetModeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[23]
+	mi := &file_rpc_server_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1523,7 +1638,7 @@ func (x *SetModeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModeRequest.ProtoReflect.Descriptor instead.
 func (*SetModeRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{23}
+	return file_rpc_server_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SetModeRequest) GetMode() string {
@@ -1543,7 +1658,7 @@ type SetModeResponse struct {
 
 func (x *SetModeResponse) Reset() {
 	*x = SetModeResponse{}
-	mi := &file_rpc_server_proto_msgTypes[24]
+	mi := &file_rpc_server_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1670,7 @@ func (x *SetModeResponse) String() string {
 func (*SetModeResponse) ProtoMessage() {}
 
 func (x *SetModeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[24]
+	mi := &file_rpc_server_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1683,7 @@ func (x *SetModeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetModeResponse.ProtoReflect.Descriptor instead.
 func (*SetModeResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{24}
+	return file_rpc_server_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *SetModeResponse) GetSuccess() bool {
@@ -1596,7 +1711,7 @@ type UpdateConfigRequest struct {
 
 func (x *UpdateConfigRequest) Reset() {
 	*x = UpdateConfigRequest{}
-	mi := &file_rpc_server_proto_msgTypes[25]
+	mi := &file_rpc_server_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1608,7 +1723,7 @@ func (x *UpdateConfigRequest) String() string {
 func (*UpdateConfigRequest) ProtoMessage() {}
 
 func (x *UpdateConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[25]
+	mi := &file_rpc_server_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1621,7 +1736,7 @@ func (x *UpdateConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConfigRequest.ProtoReflect.Descriptor instead.
 func (*UpdateConfigRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{25}
+	return file_rpc_server_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *UpdateConfigRequest) GetKey() string {
@@ -1648,7 +1763,7 @@ type UpdateConfigResponse struct {
 
 func (x *UpdateConfigResponse) Reset() {
 	*x = UpdateConfigResponse{}
-	mi := &file_rpc_server_proto_msgTypes[26]
+	mi := &file_rpc_server_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1660,7 +1775,7 @@ func (x *UpdateConfigResponse) String() string {
 func (*UpdateConfigResponse) ProtoMessage() {}
 
 func (x *UpdateConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[26]
+	mi := &file_rpc_server_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1673,7 +1788,7 @@ func (x *UpdateConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConfigResponse.ProtoReflect.Descriptor instead.
 func (*UpdateConfigResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{26}
+	return file_rpc_server_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *UpdateConfigResponse) GetSuccess() bool {
@@ -1700,7 +1815,7 @@ type ResyncNetworkRequest struct {
 
 func (x *ResyncNetworkRequest) Reset() {
 	*x = ResyncNetworkRequest{}
-	mi := &file_rpc_server_proto_msgTypes[27]
+	mi := &file_rpc_server_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1712,7 +1827,7 @@ func (x *ResyncNetworkRequest) String() string {
 func (*ResyncNetworkRequest) ProtoMessage() {}
 
 func (x *ResyncNetworkRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[27]
+	mi := &file_rpc_server_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1725,7 +1840,7 @@ func (x *ResyncNetworkRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResyncNetworkRequest.ProtoReflect.Descriptor instead.
 func (*ResyncNetworkRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{27}
+	return file_rpc_server_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ResyncNetworkRequest) GetCreateDefaultGroups() bool {
@@ -1745,7 +1860,7 @@ type ResyncNetworkResponse struct {
 
 func (x *ResyncNetworkResponse) Reset() {
 	*x = ResyncNetworkResponse{}
-	mi := &file_rpc_server_proto_msgTypes[28]
+	mi := &file_rpc_server_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1757,7 +1872,7 @@ func (x *ResyncNetworkResponse) String() string {
 func (*ResyncNetworkResponse) ProtoMessage() {}
 
 func (x *ResyncNetworkResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[28]
+	mi := &file_rpc_server_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1770,7 +1885,7 @@ func (x *ResyncNetworkResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResyncNetworkResponse.ProtoReflect.Descriptor instead.
 func (*ResyncNetworkResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{28}
+	return file_rpc_server_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ResyncNetworkResponse) GetSuccess() bool {
@@ -1797,7 +1912,7 @@ type CreateGroupRequest struct {
 
 func (x *CreateGroupRequest) Reset() {
 	*x = CreateGroupRequest{}
-	mi := &file_rpc_server_proto_msgTypes[29]
+	mi := &file_rpc_server_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1809,7 +1924,7 @@ func (x *CreateGroupRequest) String() string {
 func (*CreateGroupRequest) ProtoMessage() {}
 
 func (x *CreateGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[29]
+	mi := &file_rpc_server_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1822,7 +1937,7 @@ func (x *CreateGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGroupRequest.ProtoReflect.Descriptor instead.
 func (*CreateGroupRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{29}
+	return file_rpc_server_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *CreateGroupRequest) GetName() string {
@@ -1842,7 +1957,7 @@ type CreateGroupResponse struct {
 
 func (x *CreateGroupResponse) Reset() {
 	*x = CreateGroupResponse{}
-	mi := &file_rpc_server_proto_msgTypes[30]
+	mi := &file_rpc_server_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1854,7 +1969,7 @@ func (x *CreateGroupResponse) String() string {
 func (*CreateGroupResponse) ProtoMessage() {}
 
 func (x *CreateGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[30]
+	mi := &file_rpc_server_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1867,7 +1982,7 @@ func (x *CreateGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateGroupResponse.ProtoReflect.Descriptor instead.
 func (*CreateGroupResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{30}
+	return file_rpc_server_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CreateGroupResponse) GetSuccess() bool {
@@ -1894,7 +2009,7 @@ type AddIPToGroupRequest struct {
 
 func (x *AddIPToGroupRequest) Reset() {
 	*x = AddIPToGroupRequest{}
-	mi := &file_rpc_server_proto_msgTypes[31]
+	mi := &file_rpc_server_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1906,7 +2021,7 @@ func (x *AddIPToGroupRequest) String() string {
 func (*AddIPToGroupRequest) ProtoMessage() {}
 
 func (x *AddIPToGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[31]
+	mi := &file_rpc_server_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1919,7 +2034,7 @@ func (x *AddIPToGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddIPToGroupRequest.ProtoReflect.Descriptor instead.
 func (*AddIPToGroupRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{31}
+	return file_rpc_server_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *AddIPToGroupRequest) GetGroupName() string {
@@ -1947,7 +2062,7 @@ type AddIPToGroupResponse struct {
 
 func (x *AddIPToGroupResponse) Reset() {
 	*x = AddIPToGroupResponse{}
-	mi := &file_rpc_server_proto_msgTypes[32]
+	mi := &file_rpc_server_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1959,7 +2074,7 @@ func (x *AddIPToGroupResponse) String() string {
 func (*AddIPToGroupResponse) ProtoMessage() {}
 
 func (x *AddIPToGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[32]
+	mi := &file_rpc_server_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1972,7 +2087,7 @@ func (x *AddIPToGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AddIPToGroupResponse.ProtoReflect.Descriptor instead.
 func (*AddIPToGroupResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{32}
+	return file_rpc_server_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *AddIPToGroupResponse) GetSuccess() bool {
@@ -2006,7 +2121,7 @@ type RemoveIPFromGroupRequest struct {
 
 func (x *RemoveIPFromGroupRequest) Reset() {
 	*x = RemoveIPFromGroupRequest{}
-	mi := &file_rpc_server_proto_msgTypes[33]
+	mi := &file_rpc_server_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2018,7 +2133,7 @@ func (x *RemoveIPFromGroupRequest) String() string {
 func (*RemoveIPFromGroupRequest) ProtoMessage() {}
 
 func (x *RemoveIPFromGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[33]
+	mi := &file_rpc_server_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2031,7 +2146,7 @@ func (x *RemoveIPFromGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveIPFromGroupRequest.ProtoReflect.Descriptor instead.
 func (*RemoveIPFromGroupRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{33}
+	return file_rpc_server_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RemoveIPFromGroupRequest) GetGroupName() string {
@@ -2059,7 +2174,7 @@ type RemoveIPFromGroupResponse struct {
 
 func (x *RemoveIPFromGroupResponse) Reset() {
 	*x = RemoveIPFromGroupResponse{}
-	mi := &file_rpc_server_proto_msgTypes[34]
+	mi := &file_rpc_server_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2071,7 +2186,7 @@ func (x *RemoveIPFromGroupResponse) String() string {
 func (*RemoveIPFromGroupResponse) ProtoMessage() {}
 
 func (x *RemoveIPFromGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[34]
+	mi := &file_rpc_server_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2084,7 +2199,7 @@ func (x *RemoveIPFromGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveIPFromGroupResponse.ProtoReflect.Descriptor instead.
 func (*RemoveIPFromGroupResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{34}
+	return file_rpc_server_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *RemoveIPFromGroupResponse) GetSuccess() bool {
@@ -2119,7 +2234,7 @@ type AssignGroupRequest struct {
 
 func (x *AssignGroupRequest) Reset() {
 	*x = AssignGroupRequest{}
-	mi := &file_rpc_server_proto_msgTypes[35]
+	mi := &file_rpc_server_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2131,7 +2246,7 @@ func (x *AssignGroupRequest) String() string {
 func (*AssignGroupRequest) ProtoMessage() {}
 
 func (x *AssignGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[35]
+	mi := &file_rpc_server_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2144,7 +2259,7 @@ func (x *AssignGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignGroupRequest.ProtoReflect.Descriptor instead.
 func (*AssignGroupRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{35}
+	return file_rpc_server_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *AssignGroupRequest) GetGroupName() string {
@@ -2178,7 +2293,7 @@ type AssignGroupResponse struct {
 
 func (x *AssignGroupResponse) Reset() {
 	*x = AssignGroupResponse{}
-	mi := &file_rpc_server_proto_msgTypes[36]
+	mi := &file_rpc_server_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2190,7 +2305,7 @@ func (x *AssignGroupResponse) String() string {
 func (*AssignGroupResponse) ProtoMessage() {}
 
 func (x *AssignGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[36]
+	mi := &file_rpc_server_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2203,7 +2318,7 @@ func (x *AssignGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssignGroupResponse.ProtoReflect.Descriptor instead.
 func (*AssignGroupResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{36}
+	return file_rpc_server_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AssignGroupResponse) GetSuccess() bool {
@@ -2229,7 +2344,7 @@ type ListGroupsRequest struct {
 
 func (x *ListGroupsRequest) Reset() {
 	*x = ListGroupsRequest{}
-	mi := &file_rpc_server_proto_msgTypes[37]
+	mi := &file_rpc_server_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2241,7 +2356,7 @@ func (x *ListGroupsRequest) String() string {
 func (*ListGroupsRequest) ProtoMessage() {}
 
 func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[37]
+	mi := &file_rpc_server_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2254,7 +2369,7 @@ func (x *ListGroupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupsRequest.ProtoReflect.Descriptor instead.
 func (*ListGroupsRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{37}
+	return file_rpc_server_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListGroupsRequest) GetJsonOutput() bool {
@@ -2275,7 +2390,7 @@ type GroupInfo struct {
 
 func (x *GroupInfo) Reset() {
 	*x = GroupInfo{}
-	mi := &file_rpc_server_proto_msgTypes[38]
+	mi := &file_rpc_server_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2287,7 +2402,7 @@ func (x *GroupInfo) String() string {
 func (*GroupInfo) ProtoMessage() {}
 
 func (x *GroupInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[38]
+	mi := &file_rpc_server_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2300,7 +2415,7 @@ func (x *GroupInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupInfo.ProtoReflect.Descriptor instead.
 func (*GroupInfo) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{38}
+	return file_rpc_server_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GroupInfo) GetName() string {
@@ -2334,7 +2449,7 @@ type GroupAssignment struct {
 
 func (x *GroupAssignment) Reset() {
 	*x = GroupAssignment{}
-	mi := &file_rpc_server_proto_msgTypes[39]
+	mi := &file_rpc_server_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2346,7 +2461,7 @@ func (x *GroupAssignment) String() string {
 func (*GroupAssignment) ProtoMessage() {}
 
 func (x *GroupAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[39]
+	mi := &file_rpc_server_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2359,7 +2474,7 @@ func (x *GroupAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupAssignment.ProtoReflect.Descriptor instead.
 func (*GroupAssignment) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{39}
+	return file_rpc_server_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GroupAssignment) GetInterface() string {
@@ -2388,7 +2503,7 @@ type ListGroupsResponse struct {
 
 func (x *ListGroupsResponse) Reset() {
 	*x = ListGroupsResponse{}
-	mi := &file_rpc_server_proto_msgTypes[40]
+	mi := &file_rpc_server_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2400,7 +2515,7 @@ func (x *ListGroupsResponse) String() string {
 func (*ListGroupsResponse) ProtoMessage() {}
 
 func (x *ListGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[40]
+	mi := &file_rpc_server_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2413,7 +2528,7 @@ func (x *ListGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupsResponse.ProtoReflect.Descriptor instead.
 func (*ListGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{40}
+	return file_rpc_server_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ListGroupsResponse) GetSuccess() bool {
@@ -2456,7 +2571,7 @@ type UnassignGroupRequest struct {
 
 func (x *UnassignGroupRequest) Reset() {
 	*x = UnassignGroupRequest{}
-	mi := &file_rpc_server_proto_msgTypes[41]
+	mi := &file_rpc_server_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2468,7 +2583,7 @@ func (x *UnassignGroupRequest) String() string {
 func (*UnassignGroupRequest) ProtoMessage() {}
 
 func (x *UnassignGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[41]
+	mi := &file_rpc_server_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2481,7 +2596,7 @@ func (x *UnassignGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnassignGroupRequest.ProtoReflect.Descriptor instead.
 func (*UnassignGroupRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{41}
+	return file_rpc_server_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *UnassignGroupRequest) GetGroupName() string {
@@ -2515,7 +2630,7 @@ type UnassignGroupResponse struct {
 
 func (x *UnassignGroupResponse) Reset() {
 	*x = UnassignGroupResponse{}
-	mi := &file_rpc_server_proto_msgTypes[42]
+	mi := &file_rpc_server_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2527,7 +2642,7 @@ func (x *UnassignGroupResponse) String() string {
 func (*UnassignGroupResponse) ProtoMessage() {}
 
 func (x *UnassignGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[42]
+	mi := &file_rpc_server_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2540,7 +2655,7 @@ func (x *UnassignGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnassignGroupResponse.ProtoReflect.Descriptor instead.
 func (*UnassignGroupResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{42}
+	return file_rpc_server_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *UnassignGroupResponse) GetSuccess() bool {
@@ -2568,7 +2683,7 @@ type DeleteGroupRequest struct {
 
 func (x *DeleteGroupRequest) Reset() {
 	*x = DeleteGroupRequest{}
-	mi := &file_rpc_server_proto_msgTypes[43]
+	mi := &file_rpc_server_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2580,7 +2695,7 @@ func (x *DeleteGroupRequest) String() string {
 func (*DeleteGroupRequest) ProtoMessage() {}
 
 func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[43]
+	mi := &file_rpc_server_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2593,7 +2708,7 @@ func (x *DeleteGroupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGroupRequest.ProtoReflect.Descriptor instead.
 func (*DeleteGroupRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{43}
+	return file_rpc_server_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *DeleteGroupRequest) GetGroupName() string {
@@ -2621,7 +2736,7 @@ type DeleteGroupResponse struct {
 
 func (x *DeleteGroupResponse) Reset() {
 	*x = DeleteGroupResponse{}
-	mi := &file_rpc_server_proto_msgTypes[44]
+	mi := &file_rpc_server_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2633,7 +2748,7 @@ func (x *DeleteGroupResponse) String() string {
 func (*DeleteGroupResponse) ProtoMessage() {}
 
 func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[44]
+	mi := &file_rpc_server_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2646,7 +2761,7 @@ func (x *DeleteGroupResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGroupResponse.ProtoReflect.Descriptor instead.
 func (*DeleteGroupResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{44}
+	return file_rpc_server_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *DeleteGroupResponse) GetSuccess() bool {
@@ -2683,7 +2798,7 @@ type CreateClusterRequest struct {
 
 func (x *CreateClusterRequest) Reset() {
 	*x = CreateClusterRequest{}
-	mi := &file_rpc_server_proto_msgTypes[45]
+	mi := &file_rpc_server_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2695,7 +2810,7 @@ func (x *CreateClusterRequest) String() string {
 func (*CreateClusterRequest) ProtoMessage() {}
 
 func (x *CreateClusterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[45]
+	mi := &file_rpc_server_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2708,7 +2823,7 @@ func (x *CreateClusterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateClusterRequest.ProtoReflect.Descriptor instead.
 func (*CreateClusterRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{45}
+	return file_rpc_server_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *CreateClusterRequest) GetBindIp() string {
@@ -2751,7 +2866,7 @@ type CreateClusterResponse struct {
 
 func (x *CreateClusterResponse) Reset() {
 	*x = CreateClusterResponse{}
-	mi := &file_rpc_server_proto_msgTypes[46]
+	mi := &file_rpc_server_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2763,7 +2878,7 @@ func (x *CreateClusterResponse) String() string {
 func (*CreateClusterResponse) ProtoMessage() {}
 
 func (x *CreateClusterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[46]
+	mi := &file_rpc_server_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2776,7 +2891,7 @@ func (x *CreateClusterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateClusterResponse.ProtoReflect.Descriptor instead.
 func (*CreateClusterResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{46}
+	return file_rpc_server_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *CreateClusterResponse) GetSuccess() bool {
@@ -2820,7 +2935,7 @@ type StartVotingSessionRequest struct {
 
 func (x *StartVotingSessionRequest) Reset() {
 	*x = StartVotingSessionRequest{}
-	mi := &file_rpc_server_proto_msgTypes[47]
+	mi := &file_rpc_server_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2832,7 +2947,7 @@ func (x *StartVotingSessionRequest) String() string {
 func (*StartVotingSessionRequest) ProtoMessage() {}
 
 func (x *StartVotingSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[47]
+	mi := &file_rpc_server_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2845,7 +2960,7 @@ func (x *StartVotingSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVotingSessionRequest.ProtoReflect.Descriptor instead.
 func (*StartVotingSessionRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{47}
+	return file_rpc_server_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *StartVotingSessionRequest) GetType() VoteType {
@@ -2887,7 +3002,7 @@ type StartVotingSessionResponse struct {
 
 func (x *StartVotingSessionResponse) Reset() {
 	*x = StartVotingSessionResponse{}
-	mi := &file_rpc_server_proto_msgTypes[48]
+	mi := &file_rpc_server_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2899,7 +3014,7 @@ func (x *StartVotingSessionResponse) String() string {
 func (*StartVotingSessionResponse) ProtoMessage() {}
 
 func (x *StartVotingSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[48]
+	mi := &file_rpc_server_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2912,7 +3027,7 @@ func (x *StartVotingSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVotingSessionResponse.ProtoReflect.Descriptor instead.
 func (*StartVotingSessionResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{48}
+	return file_rpc_server_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *StartVotingSessionResponse) GetSuccess() bool {
@@ -2947,7 +3062,7 @@ type CastVoteRequest struct {
 
 func (x *CastVoteRequest) Reset() {
 	*x = CastVoteRequest{}
-	mi := &file_rpc_server_proto_msgTypes[49]
+	mi := &file_rpc_server_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2959,7 +3074,7 @@ func (x *CastVoteRequest) String() string {
 func (*CastVoteRequest) ProtoMessage() {}
 
 func (x *CastVoteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[49]
+	mi := &file_rpc_server_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2972,7 +3087,7 @@ func (x *CastVoteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CastVoteRequest.ProtoReflect.Descriptor instead.
 func (*CastVoteRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{49}
+	return file_rpc_server_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *CastVoteRequest) GetSessionId() string {
@@ -3006,7 +3121,7 @@ type CastVoteResponse struct {
 
 func (x *CastVoteResponse) Reset() {
 	*x = CastVoteResponse{}
-	mi := &file_rpc_server_proto_msgTypes[50]
+	mi := &file_rpc_server_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3018,7 +3133,7 @@ func (x *CastVoteResponse) String() string {
 func (*CastVoteResponse) ProtoMessage() {}
 
 func (x *CastVoteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[50]
+	mi := &file_rpc_server_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3031,7 +3146,7 @@ func (x *CastVoteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CastVoteResponse.ProtoReflect.Descriptor instead.
 func (*CastVoteResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{50}
+	return file_rpc_server_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *CastVoteResponse) GetSuccess() bool {
@@ -3057,7 +3172,7 @@ type GetVotingResultRequest struct {
 
 func (x *GetVotingResultRequest) Reset() {
 	*x = GetVotingResultRequest{}
-	mi := &file_rpc_server_proto_msgTypes[51]
+	mi := &file_rpc_server_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3069,7 +3184,7 @@ func (x *GetVotingResultRequest) String() string {
 func (*GetVotingResultRequest) ProtoMessage() {}
 
 func (x *GetVotingResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[51]
+	mi := &file_rpc_server_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3082,7 +3197,7 @@ func (x *GetVotingResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingResultRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingResultRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{51}
+	return file_rpc_server_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetVotingResultRequest) GetSessionId() string {
@@ -3106,7 +3221,7 @@ type VotingSessionResult struct {
 
 func (x *VotingSessionResult) Reset() {
 	*x = VotingSessionResult{}
-	mi := &file_rpc_server_proto_msgTypes[52]
+	mi := &file_rpc_server_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3118,7 +3233,7 @@ func (x *VotingSessionResult) String() string {
 func (*VotingSessionResult) ProtoMessage() {}
 
 func (x *VotingSessionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[52]
+	mi := &file_rpc_server_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3131,7 +3246,7 @@ func (x *VotingSessionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotingSessionResult.ProtoReflect.Descriptor instead.
 func (*VotingSessionResult) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{52}
+	return file_rpc_server_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *VotingSessionResult) GetPassed() bool {
@@ -3187,7 +3302,7 @@ type GetVotingResultResponse struct {
 
 func (x *GetVotingResultResponse) Reset() {
 	*x = GetVotingResultResponse{}
-	mi := &file_rpc_server_proto_msgTypes[53]
+	mi := &file_rpc_server_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3199,7 +3314,7 @@ func (x *GetVotingResultResponse) String() string {
 func (*GetVotingResultResponse) ProtoMessage() {}
 
 func (x *GetVotingResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[53]
+	mi := &file_rpc_server_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3212,7 +3327,7 @@ func (x *GetVotingResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingResultResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingResultResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{53}
+	return file_rpc_server_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GetVotingResultResponse) GetSuccess() bool {
@@ -3245,7 +3360,7 @@ type GetVotingSessionsRequest struct {
 
 func (x *GetVotingSessionsRequest) Reset() {
 	*x = GetVotingSessionsRequest{}
-	mi := &file_rpc_server_proto_msgTypes[54]
+	mi := &file_rpc_server_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3257,7 +3372,7 @@ func (x *GetVotingSessionsRequest) String() string {
 func (*GetVotingSessionsRequest) ProtoMessage() {}
 
 func (x *GetVotingSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[54]
+	mi := &file_rpc_server_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3270,7 +3385,7 @@ func (x *GetVotingSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionsRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{54}
+	return file_rpc_server_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GetVotingSessionsRequest) GetIncludeCompleted() bool {
@@ -3296,7 +3411,7 @@ type VotingSessionInfo struct {
 
 func (x *VotingSessionInfo) Reset() {
 	*x = VotingSessionInfo{}
-	mi := &file_rpc_server_proto_msgTypes[55]
+	mi := &file_rpc_server_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3308,7 +3423,7 @@ func (x *VotingSessionInfo) String() string {
 func (*VotingSessionInfo) ProtoMessage() {}
 
 func (x *VotingSessionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[55]
+	mi := &file_rpc_server_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3321,7 +3436,7 @@ func (x *VotingSessionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VotingSessionInfo.ProtoReflect.Descriptor instead.
 func (*VotingSessionInfo) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{55}
+	return file_rpc_server_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *VotingSessionInfo) GetId() string {
@@ -3391,7 +3506,7 @@ type GetVotingSessionsResponse struct {
 
 func (x *GetVotingSessionsResponse) Reset() {
 	*x = GetVotingSessionsResponse{}
-	mi := &file_rpc_server_proto_msgTypes[56]
+	mi := &file_rpc_server_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3403,7 +3518,7 @@ func (x *GetVotingSessionsResponse) String() string {
 func (*GetVotingSessionsResponse) ProtoMessage() {}
 
 func (x *GetVotingSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[56]
+	mi := &file_rpc_server_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3416,7 +3531,7 @@ func (x *GetVotingSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionsResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{56}
+	return file_rpc_server_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *GetVotingSessionsResponse) GetSuccess() bool {
@@ -3449,7 +3564,7 @@ type GetVotingSessionDetailsRequest struct {
 
 func (x *GetVotingSessionDetailsRequest) Reset() {
 	*x = GetVotingSessionDetailsRequest{}
-	mi := &file_rpc_server_proto_msgTypes[57]
+	mi := &file_rpc_server_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3461,7 +3576,7 @@ func (x *GetVotingSessionDetailsRequest) String() string {
 func (*GetVotingSessionDetailsRequest) ProtoMessage() {}
 
 func (x *GetVotingSessionDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[57]
+	mi := &file_rpc_server_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3474,7 +3589,7 @@ func (x *GetVotingSessionDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionDetailsRequest.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{57}
+	return file_rpc_server_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *GetVotingSessionDetailsRequest) GetSessionId() string {
@@ -3495,7 +3610,7 @@ type Vote struct {
 
 func (x *Vote) Reset() {
 	*x = Vote{}
-	mi := &file_rpc_server_proto_msgTypes[58]
+	mi := &file_rpc_server_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3507,7 +3622,7 @@ func (x *Vote) String() string {
 func (*Vote) ProtoMessage() {}
 
 func (x *Vote) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[58]
+	mi := &file_rpc_server_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3520,7 +3635,7 @@ func (x *Vote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vote.ProtoReflect.Descriptor instead.
 func (*Vote) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{58}
+	return file_rpc_server_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *Vote) GetVoterId() string {
@@ -3556,7 +3671,7 @@ type GetVotingSessionDetailsResponse struct {
 
 func (x *GetVotingSessionDetailsResponse) Reset() {
 	*x = GetVotingSessionDetailsResponse{}
-	mi := &file_rpc_server_proto_msgTypes[59]
+	mi := &file_rpc_server_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3568,7 +3683,7 @@ func (x *GetVotingSessionDetailsResponse) String() string {
 func (*GetVotingSessionDetailsResponse) ProtoMessage() {}
 
 func (x *GetVotingSessionDetailsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[59]
+	mi := &file_rpc_server_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3581,7 +3696,7 @@ func (x *GetVotingSessionDetailsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVotingSessionDetailsResponse.ProtoReflect.Descriptor instead.
 func (*GetVotingSessionDetailsResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{59}
+	return file_rpc_server_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *GetVotingSessionDetailsResponse) GetSuccess() bool {
@@ -3622,7 +3737,7 @@ type TokenRequest struct {
 
 func (x *TokenRequest) Reset() {
 	*x = TokenRequest{}
-	mi := &file_rpc_server_proto_msgTypes[60]
+	mi := &file_rpc_server_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3634,7 +3749,7 @@ func (x *TokenRequest) String() string {
 func (*TokenRequest) ProtoMessage() {}
 
 func (x *TokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[60]
+	mi := &file_rpc_server_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3647,7 +3762,7 @@ func (x *TokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenRequest.ProtoReflect.Descriptor instead.
 func (*TokenRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{60}
+	return file_rpc_server_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *TokenRequest) GetRegenerate() bool {
@@ -3668,7 +3783,7 @@ type TokenResponse struct {
 
 func (x *TokenResponse) Reset() {
 	*x = TokenResponse{}
-	mi := &file_rpc_server_proto_msgTypes[61]
+	mi := &file_rpc_server_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3680,7 +3795,7 @@ func (x *TokenResponse) String() string {
 func (*TokenResponse) ProtoMessage() {}
 
 func (x *TokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[61]
+	mi := &file_rpc_server_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3693,7 +3808,7 @@ func (x *TokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TokenResponse.ProtoReflect.Descriptor instead.
 func (*TokenResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{61}
+	return file_rpc_server_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *TokenResponse) GetSuccess() bool {
@@ -3732,7 +3847,7 @@ type InitiateJoinRequest struct {
 
 func (x *InitiateJoinRequest) Reset() {
 	*x = InitiateJoinRequest{}
-	mi := &file_rpc_server_proto_msgTypes[62]
+	mi := &file_rpc_server_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3744,7 +3859,7 @@ func (x *InitiateJoinRequest) String() string {
 func (*InitiateJoinRequest) ProtoMessage() {}
 
 func (x *InitiateJoinRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[62]
+	mi := &file_rpc_server_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3757,7 +3872,7 @@ func (x *InitiateJoinRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitiateJoinRequest.ProtoReflect.Descriptor instead.
 func (*InitiateJoinRequest) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{62}
+	return file_rpc_server_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *InitiateJoinRequest) GetTargetHost() string {
@@ -3812,7 +3927,7 @@ type InitiateJoinResponse struct {
 
 func (x *InitiateJoinResponse) Reset() {
 	*x = InitiateJoinResponse{}
-	mi := &file_rpc_server_proto_msgTypes[63]
+	mi := &file_rpc_server_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3824,7 +3939,7 @@ func (x *InitiateJoinResponse) String() string {
 func (*InitiateJoinResponse) ProtoMessage() {}
 
 func (x *InitiateJoinResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_rpc_server_proto_msgTypes[63]
+	mi := &file_rpc_server_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3837,7 +3952,7 @@ func (x *InitiateJoinResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InitiateJoinResponse.ProtoReflect.Descriptor instead.
 func (*InitiateJoinResponse) Descriptor() ([]byte, []int) {
-	return file_rpc_server_proto_rawDescGZIP(), []int{63}
+	return file_rpc_server_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *InitiateJoinResponse) GetSuccess() bool {
@@ -3939,7 +4054,14 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"D\n" +
 	"\x0eRemoveResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"$\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"3\n" +
+	"\x18CoordinateRemovalRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x97\x01\n" +
+	"\x19CoordinateRemovalResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12#\n" +
+	"\rupdated_nodes\x18\x03 \x01(\x05R\fupdatedNodes\x12!\n" +
+	"\ffailed_nodes\x18\x04 \x03(\tR\vfailedNodes\"$\n" +
 	"\x0eSetModeRequest\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\"E\n" +
 	"\x0fSetModeResponse\x12\x18\n" +
@@ -4147,7 +4269,7 @@ const file_rpc_server_proto_rawDesc = "" +
 	"ListGroups\x12\x16.rpc.ListGroupsRequest\x1a\x17.rpc.ListGroupsResponse\"\x00\x12E\n" +
 	"\fInitiateJoin\x12\x18.rpc.InitiateJoinRequest\x1a\x19.rpc.InitiateJoinResponse\"\x00\x12T\n" +
 	"\x11GetVotingSessions\x12\x1d.rpc.GetVotingSessionsRequest\x1a\x1e.rpc.GetVotingSessionsResponse\"\x00\x12f\n" +
-	"\x17GetVotingSessionDetails\x12#.rpc.GetVotingSessionDetailsRequest\x1a$.rpc.GetVotingSessionDetailsResponse\"\x002\x87\x05\n" +
+	"\x17GetVotingSessionDetails\x12#.rpc.GetVotingSessionDetailsRequest\x1a$.rpc.GetVotingSessionDetailsResponse\"\x002\xdd\x05\n" +
 	"\x06Server\x12?\n" +
 	"\n" +
 	"ConfigSync\x12\x16.rpc.ConfigSyncRequest\x1a\x17.rpc.ConfigSyncResponse\"\x00\x12B\n" +
@@ -4156,7 +4278,8 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\vBringDownIP\x12\x12.rpc.DownIpRequest\x1a\x13.rpc.DownIpResponse\"\x00\x12B\n" +
 	"\vHealthCheck\x12\x17.rpc.HealthCheckRequest\x1a\x18.rpc.HealthCheckResponse\"\x00\x12-\n" +
 	"\x04Logs\x12\x10.rpc.LogsRequest\x1a\x11.rpc.LogsResponse\"\x00\x123\n" +
-	"\x06Remove\x12\x12.rpc.RemoveRequest\x1a\x13.rpc.RemoveResponse\"\x00\x12W\n" +
+	"\x06Remove\x12\x12.rpc.RemoveRequest\x1a\x13.rpc.RemoveResponse\"\x00\x12T\n" +
+	"\x11CoordinateRemoval\x12\x1d.rpc.CoordinateRemovalRequest\x1a\x1e.rpc.CoordinateRemovalResponse\"\x00\x12W\n" +
 	"\x12StartVotingSession\x12\x1e.rpc.StartVotingSessionRequest\x1a\x1f.rpc.StartVotingSessionResponse\"\x00\x129\n" +
 	"\bCastVote\x12\x14.rpc.CastVoteRequest\x1a\x15.rpc.CastVoteResponse\"\x00\x12N\n" +
 	"\x0fGetVotingResult\x12\x1b.rpc.GetVotingResultRequest\x1a\x1c.rpc.GetVotingResultResponse\"\x00B Z\x1egithub.com/syleron/pulseha/rpcb\x06proto3"
@@ -4174,7 +4297,7 @@ func file_rpc_server_proto_rawDescGZIP() []byte {
 }
 
 var file_rpc_server_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_rpc_server_proto_msgTypes = make([]protoimpl.MessageInfo, 65)
+var file_rpc_server_proto_msgTypes = make([]protoimpl.MessageInfo, 67)
 var file_rpc_server_proto_goTypes = []any{
 	(LogLevel)(0),                           // 0: rpc.LogLevel
 	(MemberStatusEnum)(0),                   // 1: rpc.MemberStatusEnum
@@ -4203,86 +4326,88 @@ var file_rpc_server_proto_goTypes = []any{
 	(*LogsResponse)(nil),                    // 24: rpc.LogsResponse
 	(*RemoveRequest)(nil),                   // 25: rpc.RemoveRequest
 	(*RemoveResponse)(nil),                  // 26: rpc.RemoveResponse
-	(*SetModeRequest)(nil),                  // 27: rpc.SetModeRequest
-	(*SetModeResponse)(nil),                 // 28: rpc.SetModeResponse
-	(*UpdateConfigRequest)(nil),             // 29: rpc.UpdateConfigRequest
-	(*UpdateConfigResponse)(nil),            // 30: rpc.UpdateConfigResponse
-	(*ResyncNetworkRequest)(nil),            // 31: rpc.ResyncNetworkRequest
-	(*ResyncNetworkResponse)(nil),           // 32: rpc.ResyncNetworkResponse
-	(*CreateGroupRequest)(nil),              // 33: rpc.CreateGroupRequest
-	(*CreateGroupResponse)(nil),             // 34: rpc.CreateGroupResponse
-	(*AddIPToGroupRequest)(nil),             // 35: rpc.AddIPToGroupRequest
-	(*AddIPToGroupResponse)(nil),            // 36: rpc.AddIPToGroupResponse
-	(*RemoveIPFromGroupRequest)(nil),        // 37: rpc.RemoveIPFromGroupRequest
-	(*RemoveIPFromGroupResponse)(nil),       // 38: rpc.RemoveIPFromGroupResponse
-	(*AssignGroupRequest)(nil),              // 39: rpc.AssignGroupRequest
-	(*AssignGroupResponse)(nil),             // 40: rpc.AssignGroupResponse
-	(*ListGroupsRequest)(nil),               // 41: rpc.ListGroupsRequest
-	(*GroupInfo)(nil),                       // 42: rpc.GroupInfo
-	(*GroupAssignment)(nil),                 // 43: rpc.GroupAssignment
-	(*ListGroupsResponse)(nil),              // 44: rpc.ListGroupsResponse
-	(*UnassignGroupRequest)(nil),            // 45: rpc.UnassignGroupRequest
-	(*UnassignGroupResponse)(nil),           // 46: rpc.UnassignGroupResponse
-	(*DeleteGroupRequest)(nil),              // 47: rpc.DeleteGroupRequest
-	(*DeleteGroupResponse)(nil),             // 48: rpc.DeleteGroupResponse
-	(*CreateClusterRequest)(nil),            // 49: rpc.CreateClusterRequest
-	(*CreateClusterResponse)(nil),           // 50: rpc.CreateClusterResponse
-	(*StartVotingSessionRequest)(nil),       // 51: rpc.StartVotingSessionRequest
-	(*StartVotingSessionResponse)(nil),      // 52: rpc.StartVotingSessionResponse
-	(*CastVoteRequest)(nil),                 // 53: rpc.CastVoteRequest
-	(*CastVoteResponse)(nil),                // 54: rpc.CastVoteResponse
-	(*GetVotingResultRequest)(nil),          // 55: rpc.GetVotingResultRequest
-	(*VotingSessionResult)(nil),             // 56: rpc.VotingSessionResult
-	(*GetVotingResultResponse)(nil),         // 57: rpc.GetVotingResultResponse
-	(*GetVotingSessionsRequest)(nil),        // 58: rpc.GetVotingSessionsRequest
-	(*VotingSessionInfo)(nil),               // 59: rpc.VotingSessionInfo
-	(*GetVotingSessionsResponse)(nil),       // 60: rpc.GetVotingSessionsResponse
-	(*GetVotingSessionDetailsRequest)(nil),  // 61: rpc.GetVotingSessionDetailsRequest
-	(*Vote)(nil),                            // 62: rpc.Vote
-	(*GetVotingSessionDetailsResponse)(nil), // 63: rpc.GetVotingSessionDetailsResponse
-	(*TokenRequest)(nil),                    // 64: rpc.TokenRequest
-	(*TokenResponse)(nil),                   // 65: rpc.TokenResponse
-	(*InitiateJoinRequest)(nil),             // 66: rpc.InitiateJoinRequest
-	(*InitiateJoinResponse)(nil),            // 67: rpc.InitiateJoinResponse
-	nil,                                     // 68: rpc.Member.GroupAssignmentsEntry
+	(*CoordinateRemovalRequest)(nil),        // 27: rpc.CoordinateRemovalRequest
+	(*CoordinateRemovalResponse)(nil),       // 28: rpc.CoordinateRemovalResponse
+	(*SetModeRequest)(nil),                  // 29: rpc.SetModeRequest
+	(*SetModeResponse)(nil),                 // 30: rpc.SetModeResponse
+	(*UpdateConfigRequest)(nil),             // 31: rpc.UpdateConfigRequest
+	(*UpdateConfigResponse)(nil),            // 32: rpc.UpdateConfigResponse
+	(*ResyncNetworkRequest)(nil),            // 33: rpc.ResyncNetworkRequest
+	(*ResyncNetworkResponse)(nil),           // 34: rpc.ResyncNetworkResponse
+	(*CreateGroupRequest)(nil),              // 35: rpc.CreateGroupRequest
+	(*CreateGroupResponse)(nil),             // 36: rpc.CreateGroupResponse
+	(*AddIPToGroupRequest)(nil),             // 37: rpc.AddIPToGroupRequest
+	(*AddIPToGroupResponse)(nil),            // 38: rpc.AddIPToGroupResponse
+	(*RemoveIPFromGroupRequest)(nil),        // 39: rpc.RemoveIPFromGroupRequest
+	(*RemoveIPFromGroupResponse)(nil),       // 40: rpc.RemoveIPFromGroupResponse
+	(*AssignGroupRequest)(nil),              // 41: rpc.AssignGroupRequest
+	(*AssignGroupResponse)(nil),             // 42: rpc.AssignGroupResponse
+	(*ListGroupsRequest)(nil),               // 43: rpc.ListGroupsRequest
+	(*GroupInfo)(nil),                       // 44: rpc.GroupInfo
+	(*GroupAssignment)(nil),                 // 45: rpc.GroupAssignment
+	(*ListGroupsResponse)(nil),              // 46: rpc.ListGroupsResponse
+	(*UnassignGroupRequest)(nil),            // 47: rpc.UnassignGroupRequest
+	(*UnassignGroupResponse)(nil),           // 48: rpc.UnassignGroupResponse
+	(*DeleteGroupRequest)(nil),              // 49: rpc.DeleteGroupRequest
+	(*DeleteGroupResponse)(nil),             // 50: rpc.DeleteGroupResponse
+	(*CreateClusterRequest)(nil),            // 51: rpc.CreateClusterRequest
+	(*CreateClusterResponse)(nil),           // 52: rpc.CreateClusterResponse
+	(*StartVotingSessionRequest)(nil),       // 53: rpc.StartVotingSessionRequest
+	(*StartVotingSessionResponse)(nil),      // 54: rpc.StartVotingSessionResponse
+	(*CastVoteRequest)(nil),                 // 55: rpc.CastVoteRequest
+	(*CastVoteResponse)(nil),                // 56: rpc.CastVoteResponse
+	(*GetVotingResultRequest)(nil),          // 57: rpc.GetVotingResultRequest
+	(*VotingSessionResult)(nil),             // 58: rpc.VotingSessionResult
+	(*GetVotingResultResponse)(nil),         // 59: rpc.GetVotingResultResponse
+	(*GetVotingSessionsRequest)(nil),        // 60: rpc.GetVotingSessionsRequest
+	(*VotingSessionInfo)(nil),               // 61: rpc.VotingSessionInfo
+	(*GetVotingSessionsResponse)(nil),       // 62: rpc.GetVotingSessionsResponse
+	(*GetVotingSessionDetailsRequest)(nil),  // 63: rpc.GetVotingSessionDetailsRequest
+	(*Vote)(nil),                            // 64: rpc.Vote
+	(*GetVotingSessionDetailsResponse)(nil), // 65: rpc.GetVotingSessionDetailsResponse
+	(*TokenRequest)(nil),                    // 66: rpc.TokenRequest
+	(*TokenResponse)(nil),                   // 67: rpc.TokenResponse
+	(*InitiateJoinRequest)(nil),             // 68: rpc.InitiateJoinRequest
+	(*InitiateJoinResponse)(nil),            // 69: rpc.InitiateJoinResponse
+	nil,                                     // 70: rpc.Member.GroupAssignmentsEntry
 }
 var file_rpc_server_proto_depIdxs = []int32{
 	10, // 0: rpc.StatusResponse.members:type_name -> rpc.Member
-	42, // 1: rpc.StatusResponse.groups:type_name -> rpc.GroupInfo
+	44, // 1: rpc.StatusResponse.groups:type_name -> rpc.GroupInfo
 	1,  // 2: rpc.Member.status:type_name -> rpc.MemberStatusEnum
-	68, // 3: rpc.Member.group_assignments:type_name -> rpc.Member.GroupAssignmentsEntry
+	70, // 3: rpc.Member.group_assignments:type_name -> rpc.Member.GroupAssignmentsEntry
 	0,  // 4: rpc.LogsRequest.level:type_name -> rpc.LogLevel
-	43, // 5: rpc.GroupInfo.assignments:type_name -> rpc.GroupAssignment
-	42, // 6: rpc.ListGroupsResponse.groups:type_name -> rpc.GroupInfo
+	45, // 5: rpc.GroupInfo.assignments:type_name -> rpc.GroupAssignment
+	44, // 6: rpc.ListGroupsResponse.groups:type_name -> rpc.GroupInfo
 	2,  // 7: rpc.StartVotingSessionRequest.type:type_name -> rpc.VoteType
 	3,  // 8: rpc.CastVoteRequest.decision:type_name -> rpc.VoteDecision
-	56, // 9: rpc.GetVotingResultResponse.result:type_name -> rpc.VotingSessionResult
+	58, // 9: rpc.GetVotingResultResponse.result:type_name -> rpc.VotingSessionResult
 	2,  // 10: rpc.VotingSessionInfo.type:type_name -> rpc.VoteType
-	56, // 11: rpc.VotingSessionInfo.result:type_name -> rpc.VotingSessionResult
-	59, // 12: rpc.GetVotingSessionsResponse.sessions:type_name -> rpc.VotingSessionInfo
+	58, // 11: rpc.VotingSessionInfo.result:type_name -> rpc.VotingSessionResult
+	61, // 12: rpc.GetVotingSessionsResponse.sessions:type_name -> rpc.VotingSessionInfo
 	3,  // 13: rpc.Vote.decision:type_name -> rpc.VoteDecision
-	59, // 14: rpc.GetVotingSessionDetailsResponse.session:type_name -> rpc.VotingSessionInfo
-	62, // 15: rpc.GetVotingSessionDetailsResponse.votes:type_name -> rpc.Vote
-	43, // 16: rpc.Member.GroupAssignmentsEntry.value:type_name -> rpc.GroupAssignment
+	61, // 14: rpc.GetVotingSessionDetailsResponse.session:type_name -> rpc.VotingSessionInfo
+	64, // 15: rpc.GetVotingSessionDetailsResponse.votes:type_name -> rpc.Vote
+	45, // 16: rpc.Member.GroupAssignmentsEntry.value:type_name -> rpc.GroupAssignment
 	4,  // 17: rpc.CLI.Join:input_type -> rpc.JoinRequest
 	6,  // 18: rpc.CLI.Leave:input_type -> rpc.LeaveRequest
 	8,  // 19: rpc.CLI.Status:input_type -> rpc.StatusRequest
 	11, // 20: rpc.CLI.Promote:input_type -> rpc.PromoteRequest
-	27, // 21: rpc.CLI.SetMode:input_type -> rpc.SetModeRequest
-	29, // 22: rpc.CLI.UpdateConfig:input_type -> rpc.UpdateConfigRequest
-	31, // 23: rpc.CLI.ResyncNetwork:input_type -> rpc.ResyncNetworkRequest
-	49, // 24: rpc.CLI.CreateCluster:input_type -> rpc.CreateClusterRequest
-	64, // 25: rpc.CLI.Token:input_type -> rpc.TokenRequest
-	33, // 26: rpc.CLI.CreateGroup:input_type -> rpc.CreateGroupRequest
-	35, // 27: rpc.CLI.AddIPToGroup:input_type -> rpc.AddIPToGroupRequest
-	37, // 28: rpc.CLI.RemoveIPFromGroup:input_type -> rpc.RemoveIPFromGroupRequest
-	39, // 29: rpc.CLI.AssignGroupToNode:input_type -> rpc.AssignGroupRequest
-	45, // 30: rpc.CLI.UnassignGroupFromNode:input_type -> rpc.UnassignGroupRequest
-	47, // 31: rpc.CLI.DeleteGroup:input_type -> rpc.DeleteGroupRequest
-	41, // 32: rpc.CLI.ListGroups:input_type -> rpc.ListGroupsRequest
-	66, // 33: rpc.CLI.InitiateJoin:input_type -> rpc.InitiateJoinRequest
-	58, // 34: rpc.CLI.GetVotingSessions:input_type -> rpc.GetVotingSessionsRequest
-	61, // 35: rpc.CLI.GetVotingSessionDetails:input_type -> rpc.GetVotingSessionDetailsRequest
+	29, // 21: rpc.CLI.SetMode:input_type -> rpc.SetModeRequest
+	31, // 22: rpc.CLI.UpdateConfig:input_type -> rpc.UpdateConfigRequest
+	33, // 23: rpc.CLI.ResyncNetwork:input_type -> rpc.ResyncNetworkRequest
+	51, // 24: rpc.CLI.CreateCluster:input_type -> rpc.CreateClusterRequest
+	66, // 25: rpc.CLI.Token:input_type -> rpc.TokenRequest
+	35, // 26: rpc.CLI.CreateGroup:input_type -> rpc.CreateGroupRequest
+	37, // 27: rpc.CLI.AddIPToGroup:input_type -> rpc.AddIPToGroupRequest
+	39, // 28: rpc.CLI.RemoveIPFromGroup:input_type -> rpc.RemoveIPFromGroupRequest
+	41, // 29: rpc.CLI.AssignGroupToNode:input_type -> rpc.AssignGroupRequest
+	47, // 30: rpc.CLI.UnassignGroupFromNode:input_type -> rpc.UnassignGroupRequest
+	49, // 31: rpc.CLI.DeleteGroup:input_type -> rpc.DeleteGroupRequest
+	43, // 32: rpc.CLI.ListGroups:input_type -> rpc.ListGroupsRequest
+	68, // 33: rpc.CLI.InitiateJoin:input_type -> rpc.InitiateJoinRequest
+	60, // 34: rpc.CLI.GetVotingSessions:input_type -> rpc.GetVotingSessionsRequest
+	63, // 35: rpc.CLI.GetVotingSessionDetails:input_type -> rpc.GetVotingSessionDetailsRequest
 	13, // 36: rpc.Server.ConfigSync:input_type -> rpc.ConfigSyncRequest
 	15, // 37: rpc.Server.MakePassive:input_type -> rpc.MakePassiveRequest
 	17, // 38: rpc.Server.BringUpIP:input_type -> rpc.UpIpRequest
@@ -4290,40 +4415,42 @@ var file_rpc_server_proto_depIdxs = []int32{
 	21, // 40: rpc.Server.HealthCheck:input_type -> rpc.HealthCheckRequest
 	23, // 41: rpc.Server.Logs:input_type -> rpc.LogsRequest
 	25, // 42: rpc.Server.Remove:input_type -> rpc.RemoveRequest
-	51, // 43: rpc.Server.StartVotingSession:input_type -> rpc.StartVotingSessionRequest
-	53, // 44: rpc.Server.CastVote:input_type -> rpc.CastVoteRequest
-	55, // 45: rpc.Server.GetVotingResult:input_type -> rpc.GetVotingResultRequest
-	5,  // 46: rpc.CLI.Join:output_type -> rpc.JoinResponse
-	7,  // 47: rpc.CLI.Leave:output_type -> rpc.LeaveResponse
-	9,  // 48: rpc.CLI.Status:output_type -> rpc.StatusResponse
-	12, // 49: rpc.CLI.Promote:output_type -> rpc.PromoteResponse
-	28, // 50: rpc.CLI.SetMode:output_type -> rpc.SetModeResponse
-	30, // 51: rpc.CLI.UpdateConfig:output_type -> rpc.UpdateConfigResponse
-	32, // 52: rpc.CLI.ResyncNetwork:output_type -> rpc.ResyncNetworkResponse
-	50, // 53: rpc.CLI.CreateCluster:output_type -> rpc.CreateClusterResponse
-	65, // 54: rpc.CLI.Token:output_type -> rpc.TokenResponse
-	34, // 55: rpc.CLI.CreateGroup:output_type -> rpc.CreateGroupResponse
-	36, // 56: rpc.CLI.AddIPToGroup:output_type -> rpc.AddIPToGroupResponse
-	38, // 57: rpc.CLI.RemoveIPFromGroup:output_type -> rpc.RemoveIPFromGroupResponse
-	40, // 58: rpc.CLI.AssignGroupToNode:output_type -> rpc.AssignGroupResponse
-	46, // 59: rpc.CLI.UnassignGroupFromNode:output_type -> rpc.UnassignGroupResponse
-	48, // 60: rpc.CLI.DeleteGroup:output_type -> rpc.DeleteGroupResponse
-	44, // 61: rpc.CLI.ListGroups:output_type -> rpc.ListGroupsResponse
-	67, // 62: rpc.CLI.InitiateJoin:output_type -> rpc.InitiateJoinResponse
-	60, // 63: rpc.CLI.GetVotingSessions:output_type -> rpc.GetVotingSessionsResponse
-	63, // 64: rpc.CLI.GetVotingSessionDetails:output_type -> rpc.GetVotingSessionDetailsResponse
-	14, // 65: rpc.Server.ConfigSync:output_type -> rpc.ConfigSyncResponse
-	16, // 66: rpc.Server.MakePassive:output_type -> rpc.MakePassiveResponse
-	18, // 67: rpc.Server.BringUpIP:output_type -> rpc.UpIpResponse
-	20, // 68: rpc.Server.BringDownIP:output_type -> rpc.DownIpResponse
-	22, // 69: rpc.Server.HealthCheck:output_type -> rpc.HealthCheckResponse
-	24, // 70: rpc.Server.Logs:output_type -> rpc.LogsResponse
-	26, // 71: rpc.Server.Remove:output_type -> rpc.RemoveResponse
-	52, // 72: rpc.Server.StartVotingSession:output_type -> rpc.StartVotingSessionResponse
-	54, // 73: rpc.Server.CastVote:output_type -> rpc.CastVoteResponse
-	57, // 74: rpc.Server.GetVotingResult:output_type -> rpc.GetVotingResultResponse
-	46, // [46:75] is the sub-list for method output_type
-	17, // [17:46] is the sub-list for method input_type
+	27, // 43: rpc.Server.CoordinateRemoval:input_type -> rpc.CoordinateRemovalRequest
+	53, // 44: rpc.Server.StartVotingSession:input_type -> rpc.StartVotingSessionRequest
+	55, // 45: rpc.Server.CastVote:input_type -> rpc.CastVoteRequest
+	57, // 46: rpc.Server.GetVotingResult:input_type -> rpc.GetVotingResultRequest
+	5,  // 47: rpc.CLI.Join:output_type -> rpc.JoinResponse
+	7,  // 48: rpc.CLI.Leave:output_type -> rpc.LeaveResponse
+	9,  // 49: rpc.CLI.Status:output_type -> rpc.StatusResponse
+	12, // 50: rpc.CLI.Promote:output_type -> rpc.PromoteResponse
+	30, // 51: rpc.CLI.SetMode:output_type -> rpc.SetModeResponse
+	32, // 52: rpc.CLI.UpdateConfig:output_type -> rpc.UpdateConfigResponse
+	34, // 53: rpc.CLI.ResyncNetwork:output_type -> rpc.ResyncNetworkResponse
+	52, // 54: rpc.CLI.CreateCluster:output_type -> rpc.CreateClusterResponse
+	67, // 55: rpc.CLI.Token:output_type -> rpc.TokenResponse
+	36, // 56: rpc.CLI.CreateGroup:output_type -> rpc.CreateGroupResponse
+	38, // 57: rpc.CLI.AddIPToGroup:output_type -> rpc.AddIPToGroupResponse
+	40, // 58: rpc.CLI.RemoveIPFromGroup:output_type -> rpc.RemoveIPFromGroupResponse
+	42, // 59: rpc.CLI.AssignGroupToNode:output_type -> rpc.AssignGroupResponse
+	48, // 60: rpc.CLI.UnassignGroupFromNode:output_type -> rpc.UnassignGroupResponse
+	50, // 61: rpc.CLI.DeleteGroup:output_type -> rpc.DeleteGroupResponse
+	46, // 62: rpc.CLI.ListGroups:output_type -> rpc.ListGroupsResponse
+	69, // 63: rpc.CLI.InitiateJoin:output_type -> rpc.InitiateJoinResponse
+	62, // 64: rpc.CLI.GetVotingSessions:output_type -> rpc.GetVotingSessionsResponse
+	65, // 65: rpc.CLI.GetVotingSessionDetails:output_type -> rpc.GetVotingSessionDetailsResponse
+	14, // 66: rpc.Server.ConfigSync:output_type -> rpc.ConfigSyncResponse
+	16, // 67: rpc.Server.MakePassive:output_type -> rpc.MakePassiveResponse
+	18, // 68: rpc.Server.BringUpIP:output_type -> rpc.UpIpResponse
+	20, // 69: rpc.Server.BringDownIP:output_type -> rpc.DownIpResponse
+	22, // 70: rpc.Server.HealthCheck:output_type -> rpc.HealthCheckResponse
+	24, // 71: rpc.Server.Logs:output_type -> rpc.LogsResponse
+	26, // 72: rpc.Server.Remove:output_type -> rpc.RemoveResponse
+	28, // 73: rpc.Server.CoordinateRemoval:output_type -> rpc.CoordinateRemovalResponse
+	54, // 74: rpc.Server.StartVotingSession:output_type -> rpc.StartVotingSessionResponse
+	56, // 75: rpc.Server.CastVote:output_type -> rpc.CastVoteResponse
+	59, // 76: rpc.Server.GetVotingResult:output_type -> rpc.GetVotingResultResponse
+	47, // [47:77] is the sub-list for method output_type
+	17, // [17:47] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
 	17, // [17:17] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -4340,7 +4467,7 @@ func file_rpc_server_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_rpc_server_proto_rawDesc), len(file_rpc_server_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   65,
+			NumMessages:   67,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
