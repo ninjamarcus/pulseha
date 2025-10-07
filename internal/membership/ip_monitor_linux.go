@@ -36,10 +36,17 @@ func (m *IPMonitor) monitorLoop() {
 			}
 			iface := link.Attrs().Name
 
-			// Snapshot expected IPs for this interface
+			// Snapshot expected IPs for this interface and build monitored interfaces list
 			m.RLock()
 			expected := make([]string, len(m.expectedIPs[iface]))
 			copy(expected, m.expectedIPs[iface])
+			// Build list of interfaces that PulseHA manages (have groups assigned)
+			monitoredInterfaces := make(map[string]bool)
+			for ifn, ips := range m.expectedIPs {
+				if len(ips) > 0 {
+					monitoredInterfaces[ifn] = true
+				}
+			}
 			// Also capture expected set across all interfaces to resolve correct iface
 			allExpected := make(map[string]string) // ip(without mask)->iface
 			for ifn, ips := range m.expectedIPs {
@@ -52,6 +59,11 @@ func (m *IPMonitor) monitorLoop() {
 				}
 			}
 			m.RUnlock()
+
+			// Skip interfaces that PulseHA is not configured to manage
+			if !monitoredInterfaces[iface] {
+				continue
+			}
 
 			changedIP := upd.LinkAddress.IP.String()
 			// Construct netlink.Addr from update
