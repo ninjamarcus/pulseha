@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/syleron/pulseha/internal/client"
@@ -78,13 +79,40 @@ func newNodeDemoteCmd() *cobra.Command {
 }
 
 func newNodeRemoveCmd() *cobra.Command {
+	var nodeID string
+
 	cmd := &cobra.Command{
 		Use:   "remove",
 		Short: "Remove a node from the cluster",
+		Long:  `Remove a node from the cluster with coordinated quorum-based removal across all members`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement node removal
-			return fmt.Errorf("node removal not implemented yet")
+			if nodeID == "" {
+				return fmt.Errorf("--node-id is required")
+			}
+
+			c, err := client.New()
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			resp, err := c.CLI().Leave(ctx, &rpc.LeaveRequest{NodeId: nodeID})
+			if err != nil {
+				return err
+			}
+			if !resp.Success {
+				return fmt.Errorf(resp.Message)
+			}
+			fmt.Println(resp.Message)
+			return nil
 		},
 	}
+
+	cmd.Flags().StringVar(&nodeID, "node-id", "", "Node ID (UUID) of the node to remove (required)")
+	cmd.MarkFlagRequired("node-id")
+
 	return cmd
 }

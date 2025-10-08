@@ -1138,41 +1138,48 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 		// This ensures all nodes are updated before we leave
 		var coordinated bool
 		var lastErr error
-		for _, peer := range peers {
-			s.logger.Info("Requesting cluster-coordinated removal", "coordinator", peer.id)
-			remoteClient, err := client.New()
-			if err != nil {
-				s.logger.Warn("Failed to create client for coordinator", "peer", peer.id, "error", err)
-				lastErr = err
-				continue
-			}
-			if err := remoteClient.Connect(peer.ip, peer.port, false); err != nil {
-				s.logger.Warn("Failed to connect to coordinator", "peer", peer.id, "error", err)
-				remoteClient.Close()
-				lastErr = err
-				continue
-			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			resp, err := remoteClient.Server().CoordinateRemoval(ctx, &rpc.CoordinateRemovalRequest{NodeId: localNodeID})
-			cancel()
-			remoteClient.Close()
-
-			if err != nil {
-				s.logger.Warn("Failed to coordinate removal with peer", "peer", peer.id, "error", err)
-				lastErr = err
-				continue
-			}
-
-			if !resp.Success {
-				s.logger.Warn("Peer rejected removal coordination", "peer", peer.id, "message", resp.Message)
-				lastErr = fmt.Errorf("removal rejected: %s", resp.Message)
-				continue
-			}
-
-			s.logger.Info("Cluster-coordinated removal successful", "coordinator", peer.id, "updated_nodes", resp.UpdatedNodes)
+		// If we're the last node in the cluster, no coordination is needed
+		if len(peers) == 0 {
+			s.logger.Info("Last node in cluster - no coordination needed")
 			coordinated = true
-			break
+		} else {
+			for _, peer := range peers {
+				s.logger.Info("Requesting cluster-coordinated removal", "coordinator", peer.id)
+				remoteClient, err := client.New()
+				if err != nil {
+					s.logger.Warn("Failed to create client for coordinator", "peer", peer.id, "error", err)
+					lastErr = err
+					continue
+				}
+				if err := remoteClient.Connect(peer.ip, peer.port, false); err != nil {
+					s.logger.Warn("Failed to connect to coordinator", "peer", peer.id, "error", err)
+					remoteClient.Close()
+					lastErr = err
+					continue
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				resp, err := remoteClient.Server().CoordinateRemoval(ctx, &rpc.CoordinateRemovalRequest{NodeId: localNodeID})
+				cancel()
+				remoteClient.Close()
+
+				if err != nil {
+					s.logger.Warn("Failed to coordinate removal with peer", "peer", peer.id, "error", err)
+					lastErr = err
+					continue
+				}
+
+				if !resp.Success {
+					s.logger.Warn("Peer rejected removal coordination", "peer", peer.id, "message", resp.Message)
+					lastErr = fmt.Errorf("removal rejected: %s", resp.Message)
+					continue
+				}
+
+				s.logger.Info("Cluster-coordinated removal successful", "coordinator", peer.id, "updated_nodes", resp.UpdatedNodes)
+				coordinated = true
+				break
+			}
 		}
 
 		// If coordination failed with all peers, fail the leave operation
@@ -1230,28 +1237,38 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 		}, nil
 	}
 
-	// Remove the node from our member list
-	if err := s.memberList.RemoveMember(member.ID); err != nil {
-		s.logger.Error("Failed to remove member", "error", err)
+	// Remote node removal - use CoordinateRemoval for cluster-wide consistency
+	s.logger.Info("Removing remote node via coordinated removal", "node_id", member.ID, "hostname", member.Hostname)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Call CoordinateRemoval locally (this node becomes the coordinator)
+	resp, err := s.CoordinateRemoval(ctx, &rpc.CoordinateRemovalRequest{NodeId: member.ID})
+	if err != nil {
 		return &rpc.LeaveResponse{
 			Success: false,
-			Message: "Failed to remove member: " + err.Error(),
+			Message: fmt.Sprintf("Failed to coordinate removal: %v", err),
 		}, nil
 	}
 
-	// Update our config to remove the node
-	delete(s.config.Nodes, member.ID)
+	if !resp.Success {
+		return &rpc.LeaveResponse{
+			Success: false,
+			Message: resp.Message,
+		}, nil
+	}
 
-	// Success
 	return &rpc.LeaveResponse{
 		Success: true,
-		Message: fmt.Sprintf("Successfully removed node %s from the cluster", member.ID),
+		Message: resp.Message,
 	}, nil
 }
 
 // Promote handles the CLI Promote RPC call
 func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error) {
-	s.logger.Infof("Received promote request for node ID: %s", req.NodeId)
+	localNodeID, _ := s.config.GetLocalNodeUUID()
+	s.logger.Info("PROMOTE: Received promote request", "target_node", req.NodeId, "local_node", localNodeID)
 
 	if !s.config.ClusterCheck() {
 		return &rpc.PromoteResponse{Success: false, Message: "no cluster configured"}, nil
@@ -1270,9 +1287,13 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		for id, m := range s.memberList.Members {
 			if m.Status == membership.StatusActive {
 				prevActiveID = id
+				s.logger.Info("PROMOTE: Found current active node", "active_node", id, "hostname", m.Hostname)
 				break
 			}
 		}
+	}
+	if prevActiveID == "" {
+		s.logger.Info("PROMOTE: No active node found in cluster")
 	}
 
 	// Get the member
@@ -1297,12 +1318,15 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 
 	// If the target node is local but we're NOT the previous active, this indicates
 	// a remote promotion where another node initiated the promotion of this local node
-	localNodeID, _ := s.config.GetLocalNodeUUID()
 	isTargetNodePromotion := member.IsLocal() && prevActiveID != localNodeID
 
+	s.logger.Info("PROMOTE: Demotion decision", "shouldDemote", shouldDemote, "isTargetNodePromotion", isTargetNodePromotion,
+		"target_is_local", member.IsLocal(), "prev_active", prevActiveID, "target", req.NodeId)
+
 	if shouldDemote && !isTargetNodePromotion {
-		s.logger.Info("Demoting current active before promotion", "previous_active", prevActiveID, "new_active", req.NodeId)
+		s.logger.Info("PROMOTE: Demoting current active before promotion", "previous_active", prevActiveID, "new_active", req.NodeId)
 		if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: prevActiveID}); err != nil {
+			s.logger.Error("PROMOTE: Failed to demote previous active", "previous_active", prevActiveID, "error", err)
 			// Restore view and abort
 			for id, st := range originalStates {
 				if mm := s.memberList.GetMemberByID(id); mm != nil {
@@ -1312,13 +1336,16 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Failed to demote previous active: " + err.Error()}, nil
 		}
+		s.logger.Info("PROMOTE: Successfully demoted previous active", "previous_active", prevActiveID)
 	} else if shouldDemote && isTargetNodePromotion {
-		s.logger.Info("Skipping demotion in remote-initiated promotion (initiator already handled demotion)", "previous_active", prevActiveID, "new_active", req.NodeId)
+		s.logger.Info("PROMOTE: Skipping demotion (remote-initiated promotion, initiator handled demotion)", "previous_active", prevActiveID, "new_active", req.NodeId)
 	}
 
 	// Promote target
 	if member.IsLocal() {
+		s.logger.Info("PROMOTE: Promoting local node to Active", "node_id", req.NodeId)
 		if err := member.MakeActive(req.Ips); err != nil {
+			s.logger.Error("PROMOTE: Failed to promote local node", "node_id", req.NodeId, "error", err)
 			// Attempt rollback: re-promote previous active if known
 			if prevActiveID != "" && prevActiveID != req.NodeId {
 				_, _ = s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: req.NodeId})
@@ -1334,7 +1361,9 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
 			return &rpc.PromoteResponse{Success: false, Message: "Failed to promote member: " + err.Error()}, nil
 		}
+		s.logger.Info("PROMOTE: Successfully promoted local node to Active", "node_id", req.NodeId)
 	} else {
+		s.logger.Info("PROMOTE: Target is remote, forwarding promote request", "node_id", req.NodeId)
 		node := s.config.Nodes[req.NodeId]
 		if node == nil {
 			for id, st := range originalStates {
@@ -1396,11 +1425,27 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	}
 
 	// Broadcast convergence state so peers adopt the same active (active-passive) AFTER successful promotion
+	// Build the intended final state based on the promotion operation, not current memberList state
+	// This prevents race conditions where health checker may have updated states during the promotion
 	states := make(map[string]membership.MemberStatus)
 	for id, m := range s.memberList.Members {
-		states[id] = m.Status
+		if id == prevActiveID && s.config.Pulse.Mode == "active-passive" {
+			// In active-passive mode, the previous active node must be demoted to Passive
+			states[id] = membership.StatusPassive
+			s.logger.Info("PROMOTE: Setting demoted node to Passive in broadcast", "node_id", id)
+		} else if id == req.NodeId {
+			// The promoted node is Active
+			states[id] = membership.StatusActive
+			s.logger.Info("PROMOTE: Setting promoted node to Active in broadcast", "node_id", id)
+		} else {
+			// Preserve current status for all other nodes
+			states[id] = m.Status
+		}
 	}
-	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, req.NodeId, nil)
+	newEpoch := s.GetClusterEpoch() + 1
+	s.logger.Info("PROMOTE: Broadcasting cluster state after promotion", "new_active", req.NodeId, "epoch", newEpoch, "states", states)
+	_ = s.BroadcastClusterState(states, newEpoch, req.NodeId, nil)
+	s.logger.Info("PROMOTE: Broadcast complete")
 
 	// REMOVED: Redundant refresh call - health checker already handles VIP reconciliation after promotion
 	// The BroadcastClusterState above will trigger health checker updates that handle VIP assignments
@@ -1577,10 +1622,10 @@ func (s *Server) Remove(ctx context.Context, req *rpc.RemoveRequest) (*rpc.Remov
 	}, nil
 }
 
-// CoordinateRemoval handles a coordinated node removal request.
-// The coordinator broadcasts the removal to all other cluster members
-// and waits for confirmation before responding. This ensures deterministic
-// cluster-wide config consistency.
+// CoordinateRemoval handles a coordinated node removal request using quorum consensus.
+// The coordinator broadcasts the removal to all other cluster members and requires
+// a majority (quorum) to acknowledge the removal. This allows the cluster to make
+// progress even when some nodes are unavailable.
 func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemovalRequest) (*rpc.CoordinateRemovalResponse, error) {
 	s.logger.Info("Received coordinated removal request", "node_id", req.NodeId)
 
@@ -1591,7 +1636,7 @@ func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemov
 		}, nil
 	}
 
-	// First, remove from our own member list and config
+	// Validate the node exists
 	member := s.memberList.GetMemberByID(req.NodeId)
 	if member == nil {
 		return &rpc.CoordinateRemovalResponse{
@@ -1600,28 +1645,6 @@ func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemov
 		}, nil
 	}
 
-	// Remove locally
-	if err := s.memberList.RemoveMember(member.ID); err != nil {
-		s.logger.Error("Failed to remove member locally", "error", err)
-		return &rpc.CoordinateRemovalResponse{
-			Success: false,
-			Message: "Failed to remove member: " + err.Error(),
-		}, nil
-	}
-
-	delete(s.config.Nodes, member.ID)
-
-	if err := s.config.Save(); err != nil {
-		s.logger.Error("Failed to save config after local removal", "error", err)
-		return &rpc.CoordinateRemovalResponse{
-			Success: false,
-			Message: fmt.Sprintf("failed to save local config: %v", err),
-		}, nil
-	}
-
-	// Now broadcast the removal to all other peers
-	var updatedCount int32
-	var failedNodes []string
 	localNodeID, _ := s.config.GetLocalNodeUUID()
 
 	// Get all peers (excluding the node being removed and ourselves)
@@ -1631,6 +1654,7 @@ func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemov
 		ip   string
 		port string
 	}
+	totalClusterSize := len(s.config.Nodes)
 	for id, node := range s.config.Nodes {
 		if id == req.NodeId || id == localNodeID || node == nil {
 			continue
@@ -1643,7 +1667,20 @@ func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemov
 	}
 	s.RUnlock()
 
+	// Calculate quorum requirement: majority of the cluster AFTER the node is removed
+	// If we have 4 nodes and removing 1, quorum is majority of remaining 3 = 2
+	remainingNodes := totalClusterSize - 1 // Excluding the node being removed
+	requiredQuorum := (remainingNodes / 2) + 1
+
+	s.logger.Info("Quorum-based removal initiated",
+		"total_cluster_size", totalClusterSize,
+		"remaining_after_removal", remainingNodes,
+		"required_quorum", requiredQuorum)
+
 	// Broadcast removal to all peers
+	var updatedCount int32
+	var failedNodes []string
+
 	for _, peer := range peers {
 		s.logger.Info("Broadcasting removal to peer", "peer_id", peer.id)
 		remoteClient, err := client.New()
@@ -1681,14 +1718,52 @@ func (s *Server) CoordinateRemoval(ctx context.Context, req *rpc.CoordinateRemov
 		updatedCount++
 	}
 
-	// Count ourselves as updated
+	// Count ourselves (coordinator) as updated
 	updatedCount++
 
-	// Determine success: if any peer failed, report partial success
-	if len(failedNodes) > 0 {
+	// Check if we achieved quorum
+	if updatedCount < int32(requiredQuorum) {
+		s.logger.Warn("Failed to achieve quorum for removal",
+			"updated_count", updatedCount,
+			"required_quorum", requiredQuorum,
+			"failed_nodes", len(failedNodes))
+
 		return &rpc.CoordinateRemovalResponse{
 			Success:      false,
-			Message:      fmt.Sprintf("Removal partially completed: %d nodes updated, %d failed", updatedCount, len(failedNodes)),
+			Message:      fmt.Sprintf("Quorum not met: only %d of %d required nodes acknowledged removal", updatedCount, requiredQuorum),
+			UpdatedNodes: updatedCount,
+			FailedNodes:  failedNodes,
+		}, nil
+	}
+
+	// Quorum achieved - now commit the removal locally
+	if err := s.memberList.RemoveMember(member.ID); err != nil {
+		s.logger.Error("Failed to remove member locally after quorum", "error", err)
+		return &rpc.CoordinateRemovalResponse{
+			Success: false,
+			Message: "Failed to remove member: " + err.Error(),
+		}, nil
+	}
+
+	delete(s.config.Nodes, member.ID)
+
+	if err := s.config.Save(); err != nil {
+		s.logger.Error("Failed to save config after quorum removal", "error", err)
+		return &rpc.CoordinateRemovalResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to save local config: %v", err),
+		}, nil
+	}
+
+	// Log which nodes failed (for operator awareness)
+	if len(failedNodes) > 0 {
+		s.logger.Warn("Removal succeeded with quorum, but some nodes were unreachable",
+			"updated_count", updatedCount,
+			"failed_nodes", failedNodes)
+
+		return &rpc.CoordinateRemovalResponse{
+			Success:      true,
+			Message:      fmt.Sprintf("Node %s removed with quorum (%d/%d nodes), %d unreachable: %v", req.NodeId, updatedCount, remainingNodes, len(failedNodes), failedNodes),
 			UpdatedNodes: updatedCount,
 			FailedNodes:  failedNodes,
 		}, nil
@@ -3441,19 +3516,30 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 		applyStates := false
 		currentEpoch := s.clusterEpoch
 		currentLeader := s.leaderID
+		s.logger.Info("CONFIG_SYNC: Evaluating incoming member states", "incoming_epoch", incomingEpoch, "current_epoch", currentEpoch,
+			"incoming_leader", incomingLeaderID, "current_leader", currentLeader, "states", incomingMemberStates)
+
 		if incomingEpoch > currentEpoch {
 			applyStates = true
+			s.logger.Info("CONFIG_SYNC: Will apply states (incoming epoch is higher)")
 		} else if incomingEpoch == currentEpoch {
 			// Only accept if leader matches (or no leader set yet)
 			if currentLeader == "" || incomingLeaderID == currentLeader {
 				applyStates = true
+				s.logger.Info("CONFIG_SYNC: Will apply states (same epoch, matching leader)")
+			} else {
+				s.logger.Info("CONFIG_SYNC: Rejecting states (same epoch, different leader)")
 			}
+		} else {
+			s.logger.Info("CONFIG_SYNC: Rejecting states (incoming epoch is lower)")
 		}
+
 		if applyStates {
 			// Update epoch/leader if needed
 			if incomingEpoch >= currentEpoch {
 				s.clusterEpoch = incomingEpoch
 				s.leaderID = incomingLeaderID
+				s.logger.Info("CONFIG_SYNC: Updated cluster epoch and leader", "epoch", incomingEpoch, "leader", incomingLeaderID)
 			}
 
 			// Capture LOCAL node's status before applying incoming states
@@ -3467,9 +3553,14 @@ func (s *Server) ConfigSync(ctx context.Context, req *rpc.ConfigSyncRequest) (*r
 				}
 			}
 
+			s.logger.Info("CONFIG_SYNC: Applying member states to local member list", "count", len(incomingMemberStates))
 			for id, st := range incomingMemberStates {
 				if m := s.memberList.GetMemberByID(id); m != nil {
+					oldStatus := m.Status
 					m.Status = st
+					s.logger.Info("CONFIG_SYNC: Updated member status", "node_id", id, "old_status", membership.StatusToString(oldStatus), "new_status", membership.StatusToString(st))
+				} else {
+					s.logger.Warn("CONFIG_SYNC: Member not found in member list", "node_id", id)
 				}
 			}
 
