@@ -11,6 +11,7 @@ import (
 
 	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/internal/quorum"
+	"github.com/syleron/pulseha/packages/utils"
 )
 
 // Object pools for health checker to reduce memory allocations
@@ -474,7 +475,6 @@ func (h *HealthChecker) checkForActiveNodeFailure() {
 		}
 	}
 
-
 	// If no active node exists, we need to elect one immediately
 	if activeMember == nil {
 		h.logger.Error("ACTIVE_CHECK: No active node found in cluster, initiating leader election")
@@ -800,7 +800,6 @@ func (h *HealthChecker) attemptVotingElection(candidate *Member) bool {
 	return false
 }
 
-
 // emergencyFallback handles the case where even coordinator fails
 func (h *HealthChecker) emergencyFallback() {
 	h.logger.Warn("Emergency fallback: checking if this node should coordinate")
@@ -855,7 +854,7 @@ func (h *HealthChecker) checkNodeConnectivity(member *Member) bool {
 	}
 
 	// Try to establish basic connection
-	address := fmt.Sprintf("%s:%s", member.IP, member.Port)
+	address := fmt.Sprintf("%s:%s", utils.FormatIPv6(member.IP), member.Port)
 	conn, err := net.DialTimeout("tcp", address, 500*time.Millisecond)
 	if err == nil {
 		conn.Close()
@@ -1303,7 +1302,6 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 	h.logger.Error("Manual intervention required - check network connectivity, node health, or use 'pulsectl promote' to force promotion after investigation")
 	return false // Block promotion to prevent split-brain scenarios
 }
-
 
 // initiateIPRedistributionVote initiates a quorum vote for IP redistribution
 // Returns true if the vote passes or if quorum voting is not applicable

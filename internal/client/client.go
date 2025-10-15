@@ -11,10 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	log "github.com/charmbracelet/log"
+	"github.com/google/uuid"
 	"github.com/syleron/pulseha/packages/config"
 	"github.com/syleron/pulseha/packages/security"
+	"github.com/syleron/pulseha/packages/utils"
 	"github.com/syleron/pulseha/rpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -361,7 +362,7 @@ func (c *Client) JoinClusterWithNodeID(address, token, bindIP, bindPort, customN
 		if sErr == nil && resp != nil {
 			for _, m := range resp.Members {
 				if m.NodeId == nodeID {
-					fmt.Printf("Successfully joined cluster: %s (%s:%s) [id=%s]\n", m.Hostname, m.Ip, m.Port, m.NodeId)
+					fmt.Printf("Successfully joined cluster: %s (%s:%s) [id=%s]\n", m.Hostname, utils.FormatIPv6(m.Ip), m.Port, m.NodeId)
 					return nil
 				}
 			}
