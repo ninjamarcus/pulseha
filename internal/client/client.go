@@ -160,6 +160,7 @@ func (c *Client) GetProtoFuncList() map[string]interface{} {
 // Connect creates a new client connection with TLS support
 func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
 	var err error
+	ip = utils.FormatIPv6(ip)
 	if tlsEnabled {
 		// Load member cert/key
 		peerCert, err := tls.LoadX509KeyPair(
@@ -183,10 +184,10 @@ func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
 			Certificates:       []tls.Certificate{peerCert},
 			RootCAs:            caCertPool,
 		})
-		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(creds))
+		c.Connection, err = grpc.NewClient(ip+":"+port, grpc.WithTransportCredentials(creds))
 	} else {
 		// Use insecure connection for non-TLS
-		c.Connection, err = grpc.Dial(ip+":"+port, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		c.Connection, err = grpc.NewClient(ip+":"+port, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 	if err != nil {
 		log.Error("GRPC client connection error", "error", err)
