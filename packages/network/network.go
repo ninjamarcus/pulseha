@@ -289,6 +289,8 @@ Checks to see if an IP exists on an interface already
 */
 func CheckIfIPExists(ipAddr string) (bool, string, error) {
 	log.Debug("CheckIfIPExists called", "searchIP", ipAddr)
+
+	// Parse the input as either IP or CIDR and extract the IP portion only
 	var targetIP net.IP
 	if strings.Contains(ipAddr, "/") {
 		parsedIP, _, err := net.ParseCIDR(ipAddr)
@@ -304,34 +306,55 @@ func CheckIfIPExists(ipAddr string) (bool, string, error) {
 			return false, "", errors.New("invalid IP address: " + ipAddr)
 		}
 	}
-	targetIP = targetIP.To4()
-	if targetIP == nil {
-		log.Debug("CheckIfIPExists unsupported IP family", "input", ipAddr)
-		return false, "", errors.New("unsupported IP address family for: " + ipAddr)
+
+	// Determine address family (IPv4 or IPv6)
+	family := unix.AF_INET
+	isV4 := targetIP.To4() != nil
+	if !isV4 {
+		// Normalize to 16-byte form for IPv6 comparisons
+		targetIP = targetIP.To16()
+		if targetIP == nil {
+			log.Debug("CheckIfIPExists unsupported IP family", "input", ipAddr)
+			return false, "", errors.New("unsupported IP address family for: " + ipAddr)
+		}
+		family = unix.AF_INET6
+	} else {
+		// Normalize IPv4 to 4-byte form
+		targetIP = targetIP.To4()
 	}
 	targetStr := targetIP.String()
+
 	links, err := netlink.LinkList()
 	if err != nil {
-		log.Debug("Network Package - CheckIfIPEixists() Failed to get network links via netlink. ", err)
+		log.Debug("Network Package - CheckIfIPExists() Failed to get network links via netlink. ", err)
 		return false, "", err
 	}
 
-	// Note: Only does ipv4.
-	// TODO: ipv6
 	for _, link := range links {
-		// Get IP addresses for link
-		addrs, err := netlink.AddrList(link, unix.AF_INET)
+		// Get IP addresses for link for the determined family
+		addrs, err := netlink.AddrList(link, family)
 		if err != nil {
 			log.Debug("Network Package - CheckIfIPExists() Failed to get addresses for link via netlink. ", err)
 			return false, "", err
 		}
 		for _, addr := range addrs {
-			addrIP := addr.IP.To4()
+			addrIP := addr.IP
 			if addrIP == nil {
 				continue
 			}
+			if isV4 {
+				addrIP = addrIP.To4()
+				if addrIP == nil {
+					continue
+				}
+			} else {
+				addrIP = addrIP.To16()
+				if addrIP == nil || addrIP.To4() != nil { // skip v4-mapped
+					continue
+				}
+			}
 			log.Debug("CheckIfIPExists comparing", "searchIP", targetStr, "foundIP", addrIP.String(), "interface", link.Attrs().Name)
-			if targetStr == addrIP.String() {
+			if targetIP.Equal(addrIP) {
 				log.Debug("CheckIfIPExists found match", "ip", targetStr, "interface", link.Attrs().Name)
 				return true, link.Attrs().Name, nil
 			}
