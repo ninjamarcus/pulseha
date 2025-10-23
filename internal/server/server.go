@@ -260,7 +260,7 @@ func (s *Server) Start() error {
 
 // startClusterListener starts the gRPC server that handles inter-node RPC on the configured bind address
 func (s *Server) startClusterListener(localNode config.Node) error {
-	s.logger.Debugf("Starting cluster RPC server on %s:%s...", localNode.IP, localNode.Port)
+	s.logger.Debugf("Starting cluster RPC server on %s:%s...", utils.FormatIPv6(localNode.IP), localNode.Port)
 
 	// Create gRPC server if needed
 	if s.grpcServer == nil {
@@ -270,7 +270,7 @@ func (s *Server) startClusterListener(localNode config.Node) error {
 		rpc.RegisterCLIServer(s.grpcServer, s)
 	}
 
-	address := fmt.Sprintf("%s:%s", localNode.IP, localNode.Port)
+	address := fmt.Sprintf("%s:%s", utils.FormatIPv6(localNode.IP), localNode.Port)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %v", address, err)
@@ -438,7 +438,7 @@ func (s *Server) loadInitialMembers() error {
 			}
 			// Prefer non-placeholder IDs over placeholder 'peer'
 			isPlaceholder := id == "peer" || id == "" || id == n.Hostname
-			ep := fmt.Sprintf("%s:%s", n.IP, n.Port)
+			ep := fmt.Sprintf("%s:%s", utils.FormatIPv6(n.IP), n.Port)
 			if prev, ok := seenByHost[n.Hostname]; ok && prev != id {
 				// Decide which to delete: drop placeholder or non-local duplicate
 				if isPlaceholder || id != localID {
@@ -1098,7 +1098,7 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 		s.logger.Info("Leaving cluster as local node")
 
 		// Snapshot peers and VIPs without holding the server lock
-		var peers []struct{
+		var peers []struct {
 			id   string
 			ip   string
 			port string
@@ -1111,7 +1111,7 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 				if id == localNodeID || node == nil {
 					continue
 				}
-				peers = append(peers, struct{
+				peers = append(peers, struct {
 					id   string
 					ip   string
 					port string
@@ -1815,7 +1815,7 @@ func (s *Server) Reconfigure() error {
 	s.grpcServer = newSrv
 	s.Unlock()
 
-	s.logger.Debugf("Starting cluster listener on %s:%s...", localNode.IP, localNode.Port)
+	s.logger.Debugf("Starting cluster listener on %s:%s...", utils.FormatIPv6(localNode.IP), localNode.Port)
 	if err := s.startClusterListener(localNode); err != nil {
 		return fmt.Errorf("failed to start cluster listener: %v", err)
 	}
@@ -3101,7 +3101,7 @@ func (s *Server) CreateCluster(ctx context.Context, req *rpc.CreateClusterReques
 			finalPort = localNode.Port
 		}
 	}
-	address := fmt.Sprintf("%s:%s", req.BindIp, finalPort)
+	address := fmt.Sprintf("%s:%s", utils.FormatIPv6(req.BindIp), finalPort)
 	readyDeadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(readyDeadline) {
 		conn, err := net.DialTimeout("tcp", address, 300*time.Millisecond)
@@ -3724,7 +3724,7 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 
 		// Wait briefly for the cluster listener to become ready after resync
 		if localNode, err := s.config.GetLocalNode(); err == nil {
-			address := fmt.Sprintf("%s:%s", localNode.IP, localNode.Port)
+			address := fmt.Sprintf("%s:%s", utils.FormatIPv6(localNode.IP), localNode.Port)
 			readyDeadline := time.Now().Add(5 * time.Second)
 			for time.Now().Before(readyDeadline) {
 				conn, err := net.DialTimeout("tcp", address, 300*time.Millisecond)
@@ -4325,7 +4325,7 @@ func (s *Server) getPeerClient(peerID string, node *config.Node) (*client.Client
 
 	if err := remoteClient.Connect(node.IP, node.Port, false); err != nil {
 		remoteClient.Close()
-		return nil, fmt.Errorf("failed to connect to %s:%s: %w", node.IP, node.Port, err)
+		return nil, fmt.Errorf("failed to connect to %s:%s: %w", utils.FormatIPv6(node.IP), node.Port, err)
 	}
 
 	s.peerClients[peerID] = remoteClient

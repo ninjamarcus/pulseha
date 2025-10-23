@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/syleron/pulseha/internal/client"
+	"github.com/syleron/pulseha/packages/utils"
 	rpc "github.com/syleron/pulseha/rpc"
 )
 
@@ -142,7 +143,7 @@ func printClusterStatus(status *client.ClusterStatus) error {
 		if member.NodeID != "" {
 			fmt.Printf("Node ID: %s\n", member.NodeID)
 		}
-		fmt.Printf("Address: %s:%s\n", member.IP, member.Port)
+		fmt.Printf("Address: %s:%s\n", utils.FormatIPv6(member.IP), member.Port)
 		fmt.Printf("Status: %s\n", member.Status)
 		if len(member.ActiveIPs) > 0 {
 			fmt.Printf("Active IPs: %v\n", member.ActiveIPs)

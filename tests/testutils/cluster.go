@@ -15,6 +15,7 @@ import (
 	"github.com/syleron/pulseha/internal/membership"
 	"github.com/syleron/pulseha/internal/server"
 	"github.com/syleron/pulseha/packages/config"
+	"github.com/syleron/pulseha/packages/utils"
 	"github.com/syleron/pulseha/rpc"
 )
 
@@ -319,7 +320,7 @@ func (n *TestNode) Join(targetNode *TestNode) error {
 	defer cli.Close()
 
 	// Connect to target node with timeout
-	n.Logger.Infof("Connecting to target node %s at %s:%s", targetNode.Hostname, targetNode.IP, targetNode.Port)
+	n.Logger.Infof("Connecting to target node %s at %s:%s", targetNode.Hostname, utils.FormatIPv6(targetNode.IP), targetNode.Port)
 	if err := cli.Connect(targetNode.IP, targetNode.Port, false); err != nil {
 		return fmt.Errorf("failed to connect to target node: %v", err)
 	}

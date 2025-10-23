@@ -13,7 +13,7 @@ require (
 	github.com/vishvananda/netlink v1.3.1
 	golang.org/x/sys v0.34.0
 	google.golang.org/grpc v1.65.0
-	google.golang.org/protobuf v1.36.9
+	google.golang.org/protobuf v1.36.10
 )
 
 require (
