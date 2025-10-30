@@ -203,9 +203,9 @@ func (n *TestNode) Start() error {
 	os.Setenv("PULSEHA_TEST", "true")
 
 	// Create a node-specific configuration
-	nodeCfg := config.New()
-	if nodeCfg == nil {
-		return fmt.Errorf("failed to create node config")
+	nodeCfg, err := config.New()
+	if err != nil {
+		return fmt.Errorf("failed to create node config: %w", err)
 	}
 
 	// Set up basic config

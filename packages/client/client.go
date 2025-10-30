@@ -122,7 +122,10 @@ func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
 
 // GetLocalNode returns the local node configuration
 func (c *Client) GetLocalNode() (*Node, error) {
-	cfg := c.Client.GetConfig()
+	cfg, err := c.Client.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %v", err)
+	}
 	if !cfg.ClusterCheck() {
 		return nil, fmt.Errorf("no cluster configured")
 	}

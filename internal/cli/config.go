@@ -62,7 +62,11 @@ func newConfigGetCmd() *cobra.Command {
 			defer c.Connection.Close()
 
 			// Get local config
-			cfg := config.New()
+			cfg, err := config.New()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
 
 			if len(args) == 0 {
 				// Show all config values

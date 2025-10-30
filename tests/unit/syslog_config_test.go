@@ -14,8 +14,9 @@ func TestSyslogConfigDefaults(t *testing.T) {
 	os.Setenv("PULSEHA_TEST", "true")
 	defer os.Unsetenv("PULSEHA_TEST")
 
-	cfg := config.New()
-	
+	cfg, err := config.New()
+	assert.NoError(t, err, "New should not return error in test mode")
+
 	assert.True(t, cfg.Pulse.LogToSyslog, "Syslog should be enabled by default")
 	assert.Equal(t, "", cfg.Pulse.SyslogNetwork, "Default syslog network should be empty (local)")
 	assert.Equal(t, "", cfg.Pulse.SyslogAddress, "Default syslog address should be empty (local)")

@@ -64,7 +64,8 @@ func (d *Distributor) DistributeIPs(group string) error {
 func (d *Distributor) getAvailableNodes() []string {
 	var nodes []string
 
-	for _, member := range d.members.Members {
+	membersSnapshot := d.members.MembersSnapshot()
+	for _, member := range membersSnapshot {
 		// Skip unavailable nodes
 		if member.Status == membership.StatusUnknown {
 			continue

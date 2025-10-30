@@ -12,8 +12,8 @@ import (
 
 // Constants for session history management
 const (
-	maxHistorySize = 100                // Maximum number of sessions to keep in history
-	historyTTL     = 24 * time.Hour    // Sessions older than this are removed
+	maxHistorySize = 100            // Maximum number of sessions to keep in history
+	historyTTL     = 24 * time.Hour // Sessions older than this are removed
 )
 
 // VoteType represents the type of vote being cast
@@ -71,24 +71,27 @@ type VotingSessionResult struct {
 
 // CompactSessionHistory stores minimal session data for history (uses ~16 bytes vs ~1KB)
 type CompactSessionHistory struct {
-	Type        uint8  // VoteType as uint8 (0=NodeStatus, 1=IPRedistribution, 2=ConfigChange)
-	Passed      uint8  // 0=failed, 1=passed, 2=no_quorum
-	YesCount    uint8  // Number of yes votes
-	NoCount     uint8  // Number of no votes
-	TotalVotes  uint8  // Total votes cast
-	CompletedAt uint32 // Unix timestamp (4 bytes vs 24 bytes for time.Time)
+	Type        uint8   // VoteType as uint8 (0=NodeStatus, 1=IPRedistribution, 2=ConfigChange)
+	Passed      uint8   // 0=failed, 1=passed, 2=no_quorum
+	YesCount    uint8   // Number of yes votes
+	NoCount     uint8   // Number of no votes
+	TotalVotes  uint8   // Total votes cast
+	CompletedAt uint32  // Unix timestamp (4 bytes vs 24 bytes for time.Time)
 	_           [6]byte // Padding to align to 16 bytes
 }
 
 // QuorumManager handles quorum-based voting for cluster decisions
 type QuorumManager struct {
 	sync.RWMutex
-	config            *config.Config
-	logger            *log.Logger
-	activeSessions    map[string]*VotingSession
-	sessionHistory    map[string]*VotingSession        // Keep recent full sessions for debugging
-	compactHistory    []CompactSessionHistory          // Efficient long-term history
-	nodeCount         int                              // Total number of nodes in the cluster
+	config         *config.Config
+	logger         *log.Logger
+	activeSessions map[string]*VotingSession
+	sessionHistory map[string]*VotingSession // Keep recent full sessions for debugging
+	compactHistory []CompactSessionHistory   // Efficient long-term history
+	nodeCount      int                       // Total number of nodes in the cluster
+	loopWg         sync.WaitGroup
+	stopChan       chan struct{}
+	loopRunning    bool
 }
 
 // NewQuorumManager creates a new quorum manager instance
@@ -100,6 +103,7 @@ func NewQuorumManager(cfg *config.Config, logger *log.Logger) *QuorumManager {
 		sessionHistory: make(map[string]*VotingSession),
 		compactHistory: make([]CompactSessionHistory, 0, maxHistorySize),
 		nodeCount:      len(cfg.Nodes),
+		stopChan:       make(chan struct{}),
 	}
 }
 
@@ -459,20 +463,52 @@ func (q *QuorumManager) cleanupHistoryLocked() {
 
 // Start starts the quorum manager
 func (q *QuorumManager) Start() {
-	go q.sessionExpiryLoop()
+	q.Lock()
+	defer q.Unlock()
+
+	if q.loopRunning {
+		return
+	}
+
+	if q.stopChan == nil {
+		q.stopChan = make(chan struct{})
+	}
+
+	q.loopRunning = true
+	stop := q.stopChan
+	q.loopWg.Add(1)
+	go q.sessionExpiryLoop(stop)
 }
 
 // Stop stops the quorum manager
 func (q *QuorumManager) Stop() {
-	// Nothing to do for now
+	q.Lock()
+	if !q.loopRunning {
+		q.Unlock()
+		return
+	}
+	stop := q.stopChan
+	q.stopChan = nil
+	q.loopRunning = false
+	q.Unlock()
+
+	close(stop)
+	q.loopWg.Wait()
 }
 
 // sessionExpiryLoop periodically checks for and concludes expired voting sessions
-func (q *QuorumManager) sessionExpiryLoop() {
+func (q *QuorumManager) sessionExpiryLoop(stop <-chan struct{}) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		q.ProcessExpiredSessions()
+	defer q.loopWg.Done()
+
+	for {
+		select {
+		case <-ticker.C:
+			q.ProcessExpiredSessions()
+		case <-stop:
+			return
+		}
 	}
 }

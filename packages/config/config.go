@@ -99,7 +99,7 @@ type Node struct {
 }
 
 // New instantiates and setups up our config object
-func New() *Config {
+func New() (*Config, error) {
 	// Create new config
 	c := &Config{
 		Pulse: Local{
@@ -124,11 +124,7 @@ func New() *Config {
 
 	// Load the config
 	if err := c.Load(); err != nil {
-		log.Warn("Failed to load config", "error", err)
-		// Create default config
-		if err := c.SaveDefaultLocalConfig(); err != nil {
-			log.Fatal("Failed to save default config", "error", err)
-		}
+		return nil, err
 	}
 
 	// Ensure maps are initialized
@@ -149,7 +145,7 @@ func New() *Config {
 		}
 	}
 
-	return c
+	return c, nil
 }
 
 // GetConfig - Returns a pointer to the config (not a copy to avoid copying mutex)

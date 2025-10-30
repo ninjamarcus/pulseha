@@ -39,7 +39,6 @@ var (
 	Build   string
 )
 
-
 func main() {
 
 	// Draw logo
@@ -64,9 +63,9 @@ func main() {
 	logger.SetLevel(log.DebugLevel)
 
 	// Load config
-	cfg := config.New()
-	if cfg == nil {
-		logger.Fatal("Failed to load config")
+	cfg, err := config.New()
+	if err != nil {
+		logger.Fatal("Failed to load config", "error", err)
 	}
 
 	// Override logging level from config if specified
@@ -104,7 +103,6 @@ func main() {
 	if err := srv.Start(); err != nil {
 		logger.Fatal("Failed to start server", "error", err)
 	}
-
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)

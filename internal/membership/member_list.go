@@ -253,11 +253,15 @@ func (m *MemberList) AddMemberQuiet(id string) error {
 
 // GetMemberByID returns a member by ID
 func (m *MemberList) GetMemberByID(id string) *Member {
+	m.RLock()
+	defer m.RUnlock()
 	return m.Members[id]
 }
 
 // GetMemberByHostname returns a member by hostname
 func (m *MemberList) GetMemberByHostname(hostname string) *Member {
+	m.RLock()
+	defer m.RUnlock()
 	for _, member := range m.Members {
 		if member.Hostname == hostname {
 			return member
@@ -268,7 +272,16 @@ func (m *MemberList) GetMemberByHostname(hostname string) *Member {
 
 // GetMemberCount returns the total number of members in the list
 func (m *MemberList) GetMemberCount() int {
+	m.RLock()
+	defer m.RUnlock()
 	return len(m.Members)
+}
+
+// Clear removes all members from the list.
+func (m *MemberList) Clear() {
+	m.Lock()
+	defer m.Unlock()
+	m.Members = make(map[string]*Member)
 }
 
 // RemoveMember removes a member from the list
@@ -322,6 +335,8 @@ func (m *MemberList) RemoveMember(id string) error {
 
 // GetMemberByIdentifier returns a member by either node ID or hostname
 func (m *MemberList) GetMemberByIdentifier(identifier string) *Member {
+	m.RLock()
+	defer m.RUnlock()
 	// First try by ID
 	if member, exists := m.Members[identifier]; exists {
 		return member

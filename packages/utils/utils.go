@@ -34,9 +34,12 @@ var (
 	Build   = "unknown"
 )
 
-/**
+/*
+*
 Load a specific file and return byte code
- **/
+
+	*
+*/
 func LoadFile(file string) ([]byte, error) {
 	c, err := ioutil.ReadFile(file)
 
@@ -47,7 +50,8 @@ func LoadFile(file string) ([]byte, error) {
 	return []byte(c), nil
 }
 
-/**
+/*
+*
 Execute system command.
 */
 func Execute(cmd string, args ...string) (string, error) {
@@ -64,7 +68,8 @@ func Execute(cmd string, args ...string) (string, error) {
 	return string(output), err
 }
 
-/**
+/*
+*
 Function that validates an IPv4 and IPv6 address.
 */
 func ValidIPAddress(ipAddress string) error {
@@ -80,7 +85,8 @@ func ValidIPAddress(ipAddress string) error {
 	return nil
 }
 
-/**
+/*
+*
 Function to schedule the execution every x time as time.Duration.
 */
 func Scheduler(method func() bool, delay time.Duration) {
@@ -92,7 +98,8 @@ func Scheduler(method func() bool, delay time.Duration) {
 	}
 }
 
-/**
+/*
+*
 Create folder if it doesn't already exist!
 Returns true or false depending on whether the folder was created or not.
 */
@@ -113,7 +120,8 @@ func DeleteFolder(path string) bool {
 	return true
 }
 
-/**
+/*
+*
 Check if a folder exists.
 */
 func CheckFolderExist(path string) bool {
@@ -123,7 +131,8 @@ func CheckFolderExist(path string) bool {
 	return true
 }
 
-/**
+/*
+*
 Check if a file exists
 */
 func CheckFileExists(path string) bool {
@@ -133,7 +142,8 @@ func CheckFileExists(path string) bool {
 	return true
 }
 
-/**
+/*
+*
 Get local hostname
 TODO: Note: This may break with FQDs
 */
@@ -146,7 +156,8 @@ func GetHostname() (string, error) {
 	return strings.TrimSuffix(output, "\n"), nil
 }
 
-/**
+/*
+*
 Function to return an IP and Port from a single ip:port string
 TODO:Note: Works only with IPv4
 */
@@ -158,7 +169,8 @@ func SplitIpPort(ipPort string) (string, string, error) {
 	return IPslice[0], IPslice[1], nil
 }
 
-/**
+/*
+*
 Checks to see if the address contains a colon.
 TODO: Note: This will not work with ip:port combinations
 */
@@ -169,7 +181,8 @@ func IsIPv6(address string) bool {
 	return ip != nil && strings.Contains(cleanIP, ":")
 }
 
-/**
+/*
+*
 Checks to see if the address is an IPv4 address
 */
 func IsIPv4(address string) bool {
@@ -177,7 +190,8 @@ func IsIPv4(address string) bool {
 	return ip != nil && ip.To4() != nil
 }
 
-/**
+/*
+*
 Makes sure an IPv6 address is properly structured
 */
 func SanitizeIPv6(address string) string {
@@ -187,28 +201,23 @@ func SanitizeIPv6(address string) string {
 	return cleanIP
 }
 
-/**
+/*
+*
 Format IPv6 address with brackets
 */
 func FormatIPv6(address string) string {
-	var found int
-	var cleanIP string
 	if IsIPv6(address) {
-		if strings.Contains("[", address) {
-			found++
-		} else if strings.Contains("]", address) {
-			found++
-		}
-		if found > 0 {
+		cleanIP := address
+		if strings.Contains(address, "[") || strings.Contains(address, "]") {
 			cleanIP = SanitizeIPv6(address)
 		}
-		cleanIP = "[" + address + "]"
-		return cleanIP
+		return "[" + cleanIP + "]"
 	}
 	return address
 }
 
-/**
+/*
+*
 Checks to see if a port is valid
 */
 func IsPort(port string) bool {
@@ -218,7 +227,8 @@ func IsPort(port string) bool {
 	return false
 }
 
-/**
+/*
+*
 Validates whether an address is a CIDR address or not
 TODO: Note: Should work with both IPv4 and IPv6
 */
@@ -227,8 +237,8 @@ func IsCIDR(cidr string) bool {
 	return err == nil
 }
 
-/**
-
+/*
+*
  */
 func GetCIDR(cidr string) (net.IP, *net.IPNet) {
 	ip, mask, err := net.ParseCIDR(cidr)
@@ -238,7 +248,8 @@ func GetCIDR(cidr string) (net.IP, *net.IPNet) {
 	return ip, mask
 }
 
-/**
+/*
+*
 hasPort is given a string of the form "host", "host:port", "ipv6::address",
 or "[ipv6::address]:port", and returns true if the string includes a port.
 */
@@ -249,7 +260,8 @@ func HasPort(s string) bool {
 	return strings.Count(s, ":") == 1
 }
 
-/**
+/*
+*
 Write text to a file
 */
 func WriteTextFile(contents string, file string) error {

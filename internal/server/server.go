@@ -337,7 +337,8 @@ func (s *Server) Stop() {
 		// Build states with local set to Unknown; clear leader to allow election
 		localID, _ := s.config.GetLocalNodeUUID()
 		states := getStatusMap()
-		for id, m := range s.memberList.Members {
+		membersSnapshot := s.memberList.MembersSnapshot()
+		for id, m := range membersSnapshot {
 			if id == localID {
 				states[id] = membership.StatusUnknown
 			} else {
@@ -386,6 +387,9 @@ func (s *Server) Stop() {
 	}
 	if s.ipMonitor != nil {
 		s.ipMonitor.Stop()
+	}
+	if s.quorumManager != nil {
+		s.quorumManager.Stop()
 	}
 
 	// Close all peer connections to prevent goroutine leak
@@ -555,7 +559,7 @@ func (s *Server) loadInitialMembers() error {
 	}
 
 	s.logger.Info("All members loaded successfully from configuration")
-	s.logger.Debugf("Final member list contains %d members", len(s.memberList.Members))
+	s.logger.Debugf("Final member list contains %d members", s.memberList.GetMemberCount())
 
 	// After members are loaded, perform one-shot VIP reconcile on local node
 	go func() {
@@ -606,7 +610,7 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 		req.NodeId, req.BindIp, req.BindPort, req.Token != "")
 
 	// Check if this is initial cluster creation
-	if len(s.memberList.Members) == 0 && req.Token == "" {
+	if s.memberList.GetMemberCount() == 0 && req.Token == "" {
 		s.logger.Info("Initializing new cluster with first node: ", req.Hostname)
 
 		// Node ID must be provided
@@ -743,7 +747,8 @@ func (s *Server) HandleNodeJoin(ctx context.Context, req *rpc.JoinRequest) (*rpc
 	// Trigger a quick convergence broadcast asynchronously
 	go func() {
 		states := getStatusMap()
-		for id, m := range s.memberList.Members {
+		membersSnapshot := s.memberList.MembersSnapshot()
+		for id, m := range membersSnapshot {
 			states[id] = m.Status
 		}
 		_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, s.leaderID, nil)
@@ -867,7 +872,7 @@ func (s *Server) HandleNodeLeave(ctx context.Context, req *rpc.LeaveRequest) (*r
 	// Now mutate local state under lock
 	s.Lock()
 	// Clear member list
-	s.memberList.Members = make(map[string]*membership.Member)
+	s.memberList.Clear()
 	// Wipe cluster configuration
 	s.config.Nodes = make(map[string]*config.Node)
 	s.config.Groups = make(map[string][]string)
@@ -893,7 +898,8 @@ func (s *Server) GetClusterStatus(ctx context.Context, req *rpc.StatusRequest) (
 	defer s.RUnlock()
 
 	var members []*rpc.Member
-	for _, member := range s.memberList.Members {
+	membersSnapshot := s.memberList.MembersSnapshot()
+	for _, member := range membersSnapshot {
 		health := member.GetHealthStatus()
 		var st rpc.MemberStatusEnum
 		switch health.Status {
@@ -1029,7 +1035,7 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 
 	// Broadcast convergence state so peers adopt the same active (active-passive)
 	states := make(map[string]membership.MemberStatus)
-	for id, m := range s.memberList.Members {
+	for id, m := range s.memberList.MembersSnapshot() {
 		states[id] = m.Status
 	}
 	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, nodeID, nil)
@@ -1212,9 +1218,7 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 		}
 
 		// Remove all members from member list locally (leave into clean, non-clustered state)
-		s.memberList.Lock()
-		s.memberList.Members = make(map[string]*membership.Member)
-		s.memberList.Unlock()
+		s.memberList.Clear()
 
 		// Wipe local cluster configuration (nodes and groups) and clear local identifiers
 		s.config.Nodes = make(map[string]*config.Node)
@@ -1284,7 +1288,7 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	// Identify current active (if any)
 	prevActiveID := ""
 	if s.config.Pulse.Mode == "active-passive" {
-		for id, m := range s.memberList.Members {
+		for id, m := range s.memberList.MembersSnapshot() {
 			if m.Status == membership.StatusActive {
 				prevActiveID = id
 				s.logger.Info("PROMOTE: Found current active node", "active_node", id, "hostname", m.Hostname)
@@ -1307,7 +1311,7 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 
 	// Snapshot current states for rollback
 	originalStates := make(map[string]membership.MemberStatus)
-	for id, m := range s.memberList.Members {
+	for id, m := range s.memberList.MembersSnapshot() {
 		originalStates[id] = m.Status
 	}
 
@@ -1428,7 +1432,7 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	// Build the intended final state based on the promotion operation, not current memberList state
 	// This prevents race conditions where health checker may have updated states during the promotion
 	states := make(map[string]membership.MemberStatus)
-	for id, m := range s.memberList.Members {
+	for id, m := range s.memberList.MembersSnapshot() {
 		if id == prevActiveID && s.config.Pulse.Mode == "active-passive" {
 			// In active-passive mode, the previous active node must be demoted to Passive
 			states[id] = membership.StatusPassive
@@ -2131,7 +2135,7 @@ func (s *Server) SetMode(ctx context.Context, req *rpc.SetModeRequest) (*rpc.Set
 	if req.Mode == "active-active" {
 		s.logger.Info("Redistributing IPs for active-active mode")
 		var allIPs []string
-		for _, member := range s.memberList.Members {
+		for _, member := range s.memberList.MembersSnapshot() {
 			allIPs = append(allIPs, member.ActiveIPs...)
 			member.ActiveIPs = nil // Clear current assignments
 		}
@@ -2149,7 +2153,7 @@ func (s *Server) SetMode(ctx context.Context, req *rpc.SetModeRequest) (*rpc.Set
 		var allIPs []string
 
 		// Find active node and collect all IPs
-		for _, member := range s.memberList.Members {
+		for _, member := range s.memberList.MembersSnapshot() {
 			if member.Status == membership.StatusActive {
 				activeNode = member
 			}
@@ -2243,7 +2247,7 @@ func (s *Server) AddIPToGroup(ctx context.Context, req *rpc.AddIPToGroupRequest)
 	activePassive := s.config.Pulse.Mode == "active-passive"
 	activeID := ""
 	if activePassive {
-		for id, m := range s.memberList.Members {
+		for id, m := range s.memberList.MembersSnapshot() {
 			if m.Status == membership.StatusActive {
 				activeID = id
 				break
@@ -3704,7 +3708,12 @@ func (s *Server) ResyncNetwork(ctx context.Context, req *rpc.ResyncNetworkReques
 
 	// Force immediate activation if cluster configuration exists
 	// Create a fresh config instance to ensure we read the current on-disk config
-	s.config = config.New()
+	cfg, err := config.New()
+	if err != nil {
+		s.logger.Errorf("Failed to reload config during resync: %v", err)
+		return &rpc.ResyncNetworkResponse{Success: false, Message: fmt.Sprintf("failed to reload config: %v", err)}, nil
+	}
+	s.config = cfg
 
 	if s.config.ClusterCheck() {
 		// Sync member list with latest config and reload members
@@ -4102,7 +4111,7 @@ func (s *Server) InitiateJoin(ctx context.Context, req *rpc.InitiateJoinRequest)
 
 	// Broadcast current states to peers to converge views (best-effort)
 	states := make(map[string]membership.MemberStatus)
-	for id, m := range s.memberList.Members {
+	for id, m := range s.memberList.MembersSnapshot() {
 		states[id] = m.Status
 	}
 	_ = s.BroadcastClusterState(states, s.GetClusterEpoch()+1, s.leaderID, nil)

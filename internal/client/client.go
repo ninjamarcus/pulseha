@@ -161,6 +161,8 @@ func (c *Client) GetProtoFuncList() map[string]interface{} {
 func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
 	var err error
 	ip = utils.FormatIPv6(ip)
+	previousConn := c.Connection
+
 	if tlsEnabled {
 		// Load member cert/key
 		peerCert, err := tls.LoadX509KeyPair(
@@ -193,6 +195,12 @@ func (c *Client) Connect(ip string, port string, tlsEnabled bool) error {
 		log.Error("GRPC client connection error", "error", err)
 		return fmt.Errorf("could not connect to host: %v", err)
 	}
+
+	// Close previous connection after successfully dialing new target to avoid leaking sockets.
+	if previousConn != nil {
+		previousConn.Close()
+	}
+
 	c.server = rpc.NewServerClient(c.Connection)
 	c.cliClient = rpc.NewCLIClient(c.Connection)
 	log.Debug("Client:Connect() Connection made", "address", ip+":"+port)
@@ -503,7 +511,7 @@ func (c *Client) PromoteNode(hostname string, ips []string) error {
 }
 
 // GetConfig returns the current configuration
-func (c *Client) GetConfig() *config.Config {
+func (c *Client) GetConfig() (*config.Config, error) {
 	return config.New()
 }
 

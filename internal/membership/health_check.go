@@ -204,14 +204,12 @@ func (h *HealthChecker) LastTickTime() time.Time {
 func (h *HealthChecker) performHealthChecks() {
 	h.logger.Debug("HEALTH_CHECK: Starting health check cycle...")
 
-	h.RLock()
-	memberCount := len(h.members.Members)
+	membersSnapshot := h.members.MembersSnapshot()
+	memberCount := len(membersSnapshot)
 	if memberCount == 0 {
-		h.RUnlock()
 		h.logger.Warn("No members in cluster, skipping health check")
 		return // No logging needed when no members exist
 	}
-	h.RUnlock()
 
 	// Collect cluster status information for a single consolidated log
 	clusterStatus := make([]string, 0, memberCount)
@@ -220,18 +218,15 @@ func (h *HealthChecker) performHealthChecks() {
 	var statusChanges []string
 
 	// Check if we are a passive node and need to detect active node failure
-	h.RLock()
 	var localMember *Member
-	for _, m := range h.members.Members {
+	for _, m := range membersSnapshot {
 		if m.IsLocal() {
 			localMember = m
 			break
 		}
 	}
-	membersCopy := h.members.Members
-	h.RUnlock()
 
-	for _, member := range membersCopy {
+	for _, member := range membersSnapshot {
 		// If this is the local node, just update its health check time
 		if member.IsLocal() {
 			member.Lock()
@@ -277,7 +272,7 @@ func (h *HealthChecker) performHealthChecks() {
 				// Immediate convergence nudge on status change
 				if h.server != nil && previousStatus != StatusUnknown {
 					states := getMemberStatusMap()
-					for id, m := range membersCopy {
+					for id, m := range membersSnapshot {
 						m.Lock()
 						states[id] = m.Status
 						m.Unlock()
@@ -311,7 +306,7 @@ func (h *HealthChecker) performHealthChecks() {
 			switch mode {
 			case "active-passive":
 				activeExists := false
-				for _, otherMember := range membersCopy {
+				for _, otherMember := range membersSnapshot {
 					if otherMember.ID != member.ID && otherMember.Status == StatusActive {
 						activeExists = true
 						break
@@ -368,7 +363,7 @@ func (h *HealthChecker) performHealthChecks() {
 		if h.server != nil {
 			h.logger.Debug("HEALTH_CHECK: Broadcasting cluster state due to health check changes")
 			states := getMemberStatusMap()
-			for id, m := range membersCopy {
+			for id, m := range membersSnapshot {
 				m.Lock()
 				states[id] = m.Status
 				m.Unlock()
@@ -388,7 +383,7 @@ func (h *HealthChecker) performHealthChecks() {
 		if h.server != nil && h.checksWithoutChange%3 == 0 {
 			h.logger.Debug("HEALTH_CHECK: Performing heartbeat convergence nudge", "checksWithoutChange", h.checksWithoutChange)
 			states := getMemberStatusMap()
-			for id, m := range membersCopy {
+			for id, m := range membersSnapshot {
 				m.Lock()
 				states[id] = m.Status
 				// Also advance local LastResponse to now for consistent display
@@ -422,14 +417,12 @@ func (h *HealthChecker) performHealthChecks() {
 		h.checkForActiveNodeFailure()
 	} else {
 		// Debug why no local member found
-		h.RLock()
 		localNodeID, err := h.members.config.GetLocalNodeUUID()
-		memberCount := len(h.members.Members)
+		memberCount := len(membersSnapshot)
 		var memberIDs []string
-		for id := range h.members.Members {
+		for id := range membersSnapshot {
 			memberIDs = append(memberIDs, id)
 		}
-		h.RUnlock()
 		h.logger.Warnf("No local member found! LocalNodeID=%s (err=%v), MemberCount=%d, MemberIDs=%v",
 			localNodeID, err, memberCount, memberIDs)
 	}
@@ -437,9 +430,7 @@ func (h *HealthChecker) performHealthChecks() {
 
 // getCurrentLeaderID returns the ID of the current active node if any
 func (h *HealthChecker) getCurrentLeaderID() string {
-	h.RLock()
-	members := h.members.Members
-	h.RUnlock()
+	members := h.members.MembersSnapshot()
 
 	for id, m := range members {
 		m.Lock()
@@ -456,10 +447,8 @@ func (h *HealthChecker) getCurrentLeaderID() string {
 func (h *HealthChecker) checkForActiveNodeFailure() {
 	h.logger.Debug("ACTIVE_CHECK: Starting active node failure check")
 
-	h.RLock()
-	members := h.members.Members
+	members := h.members.MembersSnapshot()
 	config := h.members.config
-	h.RUnlock()
 
 	// Find the active node
 	var activeMember *Member
@@ -639,7 +628,7 @@ func (h *HealthChecker) electNewActiveNode() {
 // findElectionCoordinator returns the ID of the node that should coordinate elections
 func (h *HealthChecker) findElectionCoordinator() string {
 	var coordinatorID string
-	for nodeID, member := range h.members.Members {
+	for nodeID, member := range h.members.MembersSnapshot() {
 		member.Lock()
 		status := member.Status
 		member.Unlock()
@@ -659,7 +648,7 @@ func (h *HealthChecker) selectBestCandidate() *Member {
 	var bestCandidate *Member
 	var bestScore float64 = -1
 
-	for _, member := range h.members.Members {
+	for _, member := range h.members.MembersSnapshot() {
 		member.Lock()
 		status := member.Status
 		latencyStr := member.Latency
@@ -739,7 +728,7 @@ func (h *HealthChecker) waitForCoordinatorElection() {
 			return
 		case <-checkInterval.C:
 			// Check if coordinator succeeded
-			for _, member := range h.members.Members {
+			for _, member := range h.members.MembersSnapshot() {
 				member.Lock()
 				status := member.Status
 				member.Unlock()
@@ -758,7 +747,7 @@ func (h *HealthChecker) attemptVotingElection(candidate *Member) bool {
 
 	// Count available nodes for voting
 	availableCount := 0
-	for _, member := range h.members.Members {
+	for _, member := range h.members.MembersSnapshot() {
 		member.Lock()
 		status := member.Status
 		member.Unlock()
@@ -837,7 +826,7 @@ func (h *HealthChecker) emergencyFallback() {
 
 // findActiveNode returns the current active node
 func (h *HealthChecker) findActiveNode() *Member {
-	for _, member := range h.members.Members {
+	for _, member := range h.members.MembersSnapshot() {
 		if member.Status == StatusActive {
 			return member
 		}
@@ -939,8 +928,10 @@ func (h *HealthChecker) checkIP(ip string) HealthCheck {
 func (h *HealthChecker) handlePartialFailure(member *Member, failedIPs []string) {
 	h.logger.Infof("Handling partial failure for member %s with %d failed IPs", member.Hostname, len(failedIPs))
 
+	membersSnapshot := h.members.MembersSnapshot()
+
 	// Determine if we should use quorum based on cluster size
-	clusterSize := len(h.members.Members)
+	clusterSize := len(membersSnapshot)
 	quorumEnabled := clusterSize >= 3
 
 	// Update member status based on mode
@@ -971,7 +962,7 @@ func (h *HealthChecker) handlePartialFailure(member *Member, failedIPs []string)
 			member.Status = StatusUnknown
 
 			// Find a passive node to promote
-			for _, otherMember := range h.members.Members {
+			for _, otherMember := range membersSnapshot {
 				if otherMember.ID != member.ID && otherMember.Status == StatusPassive {
 					h.logger.Infof("Promoting passive node %s to active", otherMember.Hostname)
 
@@ -1124,7 +1115,8 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 		// Check cluster size to determine if voting is needed
 		// Count only available/responding nodes for quorum calculation
 		availableNodes := 0
-		for _, member := range h.members.Members {
+		membersSnapshot := h.members.MembersSnapshot()
+		for _, member := range membersSnapshot {
 			member.Lock()
 			isAvailable := member.Status == StatusActive || member.Status == StatusPassive
 			member.Unlock()
@@ -1133,7 +1125,7 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 			}
 		}
 
-		h.logger.Infof("Available nodes for voting: %d out of %d total", availableNodes, len(h.members.Members))
+		h.logger.Infof("Available nodes for voting: %d out of %d total", availableNodes, len(membersSnapshot))
 
 		if availableNodes == 1 {
 			h.logger.Infof("Only 1 node available, becoming active immediately")
@@ -1149,7 +1141,7 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 					return false
 				}
 				var otherNodeID string
-				for _, member := range h.members.Members {
+				for _, member := range membersSnapshot {
 					member.Lock()
 					isAvailable := member.Status == StatusActive || member.Status == StatusPassive
 					memberID := member.ID
@@ -1192,7 +1184,7 @@ func (h *HealthChecker) initiateNodeStatusVote(nodeID string, newStatus MemberSt
 
 		// Get the node hostname for better logging
 		var hostname string
-		for _, member := range h.members.Members {
+		for _, member := range membersSnapshot {
 			if member.ID == nodeID {
 				hostname = member.Hostname
 				break
@@ -1309,7 +1301,7 @@ func (h *HealthChecker) initiateIPRedistributionVote(ips []string) bool {
 	h.logger.Infof("Initiating vote for redistribution of %d IPs", len(ips))
 
 	// Check cluster size to determine if voting is needed
-	clusterSize := len(h.members.Members)
+	clusterSize := len(h.members.MembersSnapshot())
 	if clusterSize < 3 {
 		h.logger.Debugf("Cluster has only %d nodes, voting not required for IP redistribution", clusterSize)
 		return true
@@ -1401,7 +1393,7 @@ func (h *HealthChecker) calculateElectionBackoffWithRole(localNodeID string) (ti
 
 	// Get list of all available nodes that could participate in election
 	var availableNodes []string
-	for _, member := range h.members.Members {
+	for _, member := range h.members.MembersSnapshot() {
 		member.Lock()
 		status := member.Status
 		nodeID := member.ID

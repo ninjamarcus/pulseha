@@ -232,6 +232,12 @@ func (m *IPMonitor) enforceExpectations() {
 	m.RUnlock()
 	m.logger.Info("ENFORCE: Current expectations", "expectations", expectationsCopy)
 
+	// Build snapshot of current interface assignments to avoid repeated netlink allocations during checks.
+	ipInventory, invErr := network.BuildIPInventory()
+	if invErr != nil {
+		m.logger.Error("ENFORCE: Failed to build IP inventory snapshot", "error", invErr)
+	}
+
 	// Passive: remove all floating IPs; Active: ensure missing are added
 	if member.Status != StatusActive {
 		m.logger.Info("ENFORCE: Node is not Active, removing floating IPs", "status", StatusToString(member.Status))
@@ -264,7 +270,13 @@ func (m *IPMonitor) enforceExpectations() {
 					m.logger.Debug("ENFORCE: Skipping invalid IP", "ip", ip)
 					continue
 				}
-				exists, foundIface, _ := network.CheckIfIPExists(ipOnly.String())
+				var exists bool
+				var foundIface string
+				if ipInventory != nil {
+					exists, foundIface, _ = ipInventory.Exists(ipOnly.String())
+				} else {
+					exists, foundIface, _ = network.CheckIfIPExists(ipOnly.String())
+				}
 				m.logger.Debug("ENFORCE: IP existence check", "ip", ipOnly.String(), "exists", exists, "foundIface", foundIface, "targetIface", iface)
 				if exists && foundIface == iface {
 					m.logger.Warn("ENFORCE: Removing stale floating IP from passive node", "ip", ip, "iface", iface, "status", StatusToString(member.Status))
@@ -293,7 +305,13 @@ func (m *IPMonitor) enforceExpectations() {
 				m.logger.Debug("ENFORCE: Skipping invalid IP", "ip", ip)
 				continue
 			}
-			exists, eIface, _ := network.CheckIfIPExists(ipOnly.String())
+			var exists bool
+			var eIface string
+			if ipInventory != nil {
+				exists, eIface, _ = ipInventory.Exists(ipOnly.String())
+			} else {
+				exists, eIface, _ = network.CheckIfIPExists(ipOnly.String())
+			}
 			m.logger.Debug("ENFORCE: IP existence check for Active node", "ip", ipOnly.String(), "exists", exists, "foundIface", eIface, "targetIface", iface)
 			if !exists || eIface != iface {
 				missing = append(missing, ip)

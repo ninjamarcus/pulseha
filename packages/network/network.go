@@ -44,6 +44,126 @@ type ICMPv6NeighborSolicitation struct {
 	SourceLinkAddress [6]byte
 }
 
+// IPInventory captures a snapshot of IP assignments across interfaces so that callers can
+// make multiple existence checks without repeatedly walking netlink state.
+type IPInventory struct {
+	ipToIface map[string]string
+}
+
+// BuildIPInventory builds a snapshot of IP assignments using a single netlink handle.
+func BuildIPInventory() (*IPInventory, error) {
+	handle, err := netlink.NewHandle()
+	if err != nil {
+		log.Debug("NETWORK: BuildIPInventory failed to create netlink handle", "error", err)
+		return nil, err
+	}
+	defer handle.Delete()
+
+	links, err := handle.LinkList()
+	if err != nil {
+		log.Debug("NETWORK: BuildIPInventory failed to list links", "error", err)
+		return nil, err
+	}
+
+	ipMap := make(map[string]string)
+	for _, link := range links {
+		if link == nil || link.Attrs() == nil {
+			continue
+		}
+		iface := link.Attrs().Name
+		for _, family := range []int{unix.AF_INET, unix.AF_INET6} {
+			addrs, err := handle.AddrList(link, family)
+			if err != nil {
+				log.Debug("NETWORK: BuildIPInventory failed to list addresses", "iface", iface, "family", family, "error", err)
+				continue
+			}
+			for _, addr := range addrs {
+				normalized, ok := normalizeIP(addr.IP)
+				if !ok {
+					continue
+				}
+				ipMap[ipKey(normalized)] = iface
+			}
+		}
+	}
+
+	return &IPInventory{ipToIface: ipMap}, nil
+}
+
+// Exists checks whether the provided IP (string or CIDR) is present in the inventory and
+// returns the interface if found.
+func (inv *IPInventory) Exists(ipAddr string) (bool, string, error) {
+	targetIP, err := parseTargetIP(ipAddr)
+	if err != nil {
+		return false, "", err
+	}
+	if targetIP == nil {
+		return false, "", errors.New("invalid IP address: " + ipAddr)
+	}
+
+	iface, ok := inv.ipToIface[ipKey(targetIP)]
+	if !ok {
+		return false, "", nil
+	}
+	return true, iface, nil
+}
+
+func normalizeIP(ip net.IP) (net.IP, bool) {
+	if ip == nil {
+		return nil, false
+	}
+	if v4 := ip.To4(); v4 != nil {
+		return net.IP(v4), true
+	}
+	v6 := ip.To16()
+	if v6 == nil {
+		return nil, false
+	}
+	// Guard against v4-mapped IPv6 addresses
+	if v4mapped := v6.To4(); v4mapped != nil {
+		return net.IP(v4mapped), true
+	}
+	return net.IP(v6), true
+}
+
+func ipKey(ip net.IP) string {
+	if ip == nil {
+		return ""
+	}
+	if len(ip) == net.IPv4len {
+		return "4|" + net.IP(ip).String()
+	}
+	return "6|" + net.IP(ip).String()
+}
+
+func parseTargetIP(ipAddr string) (net.IP, error) {
+	log.Debug("CheckIfIPExists called", "searchIP", ipAddr)
+
+	if strings.Contains(ipAddr, "/") {
+		parsedIP, _, err := net.ParseCIDR(ipAddr)
+		if err != nil {
+			log.Debug("CheckIfIPExists invalid CIDR", "input", ipAddr, "error", err)
+			return nil, err
+		}
+		if normalized, ok := normalizeIP(parsedIP); ok {
+			return normalized, nil
+		}
+		log.Debug("CheckIfIPExists unsupported IP family", "input", ipAddr)
+		return nil, errors.New("unsupported IP address family for: " + ipAddr)
+	}
+
+	parsedIP := net.ParseIP(ipAddr)
+	if parsedIP == nil {
+		log.Debug("CheckIfIPExists invalid IP", "input", ipAddr)
+		return nil, errors.New("invalid IP address: " + ipAddr)
+	}
+	if normalized, ok := normalizeIP(parsedIP); ok {
+		return normalized, nil
+	}
+	log.Debug("CheckIfIPExists unsupported IP family", "input", ipAddr)
+	return nil, errors.New("unsupported IP address family for: " + ipAddr)
+}
+
 /*
 *
 Send Gratuitous ARP to automagically tell the router who has the new floating IP
@@ -157,20 +277,17 @@ func BringIPup(iface, ip string) error {
 This function is to bring down a network interface
 */
 func BringIPdown(iface, ip string) error {
-	log.Debug("Attempting to bring down IP address via network package")
 	exists, link := InterfaceExist(iface)
 	if !exists {
-		log.Debug("unable to bring IP down as the network interface does not exist")
 		return errors.New("unable to bring IP down as the network interface does not exist")
 	}
 	addr, err := netlink.ParseAddr(ip)
 	if err != nil {
-		log.Debug("unable to bring IP down because ip address couldn't be parsed")
 		return errors.New("unable to bring IP down because ip address couldn't be parsed")
 	}
 	if err := netlink.AddrDel(link, addr); err != nil {
-		log.Debug("Unable to bring down ip " + ip + " on interface " + iface + ". Perhaps it doesn't exist?")
-		return errors.New("Unable to bring down ip " + ip + " on interface " + iface + ". Perhaps it doesn't exist?")
+		log.Warn("NETWORK: Unable to bring down IP", "ip", ip, "iface", iface, "error", err)
+		return errors.New("unable to bring down ip " + ip + " on interface " + iface + ": " + err.Error())
 	}
 	return nil
 }
@@ -288,79 +405,10 @@ func InterfaceExist(name string) (bool, netlink.Link) {
 Checks to see if an IP exists on an interface already
 */
 func CheckIfIPExists(ipAddr string) (bool, string, error) {
-	log.Debug("CheckIfIPExists called", "searchIP", ipAddr)
-
-	// Parse the input as either IP or CIDR and extract the IP portion only
-	var targetIP net.IP
-	if strings.Contains(ipAddr, "/") {
-		parsedIP, _, err := net.ParseCIDR(ipAddr)
-		if err != nil {
-			log.Debug("CheckIfIPExists invalid CIDR", "input", ipAddr, "error", err)
-			return false, "", err
-		}
-		targetIP = parsedIP
-	} else {
-		targetIP = net.ParseIP(ipAddr)
-		if targetIP == nil {
-			log.Debug("CheckIfIPExists invalid IP", "input", ipAddr)
-			return false, "", errors.New("invalid IP address: " + ipAddr)
-		}
-	}
-
-	// Determine address family (IPv4 or IPv6)
-	family := unix.AF_INET
-	isV4 := targetIP.To4() != nil
-	if !isV4 {
-		// Normalize to 16-byte form for IPv6 comparisons
-		targetIP = targetIP.To16()
-		if targetIP == nil {
-			log.Debug("CheckIfIPExists unsupported IP family", "input", ipAddr)
-			return false, "", errors.New("unsupported IP address family for: " + ipAddr)
-		}
-		family = unix.AF_INET6
-	} else {
-		// Normalize IPv4 to 4-byte form
-		targetIP = targetIP.To4()
-	}
-	targetStr := targetIP.String()
-
-	links, err := netlink.LinkList()
+	inventory, err := BuildIPInventory()
 	if err != nil {
-		log.Debug("Network Package - CheckIfIPExists() Failed to get network links via netlink. ", err)
 		return false, "", err
 	}
 
-	for _, link := range links {
-		// Get IP addresses for link for the determined family
-		addrs, err := netlink.AddrList(link, family)
-		if err != nil {
-			log.Debug("Network Package - CheckIfIPExists() Failed to get addresses for link via netlink. ", err)
-			return false, "", err
-		}
-		for _, addr := range addrs {
-			addrIP := addr.IP
-			if addrIP == nil {
-				continue
-			}
-			if isV4 {
-				addrIP = addrIP.To4()
-				if addrIP == nil {
-					continue
-				}
-			} else {
-				addrIP = addrIP.To16()
-				if addrIP == nil || addrIP.To4() != nil { // skip v4-mapped
-					continue
-				}
-			}
-			log.Debug("CheckIfIPExists comparing", "searchIP", targetStr, "foundIP", addrIP.String(), "interface", link.Attrs().Name)
-			if targetIP.Equal(addrIP) {
-				log.Debug("CheckIfIPExists found match", "ip", targetStr, "interface", link.Attrs().Name)
-				return true, link.Attrs().Name, nil
-			}
-		}
-	}
-
-	log.Debug("CheckIfIPExists not found", "ip", targetStr)
-	return false, "", nil
+	return inventory.Exists(ipAddr)
 }

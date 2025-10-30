@@ -25,7 +25,10 @@ func TestCreateClusterReturnsWithoutDeadlock(t *testing.T) {
 	security.CertDir = tmpDir
 
 	// Create config and logger
-	cfg := config.New()
+	cfg, err := config.New()
+	if err != nil {
+		t.Fatalf("failed to create config: %v", err)
+	}
 	logger := log.New(os.Stdout)
 	logger.SetLevel(log.WarnLevel)
 
@@ -46,10 +49,10 @@ func TestCreateClusterReturnsWithoutDeadlock(t *testing.T) {
 	// Call CreateCluster in a goroutine and enforce timeout
 	done := make(chan struct{})
 	var resp *rpc.CreateClusterResponse
-	var err error
+	var createErr error
 	go func() {
 		defer close(done)
-		resp, err = s.CreateCluster(contextpkg.Background(), req)
+		resp, createErr = s.CreateCluster(contextpkg.Background(), req)
 	}()
 
 	select {
@@ -59,8 +62,8 @@ func TestCreateClusterReturnsWithoutDeadlock(t *testing.T) {
 		t.Fatal("CreateCluster did not return within timeout (possible deadlock)")
 	}
 
-	if err != nil {
-		t.Fatalf("CreateCluster returned error: %v", err)
+	if createErr != nil {
+		t.Fatalf("CreateCluster returned error: %v", createErr)
 	}
 	if resp == nil || !resp.Success {
 		t.Fatalf("CreateCluster unsuccessful response: %+v", resp)
