@@ -139,6 +139,7 @@ message Member {
 message PromoteRequest {
     string node_id = 1;
     repeated string ips = 2;
+    bool force_demote = 3;
 }
 
 message PromoteResponse {

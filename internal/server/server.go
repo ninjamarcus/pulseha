@@ -1022,7 +1022,7 @@ func (s *Server) PromoteNode(ctx context.Context, req *rpc.PromoteRequest) (*rpc
 		}
 		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		rresp, rerr := remoteClient.CLI().Promote(ctx2, &rpc.PromoteRequest{NodeId: req.NodeId, Ips: req.Ips})
+		rresp, rerr := remoteClient.CLI().Promote(ctx2, &rpc.PromoteRequest{NodeId: req.NodeId, Ips: req.Ips, ForceDemote: req.ForceDemote})
 		if rerr != nil {
 			return &rpc.PromoteResponse{Success: false, Message: "Remote promote failed: " + rerr.Error()}, nil
 		}
@@ -1273,6 +1273,8 @@ func (s *Server) Leave(ctx context.Context, req *rpc.LeaveRequest) (*rpc.LeaveRe
 func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error) {
 	localNodeID, _ := s.config.GetLocalNodeUUID()
 	s.logger.Info("PROMOTE: Received promote request", "target_node", req.NodeId, "local_node", localNodeID)
+	forceDemote := req.GetForceDemote()
+	s.logger.Debug("PROMOTE: Force demote flag", "force_demote", forceDemote)
 
 	if !s.config.ClusterCheck() {
 		return &rpc.PromoteResponse{Success: false, Message: "no cluster configured"}, nil
@@ -1327,20 +1329,31 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	s.logger.Info("PROMOTE: Demotion decision", "shouldDemote", shouldDemote, "isTargetNodePromotion", isTargetNodePromotion,
 		"target_is_local", member.IsLocal(), "prev_active", prevActiveID, "target", req.NodeId)
 
+	demotionFailed := false
 	if shouldDemote && !isTargetNodePromotion {
 		s.logger.Info("PROMOTE: Demoting current active before promotion", "previous_active", prevActiveID, "new_active", req.NodeId)
 		if _, err := s.MakePassive(context.Background(), &rpc.MakePassiveRequest{NodeId: prevActiveID}); err != nil {
 			s.logger.Error("PROMOTE: Failed to demote previous active", "previous_active", prevActiveID, "error", err)
-			// Restore view and abort
-			for id, st := range originalStates {
-				if mm := s.memberList.GetMemberByID(id); mm != nil {
-					mm.Status = st
+			if !forceDemote {
+				// Restore view and abort
+				for id, st := range originalStates {
+					if mm := s.memberList.GetMemberByID(id); mm != nil {
+						mm.Status = st
+					}
 				}
+				_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
+				return &rpc.PromoteResponse{Success: false, Message: "Failed to demote previous active: " + err.Error()}, nil
 			}
-			_ = s.BroadcastClusterState(originalStates, s.GetClusterEpoch()+1, s.leaderID, nil)
-			return &rpc.PromoteResponse{Success: false, Message: "Failed to demote previous active: " + err.Error()}, nil
+			demotionFailed = true
+			s.logger.Warn("PROMOTE: Continuing with promotion despite demotion failure", "previous_active", prevActiveID, "force_demote", forceDemote)
+			if failingMember := s.memberList.GetMemberByID(prevActiveID); failingMember != nil {
+				failingMember.Status = membership.StatusUnknown
+				failingMember.ActiveIPs = nil
+				failingMember.PartialActive = false
+			}
+		} else {
+			s.logger.Info("PROMOTE: Successfully demoted previous active", "previous_active", prevActiveID)
 		}
-		s.logger.Info("PROMOTE: Successfully demoted previous active", "previous_active", prevActiveID)
 	} else if shouldDemote && isTargetNodePromotion {
 		s.logger.Info("PROMOTE: Skipping demotion (remote-initiated promotion, initiator handled demotion)", "previous_active", prevActiveID, "new_active", req.NodeId)
 	}
@@ -1390,7 +1403,7 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 		}
 		ctx2, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		rresp, rerr := remoteClient.CLI().Promote(ctx2, &rpc.PromoteRequest{NodeId: req.NodeId, Ips: req.Ips})
+		rresp, rerr := remoteClient.CLI().Promote(ctx2, &rpc.PromoteRequest{NodeId: req.NodeId, Ips: req.Ips, ForceDemote: req.ForceDemote})
 		if rerr != nil || (rresp != nil && !rresp.Success) {
 			// Attempt rollback of demotion if any
 			if prevActiveID != "" && prevActiveID != req.NodeId {
@@ -1434,9 +1447,14 @@ func (s *Server) Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.Pro
 	states := make(map[string]membership.MemberStatus)
 	for id, m := range s.memberList.MembersSnapshot() {
 		if id == prevActiveID && s.config.Pulse.Mode == "active-passive" {
-			// In active-passive mode, the previous active node must be demoted to Passive
-			states[id] = membership.StatusPassive
-			s.logger.Info("PROMOTE: Setting demoted node to Passive in broadcast", "node_id", id)
+			if demotionFailed {
+				states[id] = membership.StatusUnknown
+				s.logger.Info("PROMOTE: Marking previous active as Unknown in broadcast", "node_id", id)
+			} else {
+				// In active-passive mode, the previous active node must be demoted to Passive
+				states[id] = membership.StatusPassive
+				s.logger.Info("PROMOTE: Setting demoted node to Passive in broadcast", "node_id", id)
+			}
 		} else if id == req.NodeId {
 			// The promoted node is Active
 			states[id] = membership.StatusActive

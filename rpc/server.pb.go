@@ -678,6 +678,7 @@ type PromoteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	Ips           []string               `protobuf:"bytes,2,rep,name=ips,proto3" json:"ips,omitempty"`
+	ForceDemote   bool                   `protobuf:"varint,3,opt,name=force_demote,json=forceDemote,proto3" json:"force_demote,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -724,6 +725,13 @@ func (x *PromoteRequest) GetIps() []string {
 		return x.Ips
 	}
 	return nil
+}
+
+func (x *PromoteRequest) GetForceDemote() bool {
+	if x != nil {
+		return x.ForceDemote
+	}
+	return false
 }
 
 type PromoteResponse struct {
@@ -4012,7 +4020,8 @@ const file_rpc_server_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\v2\x14.rpc.GroupAssignmentR\x05value:\x028\x01\";\n" +
 	"\x0ePromoteRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x10\n" +
-	"\x03ips\x18\x02 \x03(\tR\x03ips\"E\n" +
+	"\x03ips\x18\x02 \x03(\tR\x03ips\x12\x1d\n" +
+	"\x0cforce_demote\x18\x03 \x01(\bR\x0bforceDemote\"E\n" +
 	"\x0fPromoteResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"+\n" +

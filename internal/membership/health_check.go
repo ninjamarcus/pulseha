@@ -1,6 +1,7 @@
 package membership
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net"
@@ -12,6 +13,7 @@ import (
 	log "github.com/charmbracelet/log"
 	"github.com/syleron/pulseha/internal/quorum"
 	"github.com/syleron/pulseha/packages/utils"
+	rpc "github.com/syleron/pulseha/rpc"
 )
 
 // Object pools for health checker to reduce memory allocations
@@ -54,6 +56,8 @@ type ServerReference interface {
 	RefreshLocalMonitorExpectedIPs()
 	// Vote broadcasting for quorum elections
 	BroadcastVoteRequest(sessionID string, voteType, subject, description string, timeoutSeconds int64) error
+	// Promotion orchestration
+	Promote(ctx context.Context, req *rpc.PromoteRequest) (*rpc.PromoteResponse, error)
 }
 
 // HealthCheck represents the result of a health check
@@ -586,6 +590,9 @@ func (h *HealthChecker) electNewActiveNode() {
 	// Step 3: Try voting first, then promote directly if voting fails
 	if h.attemptVotingElection(bestCandidate) {
 		h.logger.Info("ELECTION: Voting election succeeded, promoting candidate")
+		if h.tryForcePromote(bestCandidate) {
+			return
+		}
 		// Explicitly set status after successful voting
 		bestCandidate.Lock()
 		bestCandidate.Status = StatusActive
@@ -599,6 +606,9 @@ func (h *HealthChecker) electNewActiveNode() {
 		}
 	} else {
 		h.logger.Info("ELECTION: Voting failed, checking if active node appeared before direct promotion")
+		if h.tryForcePromote(bestCandidate) {
+			return
+		}
 
 		// CRITICAL: Re-check if an active node appeared while we were voting
 		// This prevents multiple nodes from promoting themselves simultaneously
@@ -1449,4 +1459,42 @@ func (h *HealthChecker) calculateElectionBackoffWithRole(localNodeID string) (ti
 // Helper function to convert MemberStatus to string
 func statusToString(status MemberStatus) string {
 	return StatusToString(status)
+}
+
+func (h *HealthChecker) tryForcePromote(candidate *Member) bool {
+	if candidate == nil {
+		return false
+	}
+
+	h.RLock()
+	server := h.server
+	h.RUnlock()
+	if server == nil {
+		h.logger.Debug("ELECTION: Server reference unavailable, skipping Promote RPC")
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	resp, err := server.Promote(ctx, &rpc.PromoteRequest{
+		NodeId:      candidate.ID,
+		ForceDemote: true,
+	})
+	if err != nil {
+		h.logger.Warn("ELECTION: Promote RPC failed", "candidate", candidate.Hostname, "error", err)
+		return false
+	}
+	if resp == nil || !resp.Success {
+		message := "unknown"
+		if resp != nil {
+			message = resp.Message
+		}
+		h.logger.Warn("ELECTION: Promote RPC returned failure", "candidate", candidate.Hostname, "message", message)
+		return false
+	}
+
+	h.logger.Info("ELECTION: Promote RPC succeeded", "candidate", candidate.Hostname)
+	server.RefreshLocalMonitorExpectedIPs()
+	return true
 }

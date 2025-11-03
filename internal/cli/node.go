@@ -29,6 +29,7 @@ func NewNodeCmd() *cobra.Command {
 func newNodePromoteCmd() *cobra.Command {
 	var nodeID string
 	var ips []string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "promote",
@@ -45,8 +46,9 @@ func newNodePromoteCmd() *cobra.Command {
 			}
 
 			resp, err := c.CLI().Promote(context.Background(), &rpc.PromoteRequest{
-				NodeId: nodeID,
-				Ips:    ips,
+				NodeId:      nodeID,
+				Ips:         ips,
+				ForceDemote: force,
 			})
 			if err != nil {
 				return err
@@ -61,6 +63,7 @@ func newNodePromoteCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&nodeID, "node-id", "", "Node ID (UUID) of the node to promote")
 	cmd.Flags().StringSliceVar(&ips, "ips", []string{}, "IPs to assign in active-active mode")
+	cmd.Flags().BoolVar(&force, "force", false, "Force promotion if the previous active cannot be demoted")
 	cmd.MarkFlagRequired("node-id")
 
 	return cmd
